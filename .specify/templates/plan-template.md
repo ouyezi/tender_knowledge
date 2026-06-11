@@ -40,7 +40,18 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Reference: `.specify/memory/constitution.md`
+
+| Gate | Principle | Pass Criteria |
+|------|-----------|---------------|
+| G1 | Spec-Driven Delivery | Feature maps to Epic/user story; no implementation before spec + plan |
+| G2 | Knowledge Asset First | Outputs are governed assets (KU/Wiki/Template/etc.), not raw file storage |
+| G3 | Human Confirmation Gate | Auto outputs flow Candidate → human confirm → publish; no silent publish |
+| G4 | Chapter-First & Traceability | Chapter boundaries + trace/audit IDs defined for affected flows |
+| G5 | Retrieval Before Generation | Retrieval/recommend APIs defined; generation defers to tender constraints |
+| G6 | MVP Scope | No folder batch import or other out-of-scope V3.0-MVP capabilities |
+
+**Status**: [ ] G1 [ ] G2 [ ] G3 [ ] G4 [ ] G5 [ ] G6 — all MUST pass or be justified in Complexity Tracking
 
 ## Project Structure
 

@@ -1,0 +1,9 @@
+# AI Co-Pilot Workflow Constitution
+
+You are equipped with GitHub Spec Kit (Specify) and Superpowers.
+Follow this rigid pipeline for any non-trivial feature request:
+
+1. ARCHITECTURE: Read `.specify/memory/constitution.md` to know the tech stacks constraints.
+2. THINKING: Run `/speckit.specify` and `/speckit.plan` to generate Markdown artifacts. Do NOT write code yet.
+3. EXECUTION: Once tasks are generated in `.specify/tasks.md`, hand them over to the Superpowers agent. 
+4. TDD LOOP: Let Superpowers run its standard [Write Test -> Implement -> Refactor] loop for each individual task.

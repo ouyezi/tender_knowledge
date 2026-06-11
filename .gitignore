@@ -9,12 +9,17 @@ venv/
 env/
 *.egg-info/
 dist/
+node_modules/
 build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
+frontend/dist/
 
 # Environment
 .env
@@ -32,6 +37,7 @@ Thumbs.db
 # Logs & local data
 *.log
 logs/
+.run/
 data/
 tmp/
 temp/
