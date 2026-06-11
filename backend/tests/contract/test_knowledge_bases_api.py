@@ -2,27 +2,8 @@ from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.orm import sessionmaker
 
-from src.db.session import Base, get_db
 from src.main import app
-
-
-@pytest.fixture()
-def api_client(db_engine):
-    Base.metadata.create_all(bind=db_engine)
-    Session = sessionmaker(bind=db_engine, autoflush=False, autocommit=False)
-
-    def override_get_db():
-        db = Session()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = override_get_db
-    yield
-    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio

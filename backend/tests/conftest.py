@@ -5,8 +5,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.db.session import Base
-from src.models import kb_clone_log, knowledge_base  # noqa: F401
+from src.db.session import Base, get_db
+from src.main import app
+from src.models import (  # noqa: F401
+    audit_log,
+    chapter_taxonomy,
+    classification_reference,
+    kb_clone_log,
+    knowledge_base,
+    product_category,
+)
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite://")
 
@@ -33,3 +41,20 @@ def db_session(db_engine):
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture()
+def api_client(db_engine):
+    Base.metadata.create_all(bind=db_engine)
+    Session = sessionmaker(bind=db_engine, autoflush=False, autocommit=False)
+
+    def override_get_db():
+        db = Session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.clear()

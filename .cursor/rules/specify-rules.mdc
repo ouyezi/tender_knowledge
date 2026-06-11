@@ -3,34 +3,7 @@ alwaysApply: true
 ---
 
 <!-- SPECKIT START -->
-# tender_knowledge — Agent Context
-
-**Project**: 企业知识库平台 V3.0（tender_knowledge）
-
-**Authority docs**:
-- Product requirements: `docs/总需求.md`
-- Epic breakdown: `docs/epics/` (Epic 0 → 6)
-- Constitution: `.specify/memory/constitution.md` v1.0.0
-
-**Core principles** (non-negotiable):
-1. Spec-Driven Delivery — specify → plan → tasks before code
-2. Knowledge Asset First — KU/Wiki/Template, not raw files
-3. Human Confirmation Gate — candidates require human publish
-4. Chapter-First & Traceability — chapter boundaries + audit traces
-5. Retrieval Before Generation — search accuracy before AI generation
-
-**Architecture**: Four-layer asset model (来源 → 结构 → 知识 → 服务); external tender
-constraints override template suggestions.
-
-**MVP constraints**: Single-file import only; Epic 0 classification before Epic 1;
-no role-based permissions in V3.0; published objects soft-deprecate only.
-
-**Workflow** (`.cursorrules`): Read constitution → `/speckit-specify` + `/speckit-plan`
-→ `/speckit-tasks` → Superpowers TDD (Write Test → Implement → Refactor).
-
-**Plan gates**: G1–G6 in plan-template Constitution Check; violations need Complexity
-Tracking justification.
-
-For tech stack, dependencies, and feature-specific structure, read the current feature's
-`specs/<feature>/plan.md` once generated.
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+at specs/001-classification-base/plan.md
 <!-- SPECKIT END -->
