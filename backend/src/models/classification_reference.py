@@ -21,6 +21,7 @@ class ReferenceObjectType(str, enum.Enum):
     bid_outline = "bid_outline"
     manual_asset = "manual_asset"
     candidate_knowledge = "candidate_knowledge"
+    file_import = "file_import"
 
 
 class ClassificationReference(Base):
