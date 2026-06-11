@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { key: "/", label: <Link to="/">知识库</Link> },
   { key: "/product-categories", label: <Link to="/product-categories">产品分类</Link> },
   { key: "/chapter-taxonomies", label: <Link to="/chapter-taxonomies">章节分类</Link> },
+  { key: "/file-imports", label: <Link to="/file-imports">来源导入</Link> },
 ];
 
 export default function AppShell() {
