@@ -4,6 +4,7 @@ import ChapterTaxonomyCenterPage from "./pages/ChapterTaxonomyCenter";
 import FileImportCenterPage from "./pages/FileImportCenter";
 import KnowledgeBaseListPage from "./pages/KnowledgeBaseList";
 import ProductCategoryCenterPage from "./pages/ProductCategoryCenter";
+import ParseConfirmWizard from "./pages/TemplateLibraryCenter/ParseConfirmWizard";
 import TemplateLibraryCenterPage from "./pages/TemplateLibraryCenter";
 
 export default function App() {
@@ -15,6 +16,10 @@ export default function App() {
         <Route path="/chapter-taxonomies" element={<ChapterTaxonomyCenterPage />} />
         <Route path="/file-imports" element={<FileImportCenterPage />} />
         <Route path="/template-libraries" element={<TemplateLibraryCenterPage />} />
+        <Route
+          path="/template-libraries/parse-confirm/:parseTaskId"
+          element={<ParseConfirmWizard />}
+        />
       </Route>
     </Routes>
   );

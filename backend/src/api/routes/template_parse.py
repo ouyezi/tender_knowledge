@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_kb_or_404, get_operator_id, kb_write_guard
@@ -17,6 +17,10 @@ from src.services.template_parse_runner import (
     enqueue_template_parse,
     run_template_parse_in_new_session,
 )
+from src.services.template_confirm_service import (
+    TemplateConfirmServiceError,
+    confirm_parse_task,
+)
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/template-parse",
@@ -27,6 +31,53 @@ router = APIRouter(
 class TriggerParseRequest(BaseModel):
     import_id: UUID
     force_reparse: bool = False
+
+
+class CreateLibraryRequest(BaseModel):
+    library_name: str
+    library_type: str
+
+
+class ConfirmChapterRequest(BaseModel):
+    temp_id: str
+    parent_temp_id: str | None = None
+    title: str
+    level: int
+    sort_order: int = 0
+    chapter_taxonomy_id: UUID | None = None
+    product_category_ids: list[UUID] = Field(default_factory=list)
+    required: bool = False
+    is_fixed_section: bool = False
+    ignored: bool = False
+
+
+class ConfirmMaterialRequest(BaseModel):
+    temp_id: str
+    chapter_temp_id: str | None = None
+    material_type: str
+    title: str | None = None
+    summary: str | None = None
+    content: str | None = None
+    product_category_ids: list[UUID] = Field(default_factory=list)
+    extract_as_candidate: bool = False
+    ignored: bool = False
+
+
+class ConfirmCandidateActionRequest(BaseModel):
+    temp_id: str
+    candidate_type: str
+    accepted: bool
+
+
+class ConfirmParseRequest(BaseModel):
+    template_library_id: UUID | None = None
+    create_library: CreateLibraryRequest | None = None
+    template_name: str
+    template_type: str
+    product_category_ids: list[UUID] = Field(default_factory=list)
+    chapters: list[ConfirmChapterRequest]
+    materials: list[ConfirmMaterialRequest] = Field(default_factory=list)
+    candidate_actions: list[ConfirmCandidateActionRequest] = Field(default_factory=list)
 
 
 @router.get("/tasks")
@@ -160,6 +211,87 @@ def get_parse_task(
                 if suggestion
                 else None
             ),
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.get("/tasks/{parse_task_id}/suggestion")
+def get_parse_suggestion(
+    kb_id: UUID,
+    parse_task_id: UUID,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    task = (
+        db.query(TemplateParseTask)
+        .filter(TemplateParseTask.kb_id == kb_id, TemplateParseTask.parse_task_id == parse_task_id)
+        .one_or_none()
+    )
+    if task is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("NOT_FOUND", "Parse task not found", trace_id=get_trace_id()),
+        )
+    suggestion = (
+        db.query(TemplateParseSuggestion)
+        .filter(TemplateParseSuggestion.parse_task_id == parse_task_id)
+        .one_or_none()
+    )
+    if suggestion is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("NOT_FOUND", "Suggestion not found", trace_id=get_trace_id()),
+        )
+    return success(
+        {
+            "suggestion_id": str(suggestion.suggestion_id),
+            "suggested_library_id": str(suggestion.suggested_library_id)
+            if suggestion.suggested_library_id
+            else None,
+            "suggested_library_name": suggestion.suggested_library_name,
+            "suggested_product_category_ids": suggestion.suggested_product_category_ids,
+            "suggested_chapter_tree": suggestion.suggested_chapter_tree,
+            "suggested_materials": suggestion.suggested_materials,
+            "suggested_candidates": suggestion.suggested_candidates,
+            "suggestion_source": suggestion.suggestion_source.value,
+            "rationale": suggestion.rationale,
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/tasks/{parse_task_id}/confirm")
+def confirm_parse(
+    kb_id: UUID,
+    parse_task_id: UUID,
+    body: ConfirmParseRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    try:
+        result = confirm_parse_task(
+            db,
+            kb_id=kb_id,
+            parse_task_id=parse_task_id,
+            body=body.model_dump(mode="json"),
+            operator_id=operator_id,
+            trace_id=get_trace_id(),
+        )
+    except TemplateConfirmServiceError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    return success(
+        {
+            "parse_task_id": str(result.parse_task_id),
+            "template_id": str(result.template_id),
+            "template_library_id": str(result.template_library_id) if result.template_library_id else None,
+            "status": result.status,
+            "structure_locked_at": result.structure_locked_at.isoformat(),
+            "candidate_stubs_created": result.candidate_stubs_created,
         },
         trace_id=get_trace_id(),
     )
