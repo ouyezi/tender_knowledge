@@ -11,7 +11,7 @@ from src.api.envelope import error, success
 from src.api.middleware.audit import get_trace_id
 from src.db.session import get_db
 from src.models.actual_bid_audit_log import ActualBidAuditLog
-from src.models.bid_outline import BidOutline
+from src.models.bid_outline import BidOutline, BidOutlineStatus
 from src.models.bid_outline_node import BidOutlineNode
 from src.models.knowledge_base import KnowledgeBase
 
@@ -42,6 +42,10 @@ class BatchNodeOperation(BaseModel):
 
 class BatchNodeOperationRequest(BaseModel):
     operations: list[BatchNodeOperation]
+
+
+class ConfirmBidOutlineRequest(BaseModel):
+    status: str
 
 
 def _serialize_outline(outline: BidOutline) -> dict[str, object]:
@@ -324,6 +328,60 @@ def patch_bid_outline_node(
     db.refresh(audit)
     return success(
         {"node": _serialize_outline_node(node), "audit_id": str(audit.audit_id)},
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/{bid_outline_id}/confirm")
+def confirm_bid_outline(
+    kb_id: UUID,
+    bid_outline_id: UUID,
+    body: ConfirmBidOutlineRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    if body.status != BidOutlineStatus.confirmed.value:
+        return JSONResponse(
+            status_code=400,
+            content=error(
+                "INVALID_OUTLINE_STATUS",
+                "Only confirmed status is supported",
+                trace_id=get_trace_id(),
+            ),
+        )
+
+    outline = _get_outline_or_404(db, kb_id, bid_outline_id)
+    if outline is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("OUTLINE_NOT_FOUND", "Bid outline not found", trace_id=get_trace_id()),
+        )
+
+    now = datetime.now(timezone.utc)
+    outline.status = BidOutlineStatus.confirmed
+    outline.structure_locked_at = now
+    outline.structure_locked_by = operator_id
+    outline.updated_at = now
+
+    audit = _append_actual_bid_audit_log(
+        db=db,
+        kb_id=kb_id,
+        action="outline_confirmed",
+        object_type="bid_outline",
+        object_id=bid_outline_id,
+        operator_id=operator_id,
+        detail={
+            "bid_outline_id": str(bid_outline_id),
+            "status": BidOutlineStatus.confirmed.value,
+            "structure_locked_at": now.isoformat(),
+        },
+    )
+    db.commit()
+    db.refresh(outline)
+    db.refresh(audit)
+    return success(
+        {**_serialize_outline(outline), "audit_id": str(audit.audit_id)},
         trace_id=get_trace_id(),
     )
 
