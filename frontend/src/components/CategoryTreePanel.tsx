@@ -1,4 +1,5 @@
-import { Button, Card, Tree } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
+import { Button, Card, Space, Tree, Typography } from "antd";
 import type { DataNode } from "antd/es/tree";
 import { useMemo } from "react";
 import type { ProductCategoryNode } from "../services/productCategoryApi";
@@ -37,9 +38,14 @@ export default function CategoryTreePanel({
       title="分类树"
       loading={loading}
       extra={
-        <Button type="primary" disabled={readOnly} onClick={onCreateRoot}>
-          新建分类
-        </Button>
+        <Space>
+          {selectedId && !readOnly ? (
+            <Button onClick={() => onCreateChild(selectedId)}>添加子分类</Button>
+          ) : null}
+          <Button type="primary" disabled={readOnly} onClick={onCreateRoot}>
+            新建分类
+          </Button>
+        </Space>
       }
       styles={{ body: { minHeight: 480 } }}
     >
@@ -55,18 +61,35 @@ export default function CategoryTreePanel({
           }
         }}
         titleRender={(node) => (
-          <span
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              if (!readOnly && typeof node.key === "string") {
-                onCreateChild(node.key);
-              }
-            }}
-          >
-            {node.title as string}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                if (!readOnly && typeof node.key === "string") {
+                  onCreateChild(node.key);
+                }
+              }}
+            >
+              {node.title as string}
+            </span>
+            {!readOnly && typeof node.key === "string" ? (
+              <Button
+                type="text"
+                size="small"
+                icon={<PlusOutlined />}
+                aria-label="添加子分类"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCreateChild(node.key as string);
+                }}
+              />
+            ) : null}
+          </div>
         )}
       />
+      <Typography.Text type="secondary" style={{ display: "block", marginTop: 12 }}>
+        选中节点后点击 + 或双击节点，可添加子分类
+      </Typography.Text>
     </Card>
   );
 }

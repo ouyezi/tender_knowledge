@@ -12,6 +12,7 @@ interface TaxonomyDetailPanelProps {
   readOnly?: boolean;
   saving?: boolean;
   isNew?: boolean;
+  parentLabel?: string;
   productCategoryOptions: ProductCategoryOption[];
   onSave: (values: {
     standard_name: string;
@@ -43,6 +44,7 @@ export default function TaxonomyDetailPanel({
   readOnly = false,
   saving = false,
   isNew = false,
+  parentLabel,
   productCategoryOptions,
   onSave,
 }: TaxonomyDetailPanelProps) {
@@ -78,7 +80,13 @@ export default function TaxonomyDetailPanel({
 
   return (
     <Card
-      title={isNew ? "新建章节类型" : "章节类型详情"}
+      title={
+        isNew
+          ? parentLabel
+            ? `新建子章节类型（父：${parentLabel}）`
+            : "新建章节类型"
+          : "章节类型详情"
+      }
       extra={
         detail?.breadcrumb?.length ? (
           <Space size={4} wrap>

@@ -7,6 +7,7 @@ interface CategoryDetailPanelProps {
   readOnly?: boolean;
   saving?: boolean;
   isNew?: boolean;
+  parentLabel?: string;
   onSave: (values: {
     category_name: string;
     category_code: string;
@@ -35,6 +36,7 @@ export default function CategoryDetailPanel({
   readOnly = false,
   saving = false,
   isNew = false,
+  parentLabel,
   onSave,
 }: CategoryDetailPanelProps) {
   const [form] = Form.useForm<FormValues>();
@@ -67,7 +69,13 @@ export default function CategoryDetailPanel({
 
   return (
     <Card
-      title={isNew ? "新建分类" : "分类详情"}
+      title={
+        isNew
+          ? parentLabel
+            ? `新建子分类（父：${parentLabel}）`
+            : "新建分类"
+          : "分类详情"
+      }
       extra={
         detail?.breadcrumb?.length ? (
           <Space size={4} wrap>

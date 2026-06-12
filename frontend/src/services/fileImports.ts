@@ -12,6 +12,8 @@ export type FileImportStatus =
 
 export type FileType = "docx" | "pdf" | "ppt" | "xlsx" | "image" | "other" | string;
 
+export type ParseStatus = "running" | "parse_ready" | "failed" | null;
+
 export interface FileImportListItem {
   import_id: string;
   file_name: string;
@@ -20,6 +22,7 @@ export interface FileImportListItem {
   file_hash: string;
   file_purpose: string | null;
   status: FileImportStatus;
+  parse_status?: ParseStatus;
   version_no: number;
   created_at: string;
   updated_at: string;
@@ -267,5 +270,23 @@ export async function retryImport(
   return apiRequest<RetryImportResult>(`/api/v1/kbs/${kbId}/file-imports/${importId}/retry`, {
     method: "POST",
     body: { scope },
+  });
+}
+
+export interface RetryTemplateParseResult {
+  parse_task_id: string;
+  import_id: string;
+  template_id: string | null;
+  status: string;
+  trace_id: string;
+}
+
+export async function retryTemplateParse(
+  kbId: string,
+  importId: string,
+): Promise<RetryTemplateParseResult> {
+  return apiRequest<RetryTemplateParseResult>(`/api/v1/kbs/${kbId}/template-parse/trigger`, {
+    method: "POST",
+    body: { import_id: importId, force_reparse: true },
   });
 }

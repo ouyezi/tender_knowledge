@@ -19,6 +19,7 @@ from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.downstream_task_entry import DownstreamTaskEntry
 from src.models.import_task import ImportTask
 from src.models.knowledge_base import KnowledgeBase
+from src.models.template_parse_task import TemplateParseTask, TemplateParseTaskStatus
 from src.services.confirm_service import (
     ConfirmServiceError,
     confirm_import,
@@ -27,6 +28,7 @@ from src.services.confirm_service import (
 )
 from src.services.file_import_service import FileImportServiceError, upload_file_and_enqueue
 from src.services.import_task_runner import retry_import_tasks
+from src.services.template_parse_runner import run_template_parse_in_new_session
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/file-imports",
@@ -69,6 +71,34 @@ def list_file_imports(
         .limit(page_size)
         .all()
     )
+    latest_parse_task_by_import: dict[str, TemplateParseTask] = {}
+    if rows:
+        row_import_ids = [row.import_id for row in rows]
+        parse_tasks = (
+            db.query(TemplateParseTask)
+            .filter(TemplateParseTask.import_id.in_(row_import_ids))
+            .order_by(
+                TemplateParseTask.import_id.asc(),
+                TemplateParseTask.created_at.desc(),
+            )
+            .all()
+        )
+        for task in parse_tasks:
+            key = str(task.import_id)
+            if key not in latest_parse_task_by_import:
+                latest_parse_task_by_import[key] = task
+
+    def _map_parse_status(task: TemplateParseTask | None) -> str | None:
+        if task is None:
+            return None
+        if task.status in {TemplateParseTaskStatus.pending, TemplateParseTaskStatus.running}:
+            return "running"
+        if task.status in {TemplateParseTaskStatus.parse_ready, TemplateParseTaskStatus.confirmed}:
+            return "parse_ready"
+        if task.status == TemplateParseTaskStatus.failed:
+            return "failed"
+        return None
+
     items = [
         {
             "import_id": str(row.import_id),
@@ -78,6 +108,9 @@ def list_file_imports(
             "file_hash": row.file_hash,
             "file_purpose": row.file_purpose.value if row.file_purpose else None,
             "status": row.status.value,
+            "parse_status": _map_parse_status(
+                latest_parse_task_by_import.get(str(row.import_id))
+            ),
             "version_no": row.version_no,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -215,6 +248,7 @@ def confirm_file_import(
     kb_id: UUID,
     import_id: UUID,
     body: ConfirmImportRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(kb_write_guard),
     operator_id: str = Depends(get_operator_id),
@@ -238,6 +272,8 @@ def confirm_file_import(
             status_code=exc.status_code,
             content=error(exc.code, str(exc), trace_id=get_trace_id()),
         )
+    if any(item["task_type"] == "template_file_parse" for item in data["downstream_entries_created"]):
+        background_tasks.add_task(run_template_parse_in_new_session)
     return success(data, trace_id=get_trace_id())
 
 
@@ -335,6 +371,7 @@ def retry_import(
     kb_id: UUID,
     import_id: UUID,
     body: RetryImportRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(kb_write_guard),
     operator_id: str = Depends(get_operator_id),
@@ -360,6 +397,8 @@ def retry_import(
         )
         if created:
             db.commit()
+            if any(item["task_type"] == "template_file_parse" for item in created):
+                background_tasks.add_task(run_template_parse_in_new_session)
         tasks_enqueued.extend([item["task_type"] for item in created])
 
     retry_data = retry_import_tasks(

@@ -19,7 +19,9 @@
     {
       "kb_id": "uuid",
       "name": "标书知识库-demo",
-      "status": "active"
+      "status": "active",
+      "created_at": "2026-06-12T10:00:00+00:00",
+      "updated_at": "2026-06-12T10:00:00+00:00"
     }
   ]
 }
@@ -42,7 +44,7 @@
 
 **Clone 行为**: 复制源 KB 的 Product Category 树（含别名）、Chapter Taxonomy 树（含同义名与产品绑定），并写入 `kb_clone_logs`。
 
-**Response `data`**: `{ "kb_id", "name", "status" }`
+**Response `data`**: `{ "kb_id", "name", "status", "created_at", "updated_at" }`
 
 ---
 
