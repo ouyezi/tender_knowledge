@@ -16,7 +16,12 @@ from src.models.downstream_task_entry import (
 from src.models.file_import import FileImport, FilePurpose, FileType, FileImportStatus
 from src.models.template import Template, TemplateStatus, TemplateType
 from src.models.template_audit_log import TemplateAuditAction, TemplateAuditLog
+from src.models.template_chapter import TemplateChapter
 from src.models.template_parse_suggestion import TemplateParseSuggestion
+from src.models.template_structure_diff import (
+    TemplateStructureDiff,
+    TemplateStructureDiffStatus,
+)
 from src.models.template_parse_task import (
     TemplateParseTask,
     TemplateParseTaskStatus,
@@ -70,6 +75,60 @@ def _to_suggested_tree(outline_nodes) -> list[dict]:
         }
         for node in outline_nodes
     ]
+
+
+def _build_structure_diff_payload(
+    *,
+    existing_chapters,
+    suggested_tree: list[dict],
+) -> dict:
+    existing_map = {
+        (row.parse_source_ref or str(row.template_chapter_id)): {
+            "title": row.title,
+            "level": row.level,
+            "parent_id": str(row.parent_id) if row.parent_id else None,
+            "sort_order": row.sort_order,
+        }
+        for row in existing_chapters
+    }
+    suggested_map = {
+        str(item.get("temp_id")): {
+            "title": str(item.get("title", "")),
+            "level": int(item.get("level", 1) or 1),
+            "parent_temp_id": str(item.get("parent_temp_id")) if item.get("parent_temp_id") else None,
+            "sort_order": int(item.get("sort_order", 0) or 0),
+        }
+        for item in suggested_tree
+    }
+    added = [key for key in suggested_map if key not in existing_map]
+    removed = [key for key in existing_map if key not in suggested_map]
+    changed = []
+    for key in suggested_map.keys() & existing_map.keys():
+        old_item = existing_map[key]
+        new_item = suggested_map[key]
+        if (
+            old_item["title"] != new_item["title"]
+            or old_item["level"] != new_item["level"]
+            or old_item["sort_order"] != new_item["sort_order"]
+        ):
+            changed.append(
+                {
+                    "temp_id": key,
+                    "old": old_item,
+                    "new": new_item,
+                }
+            )
+    return {
+        "summary": {
+            "added": len(added),
+            "removed": len(removed),
+            "changed": len(changed),
+        },
+        "added_temp_ids": added,
+        "removed_temp_ids": removed,
+        "changed_nodes": changed,
+        "suggested_tree": suggested_tree,
+    }
 
 
 def _get_or_create_parse_task(
@@ -244,6 +303,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
             )
             db.add(template)
             db.flush()
+        is_structure_locked = bool(template.confirmed and template.structure_locked_at)
 
         suggestion = (
             db.query(TemplateParseSuggestion)
@@ -265,6 +325,35 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
         suggestion.rationale = "docx heading parse"
 
         task.template_id = template.template_id
+        if is_structure_locked:
+            existing_chapters = (
+                db.query(TemplateChapter)
+                .filter(TemplateChapter.template_id == template.template_id)
+                .all()
+            )
+            diff_payload = _build_structure_diff_payload(
+                existing_chapters=existing_chapters,
+                suggested_tree=suggested_tree,
+            )
+            diff = (
+                db.query(TemplateStructureDiff)
+                .filter(
+                    TemplateStructureDiff.parse_task_id == task.parse_task_id,
+                    TemplateStructureDiff.template_id == template.template_id,
+                )
+                .one_or_none()
+            )
+            if diff is None:
+                diff = TemplateStructureDiff(
+                    kb_id=file_import.kb_id,
+                    template_id=template.template_id,
+                    parse_task_id=task.parse_task_id,
+                )
+                db.add(diff)
+            diff.diff_payload = diff_payload
+            diff.status = TemplateStructureDiffStatus.pending_review
+            _append_log(task, "检测到已锁定模板，生成结构差异待人工审核")
+
         task.status = TemplateParseTaskStatus.parse_ready
         task.finished_at = _now()
         _append_log(task, "模板解析完成")

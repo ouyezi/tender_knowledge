@@ -8,6 +8,7 @@ import {
   listTemplateMaterials,
   listTemplateRules,
   listTemplateVariables,
+  publishTemplate,
   type ChapterTreeNode,
   type TemplateMaterialItem,
   type TemplateRuleItem,
@@ -17,6 +18,7 @@ import ChapterPropertyPanel from "./ChapterPropertyPanel";
 import ChapterTreeEditor from "./ChapterTreeEditor";
 import MaterialPanel from "./MaterialPanel";
 import VariableRulePanel from "./VariableRulePanel";
+import PublishModal from "./PublishModal";
 
 type FlatNode = Omit<ChapterTreeNode, "children">;
 
@@ -76,6 +78,8 @@ export default function TemplateDetailPage() {
   const [materials, setMaterials] = useState<TemplateMaterialItem[]>([]);
   const [variables, setVariables] = useState<TemplateVariableItem[]>([]);
   const [rules, setRules] = useState<TemplateRuleItem[]>([]);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!selectedKbId || !templateId) return;
@@ -174,7 +178,8 @@ export default function TemplateDetailPage() {
   }
 
   return (
-    <Card
+    <>
+      <Card
       title={`模板详情：${templateId}`}
       loading={loading}
       extra={
@@ -182,6 +187,7 @@ export default function TemplateDetailPage() {
           <Button loading={savingTree} type="primary" onClick={() => void saveChapterTree()}>
             保存章节树
           </Button>
+          <Button onClick={() => setPublishOpen(true)}>发布</Button>
         </Space>
       }
     >
@@ -234,5 +240,27 @@ export default function TemplateDetailPage() {
         ]}
       />
     </Card>
+      <PublishModal
+        open={publishOpen}
+        targetName={templateId}
+        defaultTargetType="template"
+        confirmLoading={publishing}
+        onCancel={() => setPublishOpen(false)}
+        onSubmit={async () => {
+          if (!selectedKbId || !templateId) return;
+          setPublishing(true);
+          try {
+            const result = await publishTemplate(selectedKbId, templateId);
+            message.success(`模板已发布，版本 ${result.version}`);
+            setPublishOpen(false);
+            void loadData();
+          } catch (err) {
+            message.error((err as Error).message);
+          } finally {
+            setPublishing(false);
+          }
+        }}
+      />
+    </>
   );
 }

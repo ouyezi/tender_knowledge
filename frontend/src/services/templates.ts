@@ -38,11 +38,12 @@ export interface TemplateParseTaskListResult {
 
 export async function listTemplateLibraries(
   kbId: string,
-  params?: { page?: number; page_size?: number },
+  params?: { page?: number; page_size?: number; status?: string },
 ): Promise<TemplateLibraryListResult> {
   const search = new URLSearchParams();
   if (params?.page) search.set("page", String(params.page));
   if (params?.page_size) search.set("page_size", String(params.page_size));
+  if (params?.status) search.set("status", params.status);
   const qs = search.toString();
   return apiRequest<TemplateLibraryListResult>(
     `/api/v1/kbs/${kbId}/template-libraries${qs ? `?${qs}` : ""}`,
@@ -125,6 +126,21 @@ export interface ParseTaskDetail {
   started_at: string | null;
   finished_at: string | null;
   suggestion: ParseSuggestion | null;
+  structure_diff?: TemplateStructureDiff | null;
+}
+
+export interface TemplateStructureDiff {
+  diff_id: string;
+  parse_task_id: string;
+  template_id: string;
+  status: string;
+  diff_payload: {
+    summary?: { added: number; removed: number; changed: number };
+    suggested_tree?: ParseSuggestionChapterNode[];
+  } | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  created_at?: string;
 }
 
 export interface ConfirmParsePayload {
@@ -174,6 +190,28 @@ export async function confirmParseTask(
       body: payload,
     },
   );
+}
+
+export async function applyParseDiff(
+  kbId: string,
+  parseTaskId: string,
+  payload: { diff_id?: string | null },
+): Promise<{ parse_task_id: string; template_id: string; structure_diff: TemplateStructureDiff }> {
+  return apiRequest(`/api/v1/kbs/${kbId}/template-parse/tasks/${parseTaskId}/diff/apply`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function rejectParseDiff(
+  kbId: string,
+  parseTaskId: string,
+  payload: { diff_id?: string | null },
+): Promise<{ parse_task_id: string; template_id: string; structure_diff: TemplateStructureDiff }> {
+  return apiRequest(`/api/v1/kbs/${kbId}/template-parse/tasks/${parseTaskId}/diff/reject`, {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export interface ChapterTreeNode {
@@ -272,6 +310,37 @@ export interface TemplateRuleItem {
   message: string | null;
   status: string;
   updated_at: string;
+}
+
+export interface PublishResult {
+  status: string;
+  version: string;
+  version_no: number;
+  snapshot_id: string;
+  published_at: string;
+  template_id?: string;
+  template_library_id?: string;
+}
+
+export async function publishTemplate(kbId: string, templateId: string): Promise<PublishResult> {
+  return apiRequest<PublishResult>(`/api/v1/kbs/${kbId}/templates/${templateId}/publish`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export async function publishTemplateLibrary(
+  kbId: string,
+  templateLibraryId: string,
+  payload?: { cascade_templates?: boolean; version_note?: string | null },
+): Promise<PublishResult> {
+  return apiRequest<PublishResult>(
+    `/api/v1/kbs/${kbId}/template-libraries/${templateLibraryId}/publish`,
+    {
+      method: "POST",
+      body: payload ?? { cascade_templates: true },
+    },
+  );
 }
 
 type ListResult<T> = {
