@@ -79,6 +79,12 @@ export default function FileImportCenterPage() {
         key: "status",
       },
       {
+        title: "解析状态",
+        dataIndex: "parse_status",
+        key: "parse_status",
+        render: (value?: string | null) => value ?? "—",
+      },
+      {
         title: "创建时间",
         dataIndex: "created_at",
         key: "created_at",

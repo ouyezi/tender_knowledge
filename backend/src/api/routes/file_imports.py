@@ -78,6 +78,7 @@ def list_file_imports(
             "file_hash": row.file_hash,
             "file_purpose": row.file_purpose.value if row.file_purpose else None,
             "status": row.status.value,
+            "parse_status": None,
             "version_no": row.version_no,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,

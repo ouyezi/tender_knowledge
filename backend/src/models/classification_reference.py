@@ -18,6 +18,8 @@ class ReferenceObjectType(str, enum.Enum):
     wiki = "wiki"
     template = "template"
     template_chapter = "template_chapter"
+    template_library = "template_library"
+    template_material = "template_material"
     bid_outline = "bid_outline"
     manual_asset = "manual_asset"
     candidate_knowledge = "candidate_knowledge"

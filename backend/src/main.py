@@ -8,6 +8,11 @@ from src.api.routes.chapter_taxonomies import router as chapter_taxonomy_router
 from src.api.routes.file_imports import router as file_imports_router
 from src.api.routes.knowledge_bases import router as kb_router
 from src.api.routes.product_categories import router as product_category_router
+from src.api.routes.template_assets import router as template_assets_router
+from src.api.routes.template_chapters import router as template_chapters_router
+from src.api.routes.template_libraries import router as template_libraries_router
+from src.api.routes.template_parse import router as template_parse_router
+from src.api.routes.templates import router as templates_router
 from src.db.init_db import init_db
 
 
@@ -33,6 +38,11 @@ app.include_router(kb_router)
 app.include_router(product_category_router)
 app.include_router(chapter_taxonomy_router)
 app.include_router(file_imports_router)
+app.include_router(template_parse_router)
+app.include_router(template_libraries_router)
+app.include_router(templates_router)
+app.include_router(template_chapters_router)
+app.include_router(template_assets_router)
 
 
 @app.get("/health")

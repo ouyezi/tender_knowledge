@@ -4,6 +4,7 @@ import ChapterTaxonomyCenterPage from "./pages/ChapterTaxonomyCenter";
 import FileImportCenterPage from "./pages/FileImportCenter";
 import KnowledgeBaseListPage from "./pages/KnowledgeBaseList";
 import ProductCategoryCenterPage from "./pages/ProductCategoryCenter";
+import TemplateLibraryCenterPage from "./pages/TemplateLibraryCenter";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/product-categories" element={<ProductCategoryCenterPage />} />
         <Route path="/chapter-taxonomies" element={<ChapterTaxonomyCenterPage />} />
         <Route path="/file-imports" element={<FileImportCenterPage />} />
+        <Route path="/template-libraries" element={<TemplateLibraryCenterPage />} />
       </Route>
     </Routes>
   );

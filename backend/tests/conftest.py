@@ -15,6 +15,7 @@ from src.models.file_import import FileImport
 from src.services.import_task_runner import run_post_upload
 from src.models import (  # noqa: F401
     audit_log,
+    candidate_knowledge_stub,
     chapter_taxonomy,
     classification_reference,
     downstream_task_entry,
@@ -25,6 +26,17 @@ from src.models import (  # noqa: F401
     kb_clone_log,
     knowledge_base,
     product_category,
+    template,
+    template_audit_log,
+    template_chapter,
+    template_library,
+    template_material,
+    template_parse_suggestion,
+    template_parse_task,
+    template_publish_snapshot,
+    template_rule,
+    template_structure_diff,
+    template_variable,
 )
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite://")

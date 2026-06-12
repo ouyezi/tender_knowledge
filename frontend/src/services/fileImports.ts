@@ -20,6 +20,7 @@ export interface FileImportListItem {
   file_hash: string;
   file_purpose: string | null;
   status: FileImportStatus;
+  parse_status?: string | null;
   version_no: number;
   created_at: string;
   updated_at: string;
