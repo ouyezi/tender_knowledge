@@ -8,6 +8,7 @@ import {
   type ActualBidParseTaskListItem,
 } from "../../services/actualBidParse";
 import { listOutlines, type BidOutlineListItem } from "../../services/bidOutlines";
+import { triggerChapterPatternMining } from "../../services/chapterPatterns";
 
 const todoColumns: ColumnsType<ActualBidParseTaskListItem> = [
   { title: "任务 ID", dataIndex: "parse_task_id", key: "parse_task_id", ellipsis: true },
@@ -44,6 +45,7 @@ export default function OutlineCenterPage() {
   const [todoTasks, setTodoTasks] = useState<ActualBidParseTaskListItem[]>([]);
   const [outlines, setOutlines] = useState<BidOutlineListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [mining, setMining] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
@@ -69,6 +71,19 @@ export default function OutlineCenterPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const handleMineChapterPatterns = useCallback(async () => {
+    if (!selectedKbId) return;
+    setMining(true);
+    try {
+      const task = await triggerChapterPatternMining(selectedKbId, { min_frequency: 2 });
+      message.success(`已触发挖掘任务：${task.mining_task_id}`);
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setMining(false);
+    }
+  }, [selectedKbId]);
 
   if (!selectedKbId) {
     return <Alert message="请先选择知识库" type="info" showIcon />;
@@ -115,6 +130,9 @@ export default function OutlineCenterPage() {
         style={{ marginBottom: 16 }}
         extra={
           <Space>
+            <Button loading={mining} disabled={readOnly} onClick={() => void handleMineChapterPatterns()}>
+              挖掘章节模式
+            </Button>
             <Button type="primary" disabled={readOnly}>
               新建目录
             </Button>
