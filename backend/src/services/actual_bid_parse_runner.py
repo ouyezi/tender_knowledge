@@ -13,6 +13,7 @@ from src.models.actual_bid_parse_task import (
     ActualBidParseTask,
     ActualBidParseTaskStatus,
 )
+from src.models.bid_outline import BidOutline
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_parse_suggestion import DocumentParseSuggestion
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
@@ -22,7 +23,7 @@ from src.models.downstream_task_entry import (
     DownstreamTaskType,
 )
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
-from src.services import bid_outline_extract_service, candidate_generate_service
+from src.services import bid_outline_diff_service, bid_outline_extract_service, candidate_generate_service
 from src.services.docx_document_walker import walk_document
 from src.services.docx_toc_extractor import extract_toc_entries
 
@@ -265,6 +266,7 @@ def enqueue_actual_bid_parse(
     payload = dict(pending_entry.payload or {})
     payload["parse_task_id"] = str(task.parse_task_id)
     payload["enqueued_by"] = operator_id
+    payload["force_reparse"] = bool(force_reparse)
     pending_entry.payload = payload
 
     db.commit()
@@ -280,6 +282,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
         return
 
     task = _get_or_create_parse_task(db, entry=entry, file_import=file_import)
+    force_reparse = bool((entry.payload or {}).get("force_reparse"))
     task.status = ActualBidParseTaskStatus.running
     task.parse_strategy = ActualBidParseStrategy.docx
     task.started_at = _now()
@@ -306,21 +309,39 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
 
         # 2) extract_toc_entries -> persist bid outline
         toc_result = extract_toc_entries(docx_path)
-        outline_result = bid_outline_extract_service.persist_outline(
-            db,
-            kb_id=file_import.kb_id,
-            import_id=file_import.import_id,
-            document_id=document.document_id,
-            outline_name=document.document_name,
-            toc_entries=toc_result.entries,
-            source_node_by_temp_id=source_node_by_temp_id,
-            created_by=file_import.confirmed_by or file_import.created_by or "system",
-            extract_strategy=toc_result.strategy.value,
-            product_category_ids=file_import.product_category_ids or [],
-            project_name=document.bid_project_name,
-            customer_name=document.bid_customer_name,
+        existing_outline = (
+            db.query(BidOutline)
+            .filter(BidOutline.kb_id == file_import.kb_id, BidOutline.source_doc_id == document.document_id)
+            .order_by(BidOutline.created_at.desc())
+            .first()
         )
-        task.bid_outline_id = outline_result.bid_outline.bid_outline_id
+        if force_reparse and existing_outline is not None and existing_outline.structure_locked_at:
+            bid_outline_diff_service.generate_structure_diff(
+                db,
+                kb_id=file_import.kb_id,
+                bid_outline_id=existing_outline.bid_outline_id,
+                parse_task_id=task.parse_task_id,
+                document_id=document.document_id,
+                toc_entries=toc_result.entries,
+                source_node_by_temp_id=source_node_by_temp_id,
+            )
+            task.bid_outline_id = existing_outline.bid_outline_id
+        else:
+            outline_result = bid_outline_extract_service.persist_outline(
+                db,
+                kb_id=file_import.kb_id,
+                import_id=file_import.import_id,
+                document_id=document.document_id,
+                outline_name=document.document_name,
+                toc_entries=toc_result.entries,
+                source_node_by_temp_id=source_node_by_temp_id,
+                created_by=file_import.confirmed_by or file_import.created_by or "system",
+                extract_strategy=toc_result.strategy.value,
+                product_category_ids=file_import.product_category_ids or [],
+                project_name=document.bid_project_name,
+                customer_name=document.bid_customer_name,
+            )
+            task.bid_outline_id = outline_result.bid_outline.bid_outline_id
 
         # 3) optional chunk classification -> currently skipped with rule-only suggestion payload
         # 4) candidate_generate_service.generate

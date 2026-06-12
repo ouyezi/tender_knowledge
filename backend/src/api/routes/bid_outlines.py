@@ -13,7 +13,13 @@ from src.db.session import get_db
 from src.models.actual_bid_audit_log import ActualBidAuditLog
 from src.models.bid_outline import BidOutline, BidOutlineStatus
 from src.models.bid_outline_node import BidOutlineNode
+from src.models.bid_outline_structure_diff import BidOutlineStructureDiff
 from src.models.knowledge_base import KnowledgeBase
+from src.services.bid_outline_diff_service import (
+    BidOutlineDiffServiceError,
+    apply_diff,
+    reject_diff,
+)
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/bid-outlines",
@@ -80,6 +86,19 @@ def _serialize_outline_node(node: BidOutlineNode) -> dict[str, object]:
         "status": node.status.value,
         "needs_manual_review": node.needs_manual_review,
         "updated_at": node.updated_at.isoformat(),
+    }
+
+
+def _serialize_structure_diff(diff: BidOutlineStructureDiff) -> dict[str, object]:
+    return {
+        "diff_id": str(diff.diff_id),
+        "bid_outline_id": str(diff.bid_outline_id),
+        "parse_task_id": str(diff.parse_task_id),
+        "status": diff.status.value,
+        "diff_payload": diff.diff_payload or {},
+        "resolved_by": diff.resolved_by,
+        "resolved_at": diff.resolved_at.isoformat() if diff.resolved_at else None,
+        "created_at": diff.created_at.isoformat(),
     }
 
 
@@ -602,6 +621,154 @@ def batch_operate_bid_outline_nodes(
         {
             "bid_outline_id": str(bid_outline_id),
             "nodes": [_serialize_outline_node(node) for node in refreshed_nodes],
+            "audit_id": str(audit.audit_id),
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.get("/{bid_outline_id}/diffs")
+def list_bid_outline_diffs(
+    kb_id: UUID,
+    bid_outline_id: UUID,
+    status: str | None = None,
+    parse_task_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    outline = _get_outline_or_404(db, kb_id, bid_outline_id)
+    if outline is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("OUTLINE_NOT_FOUND", "Bid outline not found", trace_id=get_trace_id()),
+        )
+    query = db.query(BidOutlineStructureDiff).filter(
+        BidOutlineStructureDiff.kb_id == kb_id,
+        BidOutlineStructureDiff.bid_outline_id == bid_outline_id,
+    )
+    if status:
+        query = query.filter(BidOutlineStructureDiff.status == status)
+    if parse_task_id:
+        query = query.filter(BidOutlineStructureDiff.parse_task_id == parse_task_id)
+    diffs = query.order_by(BidOutlineStructureDiff.created_at.desc()).all()
+    return success(
+        {
+            "bid_outline_id": str(bid_outline_id),
+            "items": [_serialize_structure_diff(item) for item in diffs],
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/{bid_outline_id}/diffs/{diff_id}/apply")
+def apply_bid_outline_diff(
+    kb_id: UUID,
+    bid_outline_id: UUID,
+    diff_id: UUID,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    outline = _get_outline_or_404(db, kb_id, bid_outline_id)
+    if outline is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("OUTLINE_NOT_FOUND", "Bid outline not found", trace_id=get_trace_id()),
+        )
+    diff = (
+        db.query(BidOutlineStructureDiff)
+        .filter(
+            BidOutlineStructureDiff.kb_id == kb_id,
+            BidOutlineStructureDiff.bid_outline_id == bid_outline_id,
+            BidOutlineStructureDiff.diff_id == diff_id,
+        )
+        .one_or_none()
+    )
+    if diff is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("NOT_FOUND", "Structure diff not found", trace_id=get_trace_id()),
+        )
+    try:
+        refreshed_nodes = apply_diff(db, outline=outline, diff=diff, operator_id=operator_id)
+    except BidOutlineDiffServiceError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    audit = _append_actual_bid_audit_log(
+        db=db,
+        kb_id=kb_id,
+        action="outline_diff_apply",
+        object_type="bid_outline_structure_diff",
+        object_id=diff.diff_id,
+        operator_id=operator_id,
+        detail={"bid_outline_id": str(bid_outline_id), "parse_task_id": str(diff.parse_task_id)},
+    )
+    db.commit()
+    db.refresh(audit)
+    return success(
+        {
+            "bid_outline_id": str(bid_outline_id),
+            "structure_diff": _serialize_structure_diff(diff),
+            "nodes": [_serialize_outline_node(node) for node in refreshed_nodes],
+            "audit_id": str(audit.audit_id),
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/{bid_outline_id}/diffs/{diff_id}/reject")
+def reject_bid_outline_diff(
+    kb_id: UUID,
+    bid_outline_id: UUID,
+    diff_id: UUID,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    outline = _get_outline_or_404(db, kb_id, bid_outline_id)
+    if outline is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("OUTLINE_NOT_FOUND", "Bid outline not found", trace_id=get_trace_id()),
+        )
+    diff = (
+        db.query(BidOutlineStructureDiff)
+        .filter(
+            BidOutlineStructureDiff.kb_id == kb_id,
+            BidOutlineStructureDiff.bid_outline_id == bid_outline_id,
+            BidOutlineStructureDiff.diff_id == diff_id,
+        )
+        .one_or_none()
+    )
+    if diff is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("NOT_FOUND", "Structure diff not found", trace_id=get_trace_id()),
+        )
+    try:
+        reject_diff(db, diff=diff, operator_id=operator_id)
+    except BidOutlineDiffServiceError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    audit = _append_actual_bid_audit_log(
+        db=db,
+        kb_id=kb_id,
+        action="outline_diff_reject",
+        object_type="bid_outline_structure_diff",
+        object_id=diff.diff_id,
+        operator_id=operator_id,
+        detail={"bid_outline_id": str(bid_outline_id), "parse_task_id": str(diff.parse_task_id)},
+    )
+    db.commit()
+    db.refresh(audit)
+    return success(
+        {
+            "bid_outline_id": str(bid_outline_id),
+            "structure_diff": _serialize_structure_diff(diff),
             "audit_id": str(audit.audit_id),
         },
         trace_id=get_trace_id(),
