@@ -175,3 +175,260 @@ export async function confirmParseTask(
     },
   );
 }
+
+export interface ChapterTreeNode {
+  template_chapter_id: string;
+  parent_id: string | null;
+  title: string;
+  level: number;
+  sort_order: number;
+  chapter_taxonomy_id: string | null;
+  product_category_ids: string[];
+  required: boolean;
+  is_fixed_section: boolean;
+  ignored: boolean;
+  status: string;
+  bound_material_ids: string[];
+  variable_ids: string[];
+  rule_ids: string[];
+  children: ChapterTreeNode[];
+}
+
+export interface ChapterTreeResult {
+  template_id: string;
+  roots: ChapterTreeNode[];
+  audit_id?: string;
+}
+
+export interface ChapterBatchUpdatePayload {
+  expected_template_updated_at?: string;
+  chapters: Array<{
+    template_chapter_id: string;
+    parent_id: string | null;
+    title: string;
+    level: number;
+    sort_order: number;
+    chapter_taxonomy_id: string | null;
+    product_category_ids: string[];
+    required: boolean;
+    is_fixed_section: boolean;
+    ignored: boolean;
+  }>;
+}
+
+export async function getTemplateChapterTree(
+  kbId: string,
+  templateId: string,
+): Promise<ChapterTreeResult> {
+  return apiRequest<ChapterTreeResult>(`/api/v1/kbs/${kbId}/templates/${templateId}/chapters/tree`);
+}
+
+export async function batchUpdateTemplateChapters(
+  kbId: string,
+  templateId: string,
+  payload: ChapterBatchUpdatePayload,
+): Promise<ChapterTreeResult> {
+  return apiRequest<ChapterTreeResult>(`/api/v1/kbs/${kbId}/templates/${templateId}/chapters/batch-update`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export interface TemplateMaterialItem {
+  material_id: string;
+  template_chapter_id: string | null;
+  material_type: string;
+  title: string | null;
+  summary: string | null;
+  content: string | null;
+  import_id: string | null;
+  storage_path: string | null;
+  product_category_ids: string[];
+  extract_as_candidate: boolean;
+  status: string;
+  updated_at: string;
+}
+
+export interface TemplateVariableItem {
+  variable_id: string;
+  template_chapter_id: string | null;
+  variable_key: string;
+  display_name: string | null;
+  value_type: string;
+  required: boolean;
+  default_value: string | null;
+  description: string | null;
+  options: string[];
+  status: string;
+  updated_at: string;
+}
+
+export interface TemplateRuleItem {
+  rule_id: string;
+  template_chapter_id: string | null;
+  rule_type: string;
+  condition: Record<string, unknown> | null;
+  action: string;
+  message: string | null;
+  status: string;
+  updated_at: string;
+}
+
+type ListResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export async function listTemplateMaterials(
+  kbId: string,
+  templateId: string,
+): Promise<ListResult<TemplateMaterialItem>> {
+  return apiRequest<ListResult<TemplateMaterialItem>>(
+    `/api/v1/kbs/${kbId}/templates/${templateId}/materials?page_size=200`,
+  );
+}
+
+export async function createTemplateMaterial(
+  kbId: string,
+  templateId: string,
+  payload: {
+    template_chapter_id?: string | null;
+    material_type: string;
+    title?: string;
+    summary?: string;
+    content?: string;
+    import_id?: string | null;
+    storage_path?: string | null;
+    product_category_ids?: string[];
+    extract_as_candidate?: boolean;
+  },
+): Promise<TemplateMaterialItem> {
+  return apiRequest<TemplateMaterialItem>(`/api/v1/kbs/${kbId}/templates/${templateId}/materials`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateTemplateMaterial(
+  kbId: string,
+  templateId: string,
+  materialId: string,
+  payload: Partial<{
+    template_chapter_id: string | null;
+    material_type: string;
+    title: string | null;
+    summary: string | null;
+    content: string | null;
+    storage_path: string | null;
+    product_category_ids: string[];
+    extract_as_candidate: boolean;
+    status: string;
+  }>,
+): Promise<TemplateMaterialItem> {
+  return apiRequest<TemplateMaterialItem>(
+    `/api/v1/kbs/${kbId}/templates/${templateId}/materials/${materialId}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function listTemplateVariables(
+  kbId: string,
+  templateId: string,
+): Promise<ListResult<TemplateVariableItem>> {
+  return apiRequest<ListResult<TemplateVariableItem>>(
+    `/api/v1/kbs/${kbId}/templates/${templateId}/variables?page_size=200`,
+  );
+}
+
+export async function createTemplateVariable(
+  kbId: string,
+  templateId: string,
+  payload: {
+    template_chapter_id?: string | null;
+    variable_key: string;
+    display_name?: string;
+    value_type?: string;
+    required?: boolean;
+    default_value?: string;
+    description?: string;
+    options?: string[];
+  },
+): Promise<TemplateVariableItem> {
+  return apiRequest<TemplateVariableItem>(`/api/v1/kbs/${kbId}/templates/${templateId}/variables`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateTemplateVariable(
+  kbId: string,
+  templateId: string,
+  variableId: string,
+  payload: Partial<{
+    template_chapter_id: string | null;
+    display_name: string | null;
+    value_type: string;
+    required: boolean;
+    default_value: string | null;
+    description: string | null;
+    options: string[];
+    status: string;
+  }>,
+): Promise<TemplateVariableItem> {
+  return apiRequest<TemplateVariableItem>(
+    `/api/v1/kbs/${kbId}/templates/${templateId}/variables/${variableId}`,
+    {
+      method: "PATCH",
+      body: payload,
+    },
+  );
+}
+
+export async function listTemplateRules(
+  kbId: string,
+  templateId: string,
+): Promise<ListResult<TemplateRuleItem>> {
+  return apiRequest<ListResult<TemplateRuleItem>>(
+    `/api/v1/kbs/${kbId}/templates/${templateId}/rules?page_size=200`,
+  );
+}
+
+export async function createTemplateRule(
+  kbId: string,
+  templateId: string,
+  payload: {
+    template_chapter_id?: string | null;
+    rule_type: string;
+    condition?: Record<string, unknown> | null;
+    action?: string;
+    message?: string;
+  },
+): Promise<TemplateRuleItem> {
+  return apiRequest<TemplateRuleItem>(`/api/v1/kbs/${kbId}/templates/${templateId}/rules`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateTemplateRule(
+  kbId: string,
+  templateId: string,
+  ruleId: string,
+  payload: Partial<{
+    template_chapter_id: string | null;
+    condition: Record<string, unknown> | null;
+    action: string;
+    message: string | null;
+    status: string;
+  }>,
+): Promise<TemplateRuleItem> {
+  return apiRequest<TemplateRuleItem>(`/api/v1/kbs/${kbId}/templates/${templateId}/rules/${ruleId}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}

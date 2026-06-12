@@ -5,6 +5,7 @@ import FileImportCenterPage from "./pages/FileImportCenter";
 import KnowledgeBaseListPage from "./pages/KnowledgeBaseList";
 import ProductCategoryCenterPage from "./pages/ProductCategoryCenter";
 import ParseConfirmWizard from "./pages/TemplateLibraryCenter/ParseConfirmWizard";
+import TemplateDetailPage from "./pages/TemplateLibraryCenter/TemplateDetailPage";
 import TemplateLibraryCenterPage from "./pages/TemplateLibraryCenter";
 
 export default function App() {
@@ -19,6 +20,10 @@ export default function App() {
         <Route
           path="/template-libraries/parse-confirm/:parseTaskId"
           element={<ParseConfirmWizard />}
+        />
+        <Route
+          path="/template-libraries/templates/:templateId"
+          element={<TemplateDetailPage />}
         />
       </Route>
     </Routes>
