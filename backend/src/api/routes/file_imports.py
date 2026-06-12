@@ -19,6 +19,7 @@ from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.downstream_task_entry import DownstreamTaskEntry
 from src.models.import_task import ImportTask
 from src.models.knowledge_base import KnowledgeBase
+from src.models.actual_bid_parse_task import ActualBidParseTask, ActualBidParseTaskStatus
 from src.models.template_parse_task import TemplateParseTask, TemplateParseTaskStatus
 from src.services.confirm_service import (
     ConfirmServiceError,
@@ -26,6 +27,7 @@ from src.services.confirm_service import (
     create_downstream_entries,
     ignore_import,
 )
+from src.services.actual_bid_parse_runner import run_actual_bid_parse_in_new_session
 from src.services.file_import_service import FileImportServiceError, upload_file_and_enqueue
 from src.services.import_task_runner import retry_import_tasks
 from src.services.template_parse_runner import run_template_parse_in_new_session
@@ -71,10 +73,11 @@ def list_file_imports(
         .limit(page_size)
         .all()
     )
-    latest_parse_task_by_import: dict[str, TemplateParseTask] = {}
+    latest_template_parse_task_by_import: dict[str, TemplateParseTask] = {}
+    latest_actual_bid_parse_task_by_import: dict[str, ActualBidParseTask] = {}
     if rows:
         row_import_ids = [row.import_id for row in rows]
-        parse_tasks = (
+        template_parse_tasks = (
             db.query(TemplateParseTask)
             .filter(TemplateParseTask.import_id.in_(row_import_ids))
             .order_by(
@@ -83,12 +86,26 @@ def list_file_imports(
             )
             .all()
         )
-        for task in parse_tasks:
+        for task in template_parse_tasks:
             key = str(task.import_id)
-            if key not in latest_parse_task_by_import:
-                latest_parse_task_by_import[key] = task
+            if key not in latest_template_parse_task_by_import:
+                latest_template_parse_task_by_import[key] = task
 
-    def _map_parse_status(task: TemplateParseTask | None) -> str | None:
+        actual_bid_parse_tasks = (
+            db.query(ActualBidParseTask)
+            .filter(ActualBidParseTask.import_id.in_(row_import_ids))
+            .order_by(
+                ActualBidParseTask.import_id.asc(),
+                ActualBidParseTask.created_at.desc(),
+            )
+            .all()
+        )
+        for task in actual_bid_parse_tasks:
+            key = str(task.import_id)
+            if key not in latest_actual_bid_parse_task_by_import:
+                latest_actual_bid_parse_task_by_import[key] = task
+
+    def _map_template_parse_status(task: TemplateParseTask | None) -> str | None:
         if task is None:
             return None
         if task.status in {TemplateParseTaskStatus.pending, TemplateParseTaskStatus.running}:
@@ -99,6 +116,28 @@ def list_file_imports(
             return "failed"
         return None
 
+    def _map_actual_bid_parse_status(task: ActualBidParseTask | None) -> str | None:
+        if task is None:
+            return None
+        if task.status in {ActualBidParseTaskStatus.pending, ActualBidParseTaskStatus.running}:
+            return "parsing"
+        if task.status == ActualBidParseTaskStatus.ready:
+            return "parse_ready"
+        if task.status == ActualBidParseTaskStatus.confirmed:
+            return "parse_confirmed"
+        if task.status == ActualBidParseTaskStatus.failed:
+            return "parse_failed"
+        return None
+
+    def _resolve_parse_status(row: FileImport) -> str | None:
+        if row.file_purpose == FilePurpose.actual_bid:
+            return _map_actual_bid_parse_status(
+                latest_actual_bid_parse_task_by_import.get(str(row.import_id))
+            )
+        return _map_template_parse_status(
+            latest_template_parse_task_by_import.get(str(row.import_id))
+        )
+
     items = [
         {
             "import_id": str(row.import_id),
@@ -108,9 +147,7 @@ def list_file_imports(
             "file_hash": row.file_hash,
             "file_purpose": row.file_purpose.value if row.file_purpose else None,
             "status": row.status.value,
-            "parse_status": _map_parse_status(
-                latest_parse_task_by_import.get(str(row.import_id))
-            ),
+            "parse_status": _resolve_parse_status(row),
             "version_no": row.version_no,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -274,6 +311,8 @@ def confirm_file_import(
         )
     if any(item["task_type"] == "template_file_parse" for item in data["downstream_entries_created"]):
         background_tasks.add_task(run_template_parse_in_new_session)
+    if data.get("actual_bid_parse_task_id"):
+        background_tasks.add_task(run_actual_bid_parse_in_new_session)
     return success(data, trace_id=get_trace_id())
 
 
