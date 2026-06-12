@@ -12,7 +12,14 @@ export type FileImportStatus =
 
 export type FileType = "docx" | "pdf" | "ppt" | "xlsx" | "image" | "other" | string;
 
-export type ParseStatus = "running" | "parse_ready" | "failed" | null;
+export type ParseStatus =
+  | "running"
+  | "parsing"
+  | "parse_ready"
+  | "parse_confirmed"
+  | "failed"
+  | "parse_failed"
+  | null;
 
 export interface FileImportListItem {
   import_id: string;
@@ -23,6 +30,7 @@ export interface FileImportListItem {
   file_purpose: string | null;
   status: FileImportStatus;
   parse_status?: ParseStatus;
+  latest_parse_task_id?: string | null;
   version_no: number;
   created_at: string;
   updated_at: string;
@@ -286,6 +294,24 @@ export async function retryTemplateParse(
   importId: string,
 ): Promise<RetryTemplateParseResult> {
   return apiRequest<RetryTemplateParseResult>(`/api/v1/kbs/${kbId}/template-parse/trigger`, {
+    method: "POST",
+    body: { import_id: importId, force_reparse: true },
+  });
+}
+
+export interface RetryActualBidParseResult {
+  parse_task_id: string;
+  import_id: string;
+  document_id: string | null;
+  status: string;
+  trace_id: string | null;
+}
+
+export async function retryActualBidParse(
+  kbId: string,
+  importId: string,
+): Promise<RetryActualBidParseResult> {
+  return apiRequest<RetryActualBidParseResult>(`/api/v1/kbs/${kbId}/actual-bid-parse/trigger`, {
     method: "POST",
     body: { import_id: importId, force_reparse: true },
   });

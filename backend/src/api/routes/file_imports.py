@@ -138,6 +138,15 @@ def list_file_imports(
             latest_template_parse_task_by_import.get(str(row.import_id))
         )
 
+    def _resolve_latest_parse_task_id(row: FileImport) -> str | None:
+        if row.file_purpose == FilePurpose.actual_bid:
+            task = latest_actual_bid_parse_task_by_import.get(str(row.import_id))
+            return str(task.parse_task_id) if task else None
+        if row.file_purpose == FilePurpose.template_file:
+            task = latest_template_parse_task_by_import.get(str(row.import_id))
+            return str(task.parse_task_id) if task else None
+        return None
+
     items = [
         {
             "import_id": str(row.import_id),
@@ -148,6 +157,7 @@ def list_file_imports(
             "file_purpose": row.file_purpose.value if row.file_purpose else None,
             "status": row.status.value,
             "parse_status": _resolve_parse_status(row),
+            "latest_parse_task_id": _resolve_latest_parse_task_id(row),
             "version_no": row.version_no,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,

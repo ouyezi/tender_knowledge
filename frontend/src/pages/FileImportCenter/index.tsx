@@ -8,6 +8,7 @@ import ConfirmDrawer from "./ConfirmDrawer";
 import DuplicateFileModal from "./DuplicateFileModal";
 import TaskLogDrawer from "./TaskLogDrawer";
 import {
+  retryActualBidParse,
   retryImport,
   retryTemplateParse,
   getFileImport,
@@ -16,26 +17,27 @@ import {
   type ParseStatus,
   uploadFile,
 } from "../../services/fileImports";
-import { listParseTasks } from "../../services/templates";
 import { ApiError } from "../../services/apiClient";
 
-const PARSE_STATUS_TAG: Record<
-  Exclude<ParseStatus, null>,
-  { color: string; label: string }
-> = {
+const PARSE_STATUS_TAG: Record<string, { color: string; label: string }> = {
   running: { color: "processing", label: "解析中" },
+  parsing: { color: "processing", label: "解析中" },
   parse_ready: { color: "warning", label: "待确认" },
+  parse_confirmed: { color: "success", label: "已确认" },
   failed: { color: "error", label: "失败" },
+  parse_failed: { color: "error", label: "失败" },
 };
 
 function ParseStatusCell({
+  filePurpose,
   parseStatus,
   parseTaskId,
   retrying,
   onRetry,
 }: {
+  filePurpose?: string | null;
   parseStatus?: ParseStatus;
-  parseTaskId?: string;
+  parseTaskId?: string | null;
   retrying: boolean;
   onRetry: () => void;
 }) {
@@ -43,15 +45,24 @@ function ParseStatusCell({
     return <>—</>;
   }
 
-  const tagMeta = PARSE_STATUS_TAG[parseStatus];
+  const tagMeta = PARSE_STATUS_TAG[parseStatus] ?? {
+    color: "default",
+    label: parseStatus,
+  };
+  const isActualBid = filePurpose === "actual_bid";
+  const isFailed = parseStatus === "failed" || parseStatus === "parse_failed";
 
   return (
     <Space size="small">
       <Tag color={tagMeta.color}>{tagMeta.label}</Tag>
       {parseStatus === "parse_ready" && parseTaskId ? (
-        <Link to={`/template-libraries?highlight=${parseTaskId}`}>前往确认</Link>
+        isActualBid ? (
+          <Link to={`/outlines/parse-confirm/${parseTaskId}`}>前往确认</Link>
+        ) : (
+          <Link to={`/template-libraries?highlight=${parseTaskId}`}>前往确认</Link>
+        )
       ) : null}
-      {parseStatus === "failed" ? (
+      {isFailed ? (
         <Button type="link" size="small" loading={retrying} onClick={onRetry}>
           重试
         </Button>
@@ -75,32 +86,19 @@ export default function FileImportCenterPage() {
   const [pendingDuplicateFile, setPendingDuplicateFile] = useState<RcFile>();
   const [duplicateImportIds, setDuplicateImportIds] = useState<string[]>([]);
   const [duplicateHash, setDuplicateHash] = useState<string>();
-  const [parseTaskIdByImport, setParseTaskIdByImport] = useState<Record<string, string>>({});
   const [retryingParseImportIds, setRetryingParseImportIds] = useState<Set<string>>(new Set());
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
       setItems([]);
       setTotal(0);
-      setParseTaskIdByImport({});
       return;
     }
     setLoading(true);
     try {
-      const [result, taskResult] = await Promise.all([
-        listFileImports(selectedKbId, { page, page_size: pageSize }),
-        listParseTasks(selectedKbId, { page_size: 200 }),
-      ]);
+      const result = await listFileImports(selectedKbId, { page, page_size: pageSize });
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
-
-      const taskMap: Record<string, string> = {};
-      for (const task of taskResult.items ?? []) {
-        if (!taskMap[task.import_id]) {
-          taskMap[task.import_id] = task.parse_task_id;
-        }
-      }
-      setParseTaskIdByImport(taskMap);
     } catch (error) {
       message.error((error as Error).message);
     } finally {
@@ -108,15 +106,18 @@ export default function FileImportCenterPage() {
     }
   }, [page, pageSize, selectedKbId]);
 
-  const handleRetryTemplateParse = useCallback(
-    async (importId: string) => {
+  const handleRetryParse = useCallback(
+    async (importId: string, filePurpose?: string | null) => {
       if (!selectedKbId) {
         return;
       }
       setRetryingParseImportIds((prev) => new Set(prev).add(importId));
       try {
-        const result = await retryTemplateParse(selectedKbId, importId);
-        message.success(`已触发模板解析重试：${result.parse_task_id}`);
+        const result =
+          filePurpose === "actual_bid"
+            ? await retryActualBidParse(selectedKbId, importId)
+            : await retryTemplateParse(selectedKbId, importId);
+        message.success(`已触发解析重试：${result.parse_task_id}`);
         void loadData();
       } catch (error) {
         message.error((error as Error).message);
@@ -166,11 +167,12 @@ export default function FileImportCenterPage() {
         key: "parse_status",
         render: (value: ParseStatus | undefined, record) => (
           <ParseStatusCell
+            filePurpose={record.file_purpose}
             parseStatus={value ?? null}
-            parseTaskId={parseTaskIdByImport[record.import_id]}
+            parseTaskId={record.latest_parse_task_id}
             retrying={retryingParseImportIds.has(record.import_id)}
             onRetry={() => {
-              void handleRetryTemplateParse(record.import_id);
+              void handleRetryParse(record.import_id, record.file_purpose);
             }}
           />
         ),
@@ -231,7 +233,7 @@ export default function FileImportCenterPage() {
         ),
       },
     ],
-    [handleRetryTemplateParse, parseTaskIdByImport, retryingParseImportIds, loadData, selectedKbId],
+    [handleRetryParse, retryingParseImportIds, loadData, selectedKbId],
   );
 
   if (!selectedKbId) {
