@@ -6,6 +6,8 @@ import KnowledgeBaseListPage from "./pages/KnowledgeBaseList";
 import ProductCategoryCenterPage from "./pages/ProductCategoryCenter";
 import ParseConfirmWizard from "./pages/TemplateLibraryCenter/ParseConfirmWizard";
 import TemplateDetailPage from "./pages/TemplateLibraryCenter/TemplateDetailPage";
+import CandidateCenterPage from "./pages/CandidateCenter";
+import OutlineCenterPage from "./pages/OutlineCenter";
 import TemplateLibraryCenterPage from "./pages/TemplateLibraryCenter";
 
 export default function App() {
@@ -17,6 +19,8 @@ export default function App() {
         <Route path="/chapter-taxonomies" element={<ChapterTaxonomyCenterPage />} />
         <Route path="/file-imports" element={<FileImportCenterPage />} />
         <Route path="/template-libraries" element={<TemplateLibraryCenterPage />} />
+        <Route path="/outlines" element={<OutlineCenterPage />} />
+        <Route path="/candidates" element={<CandidateCenterPage />} />
         <Route
           path="/template-libraries/parse-confirm/:parseTaskId"
           element={<ParseConfirmWizard />}
