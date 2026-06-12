@@ -7,6 +7,7 @@ import {
   listActualBidParseTasks,
   type ActualBidParseTaskListItem,
 } from "../../services/actualBidParse";
+import { listOutlines, type BidOutlineListItem } from "../../services/bidOutlines";
 
 const todoColumns: ColumnsType<ActualBidParseTaskListItem> = [
   { title: "任务 ID", dataIndex: "parse_task_id", key: "parse_task_id", ellipsis: true },
@@ -41,17 +42,23 @@ const todoColumns: ColumnsType<ActualBidParseTaskListItem> = [
 export default function OutlineCenterPage() {
   const { selectedKbId, readOnly } = useKBContext();
   const [todoTasks, setTodoTasks] = useState<ActualBidParseTaskListItem[]>([]);
+  const [outlines, setOutlines] = useState<BidOutlineListItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
       setTodoTasks([]);
+      setOutlines([]);
       return;
     }
     setLoading(true);
     try {
-      const result = await listActualBidParseTasks(selectedKbId, { status: "ready", page_size: 100 });
-      setTodoTasks(result.items ?? []);
+      const [taskResult, outlineResult] = await Promise.all([
+        listActualBidParseTasks(selectedKbId, { status: "ready", page_size: 100 }),
+        listOutlines(selectedKbId, { page_size: 100 }),
+      ]);
+      setTodoTasks(taskResult.items ?? []);
+      setOutlines(outlineResult.items ?? []);
     } catch (error) {
       message.error((error as Error).message);
     } finally {
@@ -68,6 +75,38 @@ export default function OutlineCenterPage() {
   }
 
   const pendingTasks = useMemo(() => todoTasks.filter((item) => item.status === "ready"), [todoTasks]);
+  const outlineColumns: ColumnsType<BidOutlineListItem> = [
+    { title: "目录名", dataIndex: "outline_name", key: "outline_name", ellipsis: true },
+    {
+      title: "状态",
+      dataIndex: "status",
+      key: "status",
+      width: 120,
+      render: (value: string) => (
+        <Tag color={value === "confirmed" ? "green" : value === "draft" ? "blue" : "default"}>{value}</Tag>
+      ),
+    },
+    {
+      title: "项目名",
+      dataIndex: "project_name",
+      key: "project_name",
+      ellipsis: true,
+      render: (value: string | null) => value || "-",
+    },
+    {
+      title: "更新时间",
+      dataIndex: "updated_at",
+      key: "updated_at",
+      width: 180,
+      render: (value: string) => (value ? new Date(value).toLocaleString() : "-"),
+    },
+    {
+      title: "操作",
+      key: "action",
+      width: 100,
+      render: (_value, record) => <Link to={`/outlines/${record.bid_outline_id}`}>查看详情</Link>,
+    },
+  ];
 
   return (
     <>
@@ -96,7 +135,18 @@ export default function OutlineCenterPage() {
         )}
       </Card>
       <Card title="目录">
-        <Empty description="暂无目录" />
+        {outlines.length === 0 ? (
+          <Empty description="暂无目录" />
+        ) : (
+          <Table
+            rowKey="bid_outline_id"
+            size="small"
+            loading={loading}
+            columns={outlineColumns}
+            pagination={false}
+            dataSource={outlines}
+          />
+        )}
       </Card>
     </>
   );

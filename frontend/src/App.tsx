@@ -9,6 +9,7 @@ import TemplateDetailPage from "./pages/TemplateLibraryCenter/TemplateDetailPage
 import CandidateCenterPage from "./pages/CandidateCenter";
 import OutlineCenterPage from "./pages/OutlineCenter";
 import ActualBidParseConfirmWizard from "./pages/OutlineCenter/ActualBidParseConfirmWizard";
+import OutlineDetailPage from "./pages/OutlineCenter/OutlineDetailPage";
 import TemplateLibraryCenterPage from "./pages/TemplateLibraryCenter";
 
 export default function App() {
@@ -21,7 +22,7 @@ export default function App() {
         <Route path="/file-imports" element={<FileImportCenterPage />} />
         <Route path="/template-libraries" element={<TemplateLibraryCenterPage />} />
         <Route path="/outlines" element={<OutlineCenterPage />} />
-        <Route path="/outlines/:bidOutlineId" element={<OutlineCenterPage />} />
+        <Route path="/outlines/:bidOutlineId" element={<OutlineDetailPage />} />
         <Route
           path="/outlines/parse-confirm/:parseTaskId"
           element={<ActualBidParseConfirmWizard />}
