@@ -1,19 +1,64 @@
-import { Alert, Button, Card, Space, Table, Upload, message } from "antd";
+import { Alert, Button, Card, Space, Table, Tag, Upload, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { RcFile } from "antd/es/upload/interface";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useKBContext } from "../../layout/KBContext";
 import ConfirmDrawer from "./ConfirmDrawer";
 import DuplicateFileModal from "./DuplicateFileModal";
 import TaskLogDrawer from "./TaskLogDrawer";
 import {
   retryImport,
+  retryTemplateParse,
   getFileImport,
   listFileImports,
   type FileImportListItem,
+  type ParseStatus,
   uploadFile,
 } from "../../services/fileImports";
+import { listParseTasks } from "../../services/templates";
 import { ApiError } from "../../services/apiClient";
+
+const PARSE_STATUS_TAG: Record<
+  Exclude<ParseStatus, null>,
+  { color: string; label: string }
+> = {
+  running: { color: "processing", label: "解析中" },
+  parse_ready: { color: "warning", label: "待确认" },
+  failed: { color: "error", label: "失败" },
+};
+
+function ParseStatusCell({
+  parseStatus,
+  parseTaskId,
+  retrying,
+  onRetry,
+}: {
+  parseStatus?: ParseStatus;
+  parseTaskId?: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  if (!parseStatus) {
+    return <>—</>;
+  }
+
+  const tagMeta = PARSE_STATUS_TAG[parseStatus];
+
+  return (
+    <Space size="small">
+      <Tag color={tagMeta.color}>{tagMeta.label}</Tag>
+      {parseStatus === "parse_ready" && parseTaskId ? (
+        <Link to={`/template-libraries?highlight=${parseTaskId}`}>前往确认</Link>
+      ) : null}
+      {parseStatus === "failed" ? (
+        <Button type="link" size="small" loading={retrying} onClick={onRetry}>
+          重试
+        </Button>
+      ) : null}
+    </Space>
+  );
+}
 
 export default function FileImportCenterPage() {
   const { selectedKbId } = useKBContext();
@@ -30,24 +75,61 @@ export default function FileImportCenterPage() {
   const [pendingDuplicateFile, setPendingDuplicateFile] = useState<RcFile>();
   const [duplicateImportIds, setDuplicateImportIds] = useState<string[]>([]);
   const [duplicateHash, setDuplicateHash] = useState<string>();
+  const [parseTaskIdByImport, setParseTaskIdByImport] = useState<Record<string, string>>({});
+  const [retryingParseImportIds, setRetryingParseImportIds] = useState<Set<string>>(new Set());
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
       setItems([]);
       setTotal(0);
+      setParseTaskIdByImport({});
       return;
     }
     setLoading(true);
     try {
-      const result = await listFileImports(selectedKbId, { page, page_size: pageSize });
+      const [result, taskResult] = await Promise.all([
+        listFileImports(selectedKbId, { page, page_size: pageSize }),
+        listParseTasks(selectedKbId, { page_size: 200 }),
+      ]);
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
+
+      const taskMap: Record<string, string> = {};
+      for (const task of taskResult.items ?? []) {
+        if (!taskMap[task.import_id]) {
+          taskMap[task.import_id] = task.parse_task_id;
+        }
+      }
+      setParseTaskIdByImport(taskMap);
     } catch (error) {
       message.error((error as Error).message);
     } finally {
       setLoading(false);
     }
   }, [page, pageSize, selectedKbId]);
+
+  const handleRetryTemplateParse = useCallback(
+    async (importId: string) => {
+      if (!selectedKbId) {
+        return;
+      }
+      setRetryingParseImportIds((prev) => new Set(prev).add(importId));
+      try {
+        const result = await retryTemplateParse(selectedKbId, importId);
+        message.success(`已触发模板解析重试：${result.parse_task_id}`);
+        void loadData();
+      } catch (error) {
+        message.error((error as Error).message);
+      } finally {
+        setRetryingParseImportIds((prev) => {
+          const next = new Set(prev);
+          next.delete(importId);
+          return next;
+        });
+      }
+    },
+    [loadData, selectedKbId],
+  );
 
   useEffect(() => {
     void loadData();
@@ -82,7 +164,16 @@ export default function FileImportCenterPage() {
         title: "解析状态",
         dataIndex: "parse_status",
         key: "parse_status",
-        render: (value?: string | null) => value ?? "—",
+        render: (value: ParseStatus | undefined, record) => (
+          <ParseStatusCell
+            parseStatus={value ?? null}
+            parseTaskId={parseTaskIdByImport[record.import_id]}
+            retrying={retryingParseImportIds.has(record.import_id)}
+            onRetry={() => {
+              void handleRetryTemplateParse(record.import_id);
+            }}
+          />
+        ),
       },
       {
         title: "创建时间",
@@ -140,7 +231,7 @@ export default function FileImportCenterPage() {
         ),
       },
     ],
-    [loadData, selectedKbId],
+    [handleRetryTemplateParse, parseTaskIdByImport, retryingParseImportIds, loadData, selectedKbId],
   );
 
   if (!selectedKbId) {

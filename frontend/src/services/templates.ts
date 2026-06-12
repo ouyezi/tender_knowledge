@@ -46,11 +46,12 @@ export async function listTemplateLibraries(
 
 export async function listParseTasks(
   kbId: string,
-  params?: { page?: number; page_size?: number },
+  params?: { page?: number; page_size?: number; import_id?: string },
 ): Promise<TemplateParseTaskListResult> {
   const search = new URLSearchParams();
   if (params?.page) search.set("page", String(params.page));
   if (params?.page_size) search.set("page_size", String(params.page_size));
+  if (params?.import_id) search.set("import_id", params.import_id);
   const qs = search.toString();
   return apiRequest<TemplateParseTaskListResult>(
     `/api/v1/kbs/${kbId}/template-parse/tasks${qs ? `?${qs}` : ""}`,
