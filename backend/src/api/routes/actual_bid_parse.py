@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_kb_or_404, kb_write_guard
@@ -21,6 +21,10 @@ from src.services.actual_bid_parse_runner import (
     run_actual_bid_parse_in_new_session,
 )
 from src.api.deps import get_operator_id
+from src.services.actual_bid_confirm_service import (
+    ActualBidConfirmServiceError,
+    apply_confirm,
+)
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/actual-bid-parse",
@@ -37,6 +41,28 @@ class PatchDocumentRequest(BaseModel):
     bid_project_name: str | None = None
     bid_customer_name: str | None = None
     product_category_ids: list[UUID] | None = None
+
+
+class ConfirmDocumentRequest(BaseModel):
+    bid_project_name: str | None = None
+    bid_customer_name: str | None = None
+    product_category_ids: list[UUID] | None = None
+
+
+class ConfirmOutlineNodeRequest(BaseModel):
+    outline_node_id: UUID
+    parent_id: UUID | None = None
+    title: str
+    level: int
+    sort_order: int = 0
+    chapter_taxonomy_id: UUID | None = None
+    product_category_ids: list[UUID] = Field(default_factory=list)
+    needs_manual_review: bool = False
+
+
+class ConfirmActualBidParseRequest(BaseModel):
+    document: ConfirmDocumentRequest
+    outline_nodes: list[ConfirmOutlineNodeRequest] = Field(default_factory=list)
 
 
 def _serialize_document(db: Session, document: Document) -> dict:
@@ -251,6 +277,55 @@ def get_parse_task(
                 }
                 for entry in downstream_entries
             ],
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/tasks/{parse_task_id}/confirm")
+def confirm_parse_task(
+    kb_id: UUID,
+    parse_task_id: UUID,
+    body: ConfirmActualBidParseRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    task = (
+        db.query(ActualBidParseTask)
+        .filter(
+            ActualBidParseTask.kb_id == kb_id,
+            ActualBidParseTask.parse_task_id == parse_task_id,
+        )
+        .one_or_none()
+    )
+    if task is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("NOT_FOUND", "Parse task not found", trace_id=get_trace_id()),
+        )
+    try:
+        result = apply_confirm(
+            db,
+            task=task,
+            payload=body.model_dump(mode="python"),
+            operator_id=operator_id,
+        )
+    except ActualBidConfirmServiceError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    return success(
+        {
+            "parse_task_id": str(result.parse_task_id),
+            "document_id": str(result.document_id),
+            "bid_outline_id": str(result.bid_outline_id),
+            "status": result.status,
+            "structure_locked_at": (
+                result.structure_locked_at.isoformat() if result.structure_locked_at else None
+            ),
+            "updated_outline_nodes": result.updated_outline_nodes,
         },
         trace_id=get_trace_id(),
     )
