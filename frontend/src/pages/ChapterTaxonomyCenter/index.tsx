@@ -93,6 +93,16 @@ export default function ChapterTaxonomyCenterPage() {
     return treeOptions.filter((opt) => !excluded.has(opt.value));
   }, [editor, nodes, treeOptions]);
 
+  const selectedTaxonomyLabel = useMemo(() => {
+    if (editor.kind === "existing") {
+      return detail?.standard_name;
+    }
+    if (editor.kind === "new" && editor.parentId) {
+      return treeOptions.find((opt) => opt.value === editor.parentId)?.label;
+    }
+    return undefined;
+  }, [detail, editor, treeOptions]);
+
   const loadTree = useCallback(async () => {
     if (!selectedKbId) {
       setNodes([]);
@@ -288,6 +298,9 @@ export default function ChapterTaxonomyCenterPage() {
           readOnly={readOnly}
           saving={saving || loadingDetail}
           isNew={editor.kind === "new"}
+          parentLabel={
+            editor.kind === "new" && editor.parentId ? selectedTaxonomyLabel : undefined
+          }
           productCategoryOptions={productCategoryOptions}
           onSave={handleSave}
         />

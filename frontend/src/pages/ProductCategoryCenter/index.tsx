@@ -69,6 +69,16 @@ export default function ProductCategoryCenterPage() {
     return treeOptions.filter((opt) => !excluded.has(opt.value));
   }, [editor, nodes, treeOptions]);
 
+  const selectedCategoryLabel = useMemo(() => {
+    if (editor.kind === "existing") {
+      return detail?.category_name;
+    }
+    if (editor.kind === "new" && editor.parentId) {
+      return treeOptions.find((opt) => opt.value === editor.parentId)?.label;
+    }
+    return undefined;
+  }, [detail, editor, treeOptions]);
+
   const loadTree = useCallback(async () => {
     if (!selectedKbId) {
       setNodes([]);
@@ -252,6 +262,9 @@ export default function ProductCategoryCenterPage() {
           readOnly={readOnly}
           saving={saving || loadingDetail}
           isNew={editor.kind === "new"}
+          parentLabel={
+            editor.kind === "new" && editor.parentId ? selectedCategoryLabel : undefined
+          }
           onSave={handleSave}
         />
       </Col>

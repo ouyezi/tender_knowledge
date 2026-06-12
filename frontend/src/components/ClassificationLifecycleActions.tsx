@@ -1,4 +1,4 @@
-import { Button, Popconfirm, Space } from "antd";
+import { Button, Popconfirm, Space, Tooltip } from "antd";
 
 interface ClassificationLifecycleActionsProps {
   readOnly?: boolean;
@@ -29,7 +29,7 @@ export default function ClassificationLifecycleActions({
         合并
       </Button>
       <Popconfirm
-        title="确认停用该分类？"
+        title="停用后该分类不可被新对象选用，已有引用保留。确认停用？"
         onConfirm={onDeactivate}
         disabled={disabled || status !== "active"}
       >
@@ -38,13 +38,17 @@ export default function ClassificationLifecycleActions({
         </Button>
       </Popconfirm>
       <Popconfirm
-        title="确认归档该分类？"
+        title="归档不会删除数据，仅标记为历史分类，默认列表中隐藏。确认归档？"
         onConfirm={onArchive}
         disabled={disabled || status === "archived"}
       >
-        <Button disabled={disabled || status === "archived"}>
-          归档
-        </Button>
+        <Tooltip title="归档 ≠ 删除，数据仍保留">
+          <span>
+            <Button disabled={disabled || status === "archived"}>
+              归档
+            </Button>
+          </span>
+        </Tooltip>
       </Popconfirm>
     </Space>
   );

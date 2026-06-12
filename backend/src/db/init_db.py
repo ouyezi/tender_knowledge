@@ -46,6 +46,15 @@ def _sync_postgres_enum(conn, type_name: str, values: list[str]) -> None:
         existing.add(value)
 
 
+def _sync_missing_columns(conn) -> None:
+    conn.execute(
+        text(
+            "ALTER TABLE template_parse_tasks "
+            "ADD COLUMN IF NOT EXISTS llm_progress JSONB"
+        )
+    )
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     if engine.dialect.name != "postgresql":
@@ -56,3 +65,4 @@ def init_db() -> None:
             "referenceobjecttype",
             [member.value for member in ReferenceObjectType],
         )
+        _sync_missing_columns(conn)

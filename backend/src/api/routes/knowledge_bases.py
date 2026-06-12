@@ -29,6 +29,8 @@ def _kb_dict(kb: KnowledgeBase) -> dict:
         "kb_id": str(kb.kb_id),
         "name": kb.name,
         "status": kb.status.value,
+        "created_at": kb.created_at.isoformat() if kb.created_at else None,
+        "updated_at": kb.updated_at.isoformat() if kb.updated_at else None,
     }
 
 
