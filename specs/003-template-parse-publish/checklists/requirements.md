@@ -34,4 +34,5 @@
 - 全部检查项通过。规格已映射 `docs/epics/epic2-模板库解析与发布.md` 与 Constitution
   人工确认门、章节优先、知识资产优先原则。
 - Bid Outline 转 Template、复杂规则类型等已明确列入 Out of Scope / Assumptions。
+- 2026-06-12 澄清：分类粒度在知识块；LLM 环境变量可切换；大文件分批 LLM 处理。
 - 可进入 `/speckit-plan` 阶段。

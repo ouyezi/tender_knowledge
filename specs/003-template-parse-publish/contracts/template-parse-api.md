@@ -72,7 +72,13 @@
   "retry_count": 0,
   "started_at": "2026-06-12T10:00:00Z",
   "finished_at": "2026-06-12T10:00:30Z",
-  "created_at": "2026-06-12T09:59:55Z"
+  "created_at": "2026-06-12T09:59:55Z",
+  "llm_progress": {
+    "total_chunks": 12,
+    "completed_chunks": 12,
+    "failed_chunks": 0,
+    "degraded_to_rule": 2
+  }
 }
 ```
 
@@ -91,8 +97,15 @@
   "template_id": "uuid",
   "status": "parse_ready",
   "log_lines": [
-    { "ts": "2026-06-12T10:00:05Z", "level": "info", "message": "开始解析 docx" }
+    { "ts": "2026-06-12T10:00:05Z", "level": "info", "message": "开始解析 docx" },
+    { "ts": "2026-06-12T10:00:20Z", "level": "info", "message": "块级分类 12/12 完成" }
   ],
+  "llm_progress": {
+    "total_chunks": 12,
+    "completed_chunks": 12,
+    "failed_chunks": 0,
+    "degraded_to_rule": 0
+  },
   "suggestion": { "...": "见 GET /tasks/{id}/suggestion" },
   "structure_diff": null
 }
@@ -123,17 +136,44 @@
       "sort_order": 0,
       "chapter_taxonomy_id": "uuid",
       "product_category_ids": [],
+      "suggested_product_category_ids": ["uuid"],
+      "suggested_chapter_taxonomy_id": "uuid",
+      "classification_confidence": 0.82,
+      "suggestion_source": "hybrid",
+      "classification_rationale": "标题命中售后服务；LLM 确认章节类型",
       "required": true,
       "is_fixed_section": true,
       "ignored": false
     }
   ],
-  "suggested_materials": [],
-  "suggested_candidates": [],
-  "suggestion_source": "rule",
-  "rationale": "文件名命中产品分类；标题样式识别章节"
+  "suggested_materials": [
+    {
+      "temp_id": "m1",
+      "chapter_temp_id": "n1",
+      "material_type": "fixed_paragraph",
+      "suggested_product_category_ids": [],
+      "classification_confidence": 0.6,
+      "suggestion_source": "rule"
+    }
+  ],
+  "suggested_candidates": [
+    {
+      "temp_id": "c1",
+      "candidate_type": "ku",
+      "suggested_knowledge_type": "scheme",
+      "suggested_product_category_ids": ["uuid"],
+      "suggested_chapter_taxonomy_id": "uuid",
+      "classification_confidence": 0.75,
+      "suggestion_source": "llm"
+    }
+  ],
+  "suggestion_source": "hybrid",
+  "rationale": "块级规则+LLM；文件级不做细分类"
 }
 ```
+
+> **分类粒度**：`suggested_*` 数组中每一项为独立知识块及其分类建议。
+> 文件级仅 Epic 1 `file_purpose`；本 API 不对整文件返回单一细粒度分类。
 
 ---
 
@@ -225,5 +265,16 @@
 ```sql
 downstream_task_entries WHERE task_type='template_file_parse' AND status='pending'
 ```
+
+**解析流水线**（澄清后）：
+
+```text
+1. docx_outline_parser + docx_content_extractor  → 知识块列表（无 LLM）
+2. chunk_classification_service.classify(each chunk)  → 块级分类（可选 LLM，失败降级）
+3. 更新 template_parse_tasks.llm_progress
+4. 写入 template_parse_suggestions → parse_ready
+```
+
+约束：**禁止**将整份 docx 文本一次性送入 LLM（FR-022）。
 
 claim 后执行解析，完成后 downstream `completed`；失败 `failed` 且 File Import 不变。

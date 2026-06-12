@@ -47,6 +47,26 @@ def test_upload_file_rejects_zero_byte_file(client, seeded_kb):
     assert resp.status_code == 422
 
 
+def test_upload_docm_maps_to_docx_type(client, seeded_kb, sample_docx_path):
+    with sample_docx_path.open("rb") as f:
+        resp = client.post(
+            f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports",
+            headers={"X-Operator-Id": "admin"},
+            files={
+                "file": (
+                    "鼎信餐补标书.docm",
+                    f,
+                    "application/vnd.ms-word.document.macroenabled.12",
+                )
+            },
+        )
+
+    assert resp.status_code == 201
+    data = resp.json()["data"]
+    assert data["file_type"] == "docx"
+    assert data["file_name"] == "鼎信餐补标书.docm"
+
+
 def test_upload_file_rejects_bad_extension(client, seeded_kb):
     resp = client.post(
         f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports",

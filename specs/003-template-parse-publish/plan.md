@@ -1,6 +1,6 @@
 # Implementation Plan: Epic 2 模板库解析与发布
 
-**Branch**: `003-template-parse-publish` | **Date**: 2026-06-12 | **Spec**: [spec.md](./spec.md)
+**Branch**: `003-template-parse-publish` | **Date**: 2026-06-12（澄清修订） | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `specs/003-template-parse-publish/spec.md`
 
@@ -13,6 +13,15 @@
 异步任务、解析确认与模板库中心 UI。产出 Candidate Knowledge 候选供 Epic 4 消费；已发布
 Template Library 供 Epic 5/6 检索与模块建议。
 
+**澄清修订（2026-06-12）** 在原有设计之上追加三项约束，影响解析流水线与后续实现任务：
+
+1. **分类粒度**：细粒度分类（产品分类、章节类型、知识类型）落在 **知识块**（Template Chapter /
+   Template Material / Candidate Knowledge Stub），不对导入文件做细分类；文件可能是完整标书、
+   模板、产品方案或资质合集，文件级仅保留 Epic 1 的 `file_purpose`。
+2. **LLM 配置**：通过环境变量（`LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`）
+   切换千问或其他 OpenAI 兼容提供商；无 Key 或调用失败时降级规则引擎，不阻断解析。
+3. **大文件策略**：先 docx 结构化切分，再 **按知识块分批** 调用 LLM；禁止整文件一次性 LLM。
+
 ## Technical Context
 
 **Language/Version**: Python 3.11（后端）、TypeScript 5.x（前端）
@@ -21,25 +30,32 @@ Template Library 供 Epic 5/6 检索与模块建议。
 python-docx（docx 标题/段落/表格解析）, lxml（docx XML 辅助）; React 18, Ant Design 5,
 Vite, @ant-design/pro-components（树表/抽屉）
 
+**LLM Integration**: `src/config.py` 环境变量预设（默认千问 `qwen-plus`）；
+`src/services/llm_client.py` OpenAI 兼容 HTTP 客户端；`chunk_classification_service.py`
+按块调用 + 规则降级（FR-021/FR-023）
+
 **Storage**: PostgreSQL 15（Template 域实体、解析任务、审计、Candidate 占位）；
 Epic 1 本地 `STORAGE_ROOT` 只读消费源文件
 
 **Testing**: pytest + httpx（契约/集成）；Vitest（章节树 UI）；fixtures 使用
-`tests/fixtures/sample-template.docx`
+`tests/fixtures/sample-template.docx`；LLM 路径 mock / `LLM_API_KEY=force_fail` 降级用例
 
 **Target Platform**: Linux/macOS 开发；Docker Compose；生产 Linux 容器
 
 **Project Type**: web-service（backend API + admin frontend）
 
 **Performance Goals**: 解析任务入队响应 P95 < 1s；50 页以内 docx 解析完成 P95 < 60s（SC-001）；
-章节树加载/保存 P95 < 1s；Template Library 列表 P95 < 500ms
+章节树加载/保存 P95 < 1s；Template Library 列表 P95 < 500ms；**大文件（>50MB 或 >200 页）**
+首批可确认知识块 P95 < 120s（SC-008，分批 LLM，非整文件）
 
 **Constraints**: 单文件导入；人工确认优先于机器解析；已确认结构不可被重解析静默覆盖；
 未发布/未确认资产不可对外检索；MVP 变量仅 `{{key}}` 文本替换；规则仅 required/optional/
-product_match；无 Bid Outline 转 Template、无 Template Instance
+product_match；无 Bid Outline 转 Template、无 Template Instance；**LLM 仅按知识块批次调用**；
+文件级不做细粒度分类
 
 **Scale/Scope**: 单 KB 活跃 Template Library ~50、单 Template 章节节点 ~200、Material ~500；
-Epic 2 不含 Candidate 工作台完整 UI（Epic 4）、不含模块推荐实现（Epic 5）
+单 docx 知识块 ~500（章节+段落+素材）；Epic 2 不含 Candidate 工作台完整 UI（Epic 4）、
+不含模块推荐实现（Epic 5）
 
 ## Constitution Check
 
@@ -100,12 +116,14 @@ backend/
 │   │   ├── candidate_knowledge_stub.py    # Epic 4 消费占位
 │   │   └── template_audit_log.py
 │   ├── services/
-│   │   ├── template_parse_runner.py       # 消费 downstream + docx parse
-│   │   ├── docx_outline_parser.py         # 标题树 + 编号排序
-│   │   ├── docx_content_extractor.py        # 段落/表格/图片 → material
-│   │   ├── template_confirm_service.py      # 解析确认 + diff 策略
-│   │   ├── template_publish_service.py      # 发布校验 + 版本快照
-│   │   └── variable_detector.py             # {{key}} 扫描
+│   │   ├── template_parse_runner.py       # 消费 downstream + docx parse + 块级 LLM 调度
+│   │   ├── docx_outline_parser.py         # 标题树 + 编号排序（无 LLM）
+│   │   ├── docx_content_extractor.py      # 段落/表格/图片 → material 知识块
+│   │   ├── chunk_classification_service.py # 知识块级分类建议（规则 + 可选 LLM）
+│   │   ├── llm_client.py                  # OpenAI 兼容客户端 + truncate_for_llm
+│   │   ├── template_confirm_service.py    # 解析确认 + diff 策略
+│   │   ├── template_publish_service.py    # 发布校验 + 版本快照
+│   │   └── variable_detector.py           # {{key}} 扫描
 │   └── main.py
 ├── tests/
 │   ├── contract/test_template_parse*.py
@@ -143,7 +161,31 @@ frontend/
 ## Phase 0 Output
 
 See [research.md](./research.md) — docx 解析策略、任务编排、确认/diff、发布版本、
-Candidate 占位、变量/规则 MVP 均已决议。
+Candidate 占位、变量/规则 MVP、**知识块级分类（R13–R15）**、**LLM 环境配置（R13）**、
+**大文件分批 LLM（R15）** 均已决议。
+
+## Clarification Delta（2026-06-12 → 后续实现变更）
+
+| 领域 | 原设计 | 澄清后变更 | 影响组件 |
+|------|--------|------------|----------|
+| 分类粒度 | 文件名/标题 → 全局建议 | 每个知识块独立分类建议；文件级仅 `file_purpose` | `chunk_classification_service`, suggestion JSON, 确认 UI |
+| LLM 调用 | research 倾向纯规则；LLM 未定型 | 环境变量驱动千问；`llm_client` 已落地；失败降级 | `config.py`, `llm_client.py`, `purpose_suggestion` 同模式 |
+| 大文件 | 50 页 P95 < 60s | 禁止整文件 LLM；结构解析后按块批处理；进度可观测 | `template_parse_runner`, `llm_progress` 字段, quickstart 场景 7 |
+
+### 增量任务（相对已执行基础逻辑）
+
+1. **`chunk_classification_service`**：输入 `KnowledgeChunk`（chapter/material/candidate），
+   输出 per-block `product_category_ids`、`chapter_taxonomy_id`、`knowledge_type`、
+   `confidence`、`suggestion_source`（rule/llm/hybrid）。
+2. **`template_parse_runner` 流水线拆分**：
+   `docx 结构解析（同步，无 LLM）` → `构建知识块列表` → `分批 LLM 分类（可选）`
+   → `写入 template_parse_suggestions` → `parse_ready`。
+3. **Suggestion / Confirm API**：章节树、materials、candidates 每项携带块级分类字段；
+   确认 UI 以知识块为粒度展示/修正（非文件级）。
+4. **`template_parse_tasks.llm_progress`**：记录 `total_chunks`、`completed_chunks`、
+   `failed_chunks`、`degraded_to_rule`；任务详情 API 暴露进度。
+5. **测试**：无 Key 全规则路径；mock LLM 块级分类；大 fixture 验证无整文件 LLM 调用；
+   `LLM_API_KEY=force_fail` 降级不断解析。
 
 ## Phase 1 Output
 
@@ -171,11 +213,13 @@ Candidate 占位、变量/规则 MVP 均已决议。
 
 1. Models + migrations：template 域全表 + `classification_reference.object_type` 扩展
 2. `docx_outline_parser` + unit tests（sample-template.docx）
-3. `template_parse_runner`：claim downstream → parse → suggestions + draft entities
-4. Parse confirm API + structure lock + diff on re-parse
-5. Chapter tree CRUD + audit
-6. Library/Template publish + version snapshot
-7. TemplateLibraryCenter UI 主流程
+3. `docx_content_extractor` → 知识块列表（chapter / material / candidate 候选）
+4. `chunk_classification_service` + `llm_client` 集成（块级分类 + 降级）
+5. `template_parse_runner`：claim downstream → 结构解析 → 分批块级 LLM → suggestions
+6. Parse confirm API + structure lock + diff on re-parse（块级分类字段）
+7. Chapter tree CRUD + audit
+8. Library/Template publish + version snapshot
+9. TemplateLibraryCenter UI 主流程（确认抽屉按知识块展示分类）
 
 ### Out of scope (explicit)
 

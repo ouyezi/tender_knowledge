@@ -377,7 +377,8 @@ def confirm_parse_task(
                 code="INVALID_INPUT",
                 status_code=422,
             )
-        material_row = material_by_temp.get(temp_id)
+        material_temp = temp_id[2:] if temp_id.startswith("c_") else temp_id
+        material_row = material_by_temp.get(material_temp) or material_by_temp.get(temp_id)
         candidate_payload = candidate_payload_by_temp.get(temp_id, {})
         chapter_temp = candidate_payload.get("chapter_temp_id")
         chapter_row = chapters_by_temp.get(str(chapter_temp)) if chapter_temp else None
@@ -398,10 +399,25 @@ def confirm_parse_task(
             material_row.content if material_row else None
         )
         product_category_ids = _as_uuid_list(
-            candidate_payload.get("product_category_ids")
-            or (chapter_row.product_category_ids if chapter_row else template.product_category_ids),
+            action.get("product_category_ids")
+            or candidate_payload.get("product_category_ids")
+            or (chapter_row.product_category_ids if chapter_row else []),
             field_name="candidate.product_category_ids",
         )
+        chapter_taxonomy_id = _as_uuid(
+            action.get("chapter_taxonomy_id") or candidate_payload.get("chapter_taxonomy_id"),
+            field_name="chapter_taxonomy_id",
+        )
+        if chapter_taxonomy_id is None and chapter_row:
+            chapter_taxonomy_id = chapter_row.chapter_taxonomy_id
+        knowledge_type = action.get("knowledge_type") or candidate_payload.get(
+            "suggested_knowledge_type"
+        )
+        suggestion_source = candidate_payload.get("suggestion_source")
+        try:
+            classification_confidence = float(candidate_payload.get("classification_confidence"))
+        except (TypeError, ValueError):
+            classification_confidence = None
         db.add(
             CandidateKnowledgeStub(
                 kb_id=template.kb_id,
@@ -414,7 +430,11 @@ def confirm_parse_task(
                 summary=summary,
                 content_preview=content_preview,
                 product_category_ids=product_category_ids,
-                chapter_taxonomy_id=chapter_row.chapter_taxonomy_id if chapter_row else None,
+                chapter_taxonomy_id=chapter_taxonomy_id,
+                suggested_knowledge_type=str(knowledge_type) if knowledge_type else None,
+                suggestion_source=str(suggestion_source) if suggestion_source else None,
+                classification_confidence=classification_confidence,
+                chunk_ref=temp_id,
             )
         )
         created_stub_count += 1

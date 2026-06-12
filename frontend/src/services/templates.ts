@@ -16,6 +16,23 @@ export interface TemplateLibraryListResult {
   page_size: number;
 }
 
+export interface LLMProgress {
+  total_chunks: number;
+  completed_chunks: number;
+  failed_chunks: number;
+  degraded_to_rule: number;
+  batch_size?: number;
+}
+
+export interface BlockClassificationFields {
+  suggested_product_category_ids?: string[];
+  suggested_chapter_taxonomy_id?: string | null;
+  suggested_knowledge_type?: string | null;
+  classification_confidence?: number;
+  suggestion_source?: "rule" | "llm" | "hybrid";
+  classification_rationale?: string | null;
+}
+
 export interface TemplateParseTaskListItem {
   parse_task_id: string;
   import_id: string;
@@ -24,6 +41,7 @@ export interface TemplateParseTaskListItem {
   parse_strategy?: string | null;
   error_message?: string | null;
   retry_count?: number;
+  llm_progress?: LLMProgress | null;
   started_at?: string | null;
   finished_at?: string | null;
   created_at: string;
@@ -65,7 +83,7 @@ export async function listParseTasks(
   );
 }
 
-export interface ParseSuggestionChapterNode {
+export interface ParseSuggestionChapterNode extends BlockClassificationFields {
   temp_id: string;
   parent_temp_id: string | null;
   title: string;
@@ -79,7 +97,7 @@ export interface ParseSuggestionChapterNode {
   needs_manual_review?: boolean;
 }
 
-export interface ParseSuggestionMaterial {
+export interface ParseSuggestionMaterial extends BlockClassificationFields {
   temp_id: string;
   chapter_temp_id: string | null;
   material_type: string;
@@ -91,7 +109,7 @@ export interface ParseSuggestionMaterial {
   ignored?: boolean;
 }
 
-export interface ParseSuggestionCandidate {
+export interface ParseSuggestionCandidate extends BlockClassificationFields {
   temp_id: string;
   chapter_temp_id?: string | null;
   candidate_type?: string;
@@ -99,7 +117,9 @@ export interface ParseSuggestionCandidate {
   summary?: string;
   content_preview?: string;
   product_category_ids?: string[];
+  knowledge_type?: string | null;
   accepted?: boolean;
+  chapter_taxonomy_id?: string | null;
 }
 
 export interface ParseSuggestion {
@@ -123,6 +143,7 @@ export interface ParseTaskDetail {
   log_lines: Array<{ ts: string; level: string; message: string }>;
   error_message: string | null;
   retry_count: number;
+  llm_progress?: LLMProgress | null;
   started_at: string | null;
   finished_at: string | null;
   suggestion: ParseSuggestion | null;
@@ -155,6 +176,9 @@ export interface ConfirmParsePayload {
     temp_id: string;
     candidate_type: string;
     accepted: boolean;
+    product_category_ids?: string[];
+    chapter_taxonomy_id?: string | null;
+    knowledge_type?: string | null;
   }>;
 }
 

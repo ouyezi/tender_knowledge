@@ -27,8 +27,12 @@ from src.models.template_parse_task import (
     TemplateParseTaskStatus,
     TemplateParseStrategy,
 )
+from src.models.template_parse_suggestion import TemplateSuggestionSource
+from src.services.chunk_classification_service import classify_chunk
+from src.services.classification_rule_index import load_classification_index
 from src.services.docx_content_extractor import extract_fixed_paragraph_materials
 from src.services.docx_outline_parser import parse_outline
+from src.services.knowledge_chunk import build_knowledge_chunks, merge_classifications_into_suggestion
 
 
 class TemplateParseServiceError(Exception):
@@ -56,6 +60,52 @@ def _pick_template_type(file_import: FileImport) -> TemplateType:
     if file_import.file_purpose == FilePurpose.qualification:
         return TemplateType.qualification
     return TemplateType.technical_bid
+
+
+def _build_candidate_suggestions(materials: list[dict]) -> list[dict]:
+    candidates: list[dict] = []
+    for material in materials:
+        content = str(material.get("content") or "")
+        if not bool(material.get("extract_as_candidate")) and len(content) < 200:
+            continue
+        candidates.append(
+            {
+                "temp_id": f"c_{material['temp_id']}",
+                "chapter_temp_id": material.get("chapter_temp_id"),
+                "candidate_type": "ku",
+                "title": material.get("title") or f"候选 {material['temp_id']}",
+                "content_preview": content[:2000],
+                "accepted": True,
+            }
+        )
+    return candidates
+
+
+def _classify_chunks_for_task(
+    db: Session,
+    *,
+    kb_id,
+    chunks,
+    task: TemplateParseTask,
+) -> dict:
+    index = load_classification_index(db, kb_id=kb_id)
+    llm_progress = {
+        "total_chunks": len(chunks),
+        "completed_chunks": 0,
+        "failed_chunks": 0,
+        "degraded_to_rule": 0,
+        "batch_size": 1,
+    }
+    results = {}
+    for chunk in chunks:
+        result, degraded = classify_chunk(db, kb_id=kb_id, chunk=chunk, index=index)
+        results[chunk.chunk_ref] = result
+        llm_progress["completed_chunks"] += 1
+        if degraded:
+            llm_progress["degraded_to_rule"] += 1
+        task.llm_progress = dict(llm_progress)
+        db.flush()
+    return results
 
 
 def _to_suggested_tree(outline_nodes) -> list[dict]:
@@ -279,7 +329,29 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
 
         outline_nodes = parse_outline(docx_path)
         materials = extract_fixed_paragraph_materials(docx_path, outline_nodes=outline_nodes)
+        suggested_candidates = _build_candidate_suggestions(materials)
         suggested_tree = _to_suggested_tree(outline_nodes)
+        chunks = build_knowledge_chunks(
+            outline_nodes=outline_nodes,
+            materials=materials,
+            candidates=suggested_candidates,
+        )
+        classification_results = _classify_chunks_for_task(
+            db,
+            kb_id=file_import.kb_id,
+            chunks=chunks,
+            task=task,
+        )
+        merged = merge_classifications_into_suggestion(
+            suggested_chapter_tree=suggested_tree,
+            suggested_materials=materials,
+            suggested_candidates=suggested_candidates,
+            chunks=chunks,
+            results=classification_results,
+        )
+        suggested_tree = merged["suggested_chapter_tree"]
+        materials = merged["suggested_materials"]
+        suggested_candidates = merged["suggested_candidates"]
 
         template = (
             db.query(Template)
@@ -318,11 +390,12 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
             db.add(suggestion)
 
         suggestion.suggested_library_name = None
-        suggestion.suggested_product_category_ids = file_import.product_category_ids or []
+        suggestion.suggested_product_category_ids = []
         suggestion.suggested_chapter_tree = suggested_tree
         suggestion.suggested_materials = materials
-        suggestion.suggested_candidates = []
-        suggestion.rationale = "docx heading parse"
+        suggestion.suggested_candidates = suggested_candidates
+        suggestion.suggestion_source = TemplateSuggestionSource(merged["suggestion_source"])
+        suggestion.rationale = "docx structure parse + chunk classification"
 
         task.template_id = template.template_id
         if is_structure_locked:
@@ -356,6 +429,11 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
 
         task.status = TemplateParseTaskStatus.parse_ready
         task.finished_at = _now()
+        progress = task.llm_progress or {}
+        _append_log(
+            task,
+            f"块级分类 {progress.get('completed_chunks', 0)}/{progress.get('total_chunks', 0)} 完成",
+        )
         _append_log(task, "模板解析完成")
 
         entry.status = DownstreamTaskStatus.completed

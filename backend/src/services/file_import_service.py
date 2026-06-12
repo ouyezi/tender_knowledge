@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import BackgroundTasks, HTTPException, UploadFile
+from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
 
 from src.models.file_import import (
@@ -23,6 +23,7 @@ from src.services.purpose_suggestion import suggest_from_filename
 
 ALLOWED_EXTENSIONS: dict[str, FileType] = {
     ".docx": FileType.docx,
+    ".docm": FileType.docx,
     ".pdf": FileType.pdf,
     ".ppt": FileType.ppt,
     ".pptx": FileType.ppt,
@@ -71,7 +72,12 @@ def upload_file_and_enqueue(
     filename = upload_file.filename or ""
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=422, detail="unsupported file extension")
+        raise FileImportServiceError(
+            "unsupported file extension",
+            code="VALIDATION",
+            status_code=422,
+            details={"extension": suffix or None},
+        )
 
     import_id = uuid4()
     storage = FileStorage()
@@ -85,7 +91,11 @@ def upload_file_and_enqueue(
     file_size = abs_path.stat().st_size
     if file_size <= 0:
         abs_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=422, detail="zero-byte file is not allowed")
+        raise FileImportServiceError(
+            "zero-byte file is not allowed",
+            code="VALIDATION",
+            status_code=422,
+        )
 
     is_duplicate_new_version = False
     rec = FileImport(

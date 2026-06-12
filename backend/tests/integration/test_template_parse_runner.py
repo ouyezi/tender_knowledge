@@ -90,6 +90,36 @@ def test_template_parse_runner_creates_parse_outputs(db_session, seeded_kb, samp
     assert audit is not None
 
 
+def test_template_parse_runner_populates_llm_progress_and_block_classification(
+    db_session, seeded_kb, sample_docx_path, monkeypatch
+):
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "llm_api_key", None)
+
+    import_id = _seed_confirmed_import_with_downstream(db_session, seeded_kb, sample_docx_path)
+    run_template_parse_pending(db_session)
+
+    task = (
+        db_session.query(TemplateParseTask)
+        .filter(TemplateParseTask.import_id == import_id)
+        .one()
+    )
+    assert task.llm_progress is not None
+    assert task.llm_progress["total_chunks"] >= 1
+    assert task.llm_progress["completed_chunks"] == task.llm_progress["total_chunks"]
+
+    suggestion = (
+        db_session.query(TemplateParseSuggestion)
+        .filter(TemplateParseSuggestion.parse_task_id == task.parse_task_id)
+        .one()
+    )
+    assert suggestion.suggested_product_category_ids == []
+    first_chapter = suggestion.suggested_chapter_tree[0]
+    assert "suggestion_source" in first_chapter
+    assert "classification_confidence" in first_chapter
+
+
 def test_template_parse_runner_marks_failed_when_source_missing(db_session, seeded_kb):
     missing = FileImport(
         kb_id=seeded_kb.kb_id,

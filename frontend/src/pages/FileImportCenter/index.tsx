@@ -307,7 +307,7 @@ export default function FileImportCenterPage() {
         style={{ marginBottom: 16 }}
       >
         <p>拖拽文件到此处，或点击上传</p>
-        <p>支持 docx / pdf / ppt / xlsx / image</p>
+        <p>支持 docx / docm / pdf / ppt / xlsx / image</p>
       </Upload.Dragger>
       <Table
         rowKey="import_id"

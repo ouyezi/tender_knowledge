@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, Uuid
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.session import Base
@@ -51,6 +51,10 @@ class CandidateKnowledgeStub(Base):
     chapter_taxonomy_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("chapter_taxonomies.taxonomy_id"), nullable=True
     )
+    suggested_knowledge_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    suggestion_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    chunk_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
     status: Mapped[CandidateKnowledgeStubStatus] = mapped_column(
         Enum(CandidateKnowledgeStubStatus),
         nullable=False,

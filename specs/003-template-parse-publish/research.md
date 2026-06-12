@@ -252,3 +252,103 @@ Epic 2 只创建 `pending_confirm`；Epic 4 工作台消费。
 ### Rationale
 
 - G5：为 Epic 5 模块建议预留契约；本 Epic 不实现推荐算法。
+
+---
+
+## R13 — LLM 环境配置与降级
+
+### Decision
+
+- 配置项（`.env` / 环境变量）：`LLM_PROVIDER`（预设 `qwen` | `openai`）、
+  `LLM_API_KEY`、`LLM_BASE_URL`（可选覆盖）、`LLM_MODEL`（可选覆盖）、
+  `LLM_MAX_CHUNK_CHARS`（默认 8000）、`LLM_REQUEST_TIMEOUT_SEC`（默认 60）。
+- 实现：`src/config.py` provider 预设 + `src/services/llm_client.py` OpenAI 兼容
+  `/chat/completions`；无 `LLM_API_KEY` 或 HTTP/解析失败 → 返回 `None`，调用方降级规则。
+- 默认千问：`https://dashscope.aliyuncs.com/compatible-mode/v1` + `qwen-plus`。
+
+### Rationale
+
+- 对齐 spec FR-021/FR-023 与 Epic 1 `purpose_suggestion` 可选 LLM 模式。
+- 环境变量切换 provider，无需改代码或重新部署镜像（仅改 `.env`）。
+
+### Alternatives considered
+
+| 方案 | 放弃原因 |
+|------|----------|
+| 硬编码 provider SDK | 切换成本高；与 Constitution「LLM 辅助、人工确认」解耦不够 |
+| 整文件送 LLM | 违反澄清 SC-008；大标书/资质合集不可行 |
+
+---
+
+## R14 — 知识块级分类（非文件级）
+
+### Decision
+
+**分类粒度**定义：
+
+| 层级 | 对象 | 分类维度 | 说明 |
+|------|------|----------|------|
+| 文件级 | File Import | `file_purpose` only | Epic 1 已确认；Epic 2 不重复细分 |
+| 知识块级 | Template Chapter | chapter_taxonomy, product_category | 每章节节点独立建议 |
+| 知识块级 | Template Material | product_category, material_type | 每素材片段独立建议 |
+| 知识块级 | Candidate Knowledge Stub | product_category, chapter_taxonomy, knowledge_type | 每候选独立建议 |
+
+导入文件可能是完整标书、标书模板、产品方案、资质合集；**不对文件做细粒度小分类**，
+仅在解析产出知识块后执行分类建议。人工确认界面以 **块** 为粒度展示与修正（spec FR-004a）。
+
+分类流水线：
+
+1. **规则优先**：文件名关键词、标题样式、Epic 0 别名表 → 块级初始建议。
+2. **LLM 增强**（可选）：对单块 `title + content_preview` 调用 `chunk_classification_service`。
+3. **合并**：LLM 可用且置信度更高时标记 `suggestion_source=llm|hybrid`；否则 `rule`。
+
+### Rationale
+
+- 对齐 2026-06-12 澄清：文件类型多样，块级分类才能支撑混合文档（如完整标书内含多产品章节）。
+- 与 G2「知识资产优先」一致：分类绑定可治理的知识块，而非原始文件。
+
+### Alternatives considered
+
+| 方案 | 放弃原因 |
+|------|----------|
+| 文件级 product_category 继承到所有块 | 无法处理混合文档；与澄清冲突 |
+| 仅 LLM 分类 | 无 Key 时不可用；违反 FR-023 |
+
+---
+
+## R15 — 大文件分批 LLM 处理
+
+### Decision
+
+解析流水线 **两阶段**：
+
+```text
+Phase A（结构，无 LLM）
+  docx_outline_parser → 章节树
+  docx_content_extractor → materials + candidate 候选块
+
+Phase B（分类，按块批处理）
+  FOR each KnowledgeChunk in chunks:
+    IF len(chunk.text) > LLM_MAX_CHUNK_CHARS → truncate_for_llm
+    chunk_classification_service.classify(chunk)  # 单块一次 LLM
+    UPDATE llm_progress on template_parse_task
+  NEVER: read entire docx text into one LLM prompt
+```
+
+- `template_parse_tasks.llm_progress` JSON：
+  `{ "total_chunks", "completed_chunks", "failed_chunks", "degraded_to_rule", "batch_size": 1 }`。
+- 大文件（>50MB 或 >200 页）：Phase A 完成后即可部分写入 suggestion（章节树先可见）；
+  Phase B 异步补全块级分类；`parse_ready` 在 Phase A+B 均完成或 Phase B 全部降级后触发。
+- SC-008：首批可确认知识块 = Phase A 完成时间；不因整文件 LLM OOM/超时失败。
+
+### Rationale
+
+- 对齐 spec FR-022、Edge Case 超大文档、SC-008。
+- research R1 已拒绝「纯 LLM 抽目录」；本决议将 LLM 限定在块级分类/摘要。
+
+### Alternatives considered
+
+| 方案 | 放弃原因 |
+|------|----------|
+| 整文件摘要后分类 | 上下文超限；延迟与成本不可控 |
+| Map-Reduce 多轮 LLM 合并 | MVP 复杂度过高；块级独立分类已满足确认工作台 |

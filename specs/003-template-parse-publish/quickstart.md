@@ -30,6 +30,16 @@ Epic 2 新增依赖（实现后）：
 .venv/bin/pip install python-docx
 ```
 
+LLM 配置（可选，复制 `.env.example` → `.env`）：
+
+```bash
+LLM_PROVIDER=qwen          # qwen | openai
+LLM_API_KEY=sk-...           # 未配置则全规则路径
+LLM_BASE_URL=                # 留空用预设
+LLM_MODEL=                   # 留空用 qwen-plus
+LLM_MAX_CHUNK_CHARS=8000     # 单知识块 LLM 输入上限
+```
+
 ## 测试
 
 ```bash
@@ -70,6 +80,8 @@ curl -s "http://127.0.0.1:8000/api/v1/kbs/${KB_ID}/template-parse/tasks/${PARSE_
 ```
 
 **期望**: `parse_ready`；章节树非空；原 File Import 仍可 GET。
+**块级分类**: `suggested_chapter_tree[]` 每节点含 `suggested_product_category_ids`、
+`suggested_chapter_taxonomy_id`、`classification_confidence`；非文件级单一分类。
 
 ## 场景 2：人工确认解析结果（P2）
 
@@ -146,10 +158,34 @@ curl -s -X POST "http://127.0.0.1:8000/api/v1/kbs/${KB_ID}/template-libraries/${
 
 **期望**: 返回 `structure_diff.status=pending_review`；原章节树不变直至 `diff/apply`。
 
+## 场景 7：LLM 降级（无 Key / 失败）
+
+```bash
+# 临时 unset LLM_API_KEY 或 LLM_API_KEY=force_fail
+curl -s -X POST "http://127.0.0.1:8000/api/v1/kbs/${KB_ID}/template-parse/trigger" \
+  -H "X-Operator-Id: ${OP}" \
+  -H "Content-Type: application/json" \
+  -d "{\"import_id\": \"${IMPORT_ID}\"}" | jq .
+```
+
+**期望**: 解析仍达 `parse_ready`；`suggestion_source` 为 `rule`；
+`llm_progress.degraded_to_rule` ≥ 1 或 `total_chunks=0`；无 5xx。
+
+## 场景 8：大文件分批 LLM（SC-008）
+
+使用 >200 页或 >50MB docx fixture（或 mock 多块计数）。
+
+**期望**:
+
+- 任务详情 `llm_progress.total_chunks` > 0，`completed_chunks` 递增至完成。
+- 日志无「整文件 LLM」条目；每块独立 `chunk_classification` 调用。
+- Phase A 结构解析完成后章节树可先 GET；`parse_ready` 在块级分类结束或全部降级后触发。
+
 ## UI 验收（模板库中心）
 
 1. 打开 **模板库中心** → 查看 Template Library 列表与未归类 Template。
-2. 从 File Import 或解析任务入口进入 **解析确认** 抽屉 → 修正章节树 → 保存。
+2. 从 File Import 或解析任务入口进入 **解析确认** 抽屉 → **按知识块** 修正章节类型、
+   产品分类、知识类型 → 保存。
 3. **章节树编辑器** 调整层级/类型/排序 → 保存刷新一致。
 4. 配置变量与规则 → **发布** 模板库 → 查看版本快照。
 5. 未发布库在「仅已发布」筛选中不可见。
@@ -163,6 +199,9 @@ curl -s -X POST "http://127.0.0.1:8000/api/v1/kbs/${KB_ID}/template-libraries/${
 | Epic 5 只读 | 仅 `published` library/chapters 可查询 |
 | 审计 | `template_audit_log` / `trace_id` 关联 parse→confirm→publish |
 | G3 人工门 | `parse_ready` 前无 published 资产 |
+| 块级分类 | suggestion 各块含独立 classification 字段；非文件级 |
+| LLM 降级 | 无 Key 时 `suggestion_source=rule` 且解析成功 |
+| 大文件 | `llm_progress` 反映分批；无整文件 LLM |
 
 ## 相关文档
 

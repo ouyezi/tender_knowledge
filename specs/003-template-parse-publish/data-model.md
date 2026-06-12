@@ -1,6 +1,6 @@
 # Data Model: Epic 2 模板库解析与发布
 
-**Date**: 2026-06-12  
+**Date**: 2026-06-12（澄清修订：知识块分类 + LLM 进度）  
 **Feature**: `specs/003-template-parse-publish`
 
 ## Overview
@@ -9,17 +9,21 @@
 Knowledge Base (kb)
   ├── Template Library
   │     └── Template *
-  │           ├── Template Chapter * (tree)
-  │           ├── Template Material *
+  │           ├── Template Chapter * (tree)     ← 知识块：块级分类
+  │           ├── Template Material *           ← 知识块：块级分类
   │           ├── Template Variable *
   │           └── Template Rule *
-  ├── Template Parse Task (↔ File Import, ↔ Downstream Task Entry)
-  ├── Template Parse Suggestion (1:1 per parse task, pre-confirm)
+  ├── Template Parse Task (↔ File Import; llm_progress)
+  ├── Template Parse Suggestion (per-block classification in JSON)
   ├── Template Structure Diff (re-parse vs locked tree)
-  ├── Candidate Knowledge Stub (→ Epic 4)
+  ├── Candidate Knowledge Stub (→ Epic 4)       ← 知识块：块级分类
   ├── Template Publish Snapshot
   └── Template Audit Log
 ```
+
+**分类粒度约定**：File Import 仅保留 Epic 1 的 `file_purpose`（粗粒度用途）。
+Epic 2 的 product_category / chapter_taxonomy / knowledge_type 分类建议与确认均在
+**知识块**（Template Chapter、Template Material、Candidate Knowledge Stub）上执行。
 
 所有实体按 `kb_id` 隔离。`File Import` 来自 Epic 1。
 
@@ -211,6 +215,7 @@ Knowledge Base (kb)
 | log_lines | jsonb | `[{ts, level, message}]` |
 | error_message | text | nullable |
 | retry_count | int | default 0 |
+| llm_progress | jsonb | nullable | `{total_chunks, completed_chunks, failed_chunks, degraded_to_rule}` |
 | trace_id | UUID | |
 | started_at | timestamp | nullable |
 | finished_at | timestamp | nullable |
@@ -233,12 +238,29 @@ Knowledge Base (kb)
 | suggested_library_id | UUID FK | nullable |
 | suggested_library_name | string | nullable | 新建库建议名 |
 | suggested_product_category_ids | UUID[] | |
-| suggested_chapter_tree | jsonb | 完整建议树 |
-| suggested_materials | jsonb | |
-| suggested_candidates | jsonb | |
-| suggestion_source | enum | rule/llm/hybrid |
+| suggested_chapter_tree | jsonb | 完整建议树；**每节点含块级分类字段**（见下） |
+| suggested_materials | jsonb | 每 material 含块级分类字段 |
+| suggested_candidates | jsonb | 每 candidate 含块级分类字段 |
+| suggestion_source | enum | rule/llm/hybrid | 任务级汇总（任一 block 用 LLM 则为 hybrid/llm） |
 | rationale | text | nullable |
 | created_at | timestamp | |
+
+### 知识块级分类字段（JSON 内嵌，suggested_* 共用）
+
+每个 chapter / material / candidate 节点 MAY 包含：
+
+| Field | Type | Notes |
+|-------|------|-------|
+| chunk_ref | string | docx 锚点 / temp_id |
+| suggested_product_category_ids | UUID[] | 块级产品分类建议 |
+| suggested_chapter_taxonomy_id | UUID | 块级章节类型 |
+| suggested_knowledge_type | string | 仅 candidate；如 scheme/product/qualification |
+| classification_confidence | float | 0–1 |
+| suggestion_source | enum | rule/llm/hybrid | 该块来源 |
+| classification_rationale | string | nullable | 可读说明 |
+
+文件级 **不** 写入细粒度分类；`suggested_product_category_ids` 顶栏字段仅作
+确认 UI 默认筛选/排序参考（可选），以各块值为准。
 
 ---
 
@@ -274,8 +296,13 @@ Epic 4 消费；Epic 2 只写 `pending_confirm`。
 | title | string(512) | |
 | summary | text | nullable |
 | content_preview | text | nullable |
-| product_category_ids | UUID[] | |
+| product_category_ids | UUID[] | 块级确认值 |
 | chapter_taxonomy_id | UUID FK | nullable |
+| suggested_knowledge_type | string | nullable | 机器建议 |
+| knowledge_type | string | nullable | 人工确认后 |
+| classification_confidence | float | nullable | |
+| suggestion_source | enum | rule/llm/hybrid | |
+| chunk_ref | string(256) | nullable | 溯源锚点 |
 | status | enum | pending_confirm/confirmed/rejected |
 | epic4_batch_id | UUID | nullable |
 | created_at | timestamp | |

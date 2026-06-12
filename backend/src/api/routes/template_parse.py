@@ -75,6 +75,9 @@ class ConfirmCandidateActionRequest(BaseModel):
     temp_id: str
     candidate_type: str
     accepted: bool
+    product_category_ids: list[UUID] = Field(default_factory=list)
+    chapter_taxonomy_id: UUID | None = None
+    knowledge_type: str | None = None
 
 
 class ConfirmParseRequest(BaseModel):
@@ -185,6 +188,7 @@ def list_parse_tasks(
             "started_at": row.started_at.isoformat() if row.started_at else None,
             "finished_at": row.finished_at.isoformat() if row.finished_at else None,
             "created_at": row.created_at.isoformat(),
+            "llm_progress": row.llm_progress,
         }
         for row in rows
     ]
@@ -271,6 +275,7 @@ def get_parse_task(
             "log_lines": task.log_lines or [],
             "error_message": task.error_message,
             "retry_count": task.retry_count,
+            "llm_progress": task.llm_progress,
             "started_at": task.started_at.isoformat() if task.started_at else None,
             "finished_at": task.finished_at.isoformat() if task.finished_at else None,
             "suggestion": (

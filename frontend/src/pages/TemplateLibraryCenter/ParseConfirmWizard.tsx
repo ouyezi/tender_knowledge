@@ -14,10 +14,12 @@ import {
   Switch,
   Table,
   Tag,
+  TreeSelect,
   Typography,
 } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { getChapterTaxonomyTree, type ChapterTaxonomyNode } from "../../services/chapterTaxonomyApi";
 import { useKBContext } from "../../layout/KBContext";
 import { getProductCategoryTree } from "../../services/productCategoryApi";
 import {
@@ -36,6 +38,10 @@ type CandidateActionRow = {
   candidate_type: "ku" | "wiki";
   accepted: boolean;
   title?: string;
+  product_category_ids?: string[];
+  chapter_taxonomy_id?: string | null;
+  knowledge_type?: string | null;
+  suggestion_source?: string;
 };
 
 type ProductCategoryOption = { label: string; value: string };
@@ -55,6 +61,22 @@ const TEMPLATE_TYPE_OPTIONS = [
   { label: "章节集", value: "chapter_set" },
   { label: "自定义", value: "custom" },
 ];
+
+const KNOWLEDGE_TYPE_OPTIONS = [
+  { label: "方案", value: "scheme" },
+  { label: "产品", value: "product" },
+  { label: "资质", value: "qualification" },
+  { label: "其他", value: "other" },
+];
+
+function mapChapterTaxonomyTree(nodes: ChapterTaxonomyNode[]): Array<Record<string, unknown>> {
+  return nodes.map((node) => ({
+    title: node.standard_name,
+    value: node.taxonomy_id,
+    key: node.taxonomy_id,
+    children: mapChapterTaxonomyTree(node.children),
+  }));
+}
 
 function flattenCategoryTree(
   nodes: Array<{ category_id: string; category_name: string; children?: any[] }>,
@@ -82,6 +104,7 @@ export default function ParseConfirmWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [libraries, setLibraries] = useState<TemplateLibraryListItem[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<ProductCategoryOption[]>([]);
+  const [taxonomyNodes, setTaxonomyNodes] = useState<ChapterTaxonomyNode[]>([]);
   const [chapters, setChapters] = useState<ParseSuggestionChapterNode[]>([]);
   const [materials, setMaterials] = useState<ParseSuggestionMaterial[]>([]);
   const [candidateActions, setCandidateActions] = useState<CandidateActionRow[]>([]);
@@ -89,29 +112,62 @@ export default function ParseConfirmWizard() {
   const [parseStatus, setParseStatus] = useState<string>();
   const [createLibraryMode, setCreateLibraryMode] = useState(false);
 
+  const chapterTaxonomyTreeData = useMemo(
+    () => mapChapterTaxonomyTree(taxonomyNodes),
+    [taxonomyNodes],
+  );
+
   const loadData = useCallback(async () => {
     if (!selectedKbId || !parseTaskId) {
       return;
     }
     setLoading(true);
     try {
-      const [task, suggestion, libraryResult, categoryTree] = await Promise.all([
+      const [task, suggestion, libraryResult, categoryTree, taxonomyTree] = await Promise.all([
         getParseTask(selectedKbId, parseTaskId),
         getParseSuggestion(selectedKbId, parseTaskId),
         listTemplateLibraries(selectedKbId, { page_size: 200 }),
         getProductCategoryTree(selectedKbId),
+        getChapterTaxonomyTree(selectedKbId),
       ]);
       setParseStatus(task.status);
       setLibraries(libraryResult.items ?? []);
       setCategoryOptions(flattenCategoryTree(categoryTree ?? []));
-      setChapters((suggestion.suggested_chapter_tree ?? []).map((chapter) => ({ ...chapter })));
-      setMaterials((suggestion.suggested_materials ?? []).map((material) => ({ ...material })));
+      setTaxonomyNodes(taxonomyTree ?? []);
+      setChapters(
+        (suggestion.suggested_chapter_tree ?? []).map((chapter) => ({
+          ...chapter,
+          chapter_taxonomy_id:
+            chapter.chapter_taxonomy_id ?? chapter.suggested_chapter_taxonomy_id ?? null,
+          product_category_ids:
+            chapter.product_category_ids?.length
+              ? chapter.product_category_ids
+              : (chapter.suggested_product_category_ids ?? []),
+        })),
+      );
+      setMaterials(
+        (suggestion.suggested_materials ?? []).map((material) => ({
+          ...material,
+          product_category_ids:
+            material.product_category_ids?.length
+              ? material.product_category_ids
+              : (material.suggested_product_category_ids ?? []),
+        })),
+      );
       const candidateRows: CandidateActionRow[] = (suggestion.suggested_candidates ?? []).map(
         (candidate: ParseSuggestionCandidate) => ({
           temp_id: candidate.temp_id,
           candidate_type: candidate.candidate_type === "wiki" ? "wiki" : "ku",
           accepted: true,
           title: candidate.title,
+          product_category_ids:
+            candidate.product_category_ids?.length
+              ? candidate.product_category_ids
+              : (candidate.suggested_product_category_ids ?? []),
+          chapter_taxonomy_id:
+            candidate.chapter_taxonomy_id ?? candidate.suggested_chapter_taxonomy_id ?? null,
+          knowledge_type: candidate.knowledge_type ?? candidate.suggested_knowledge_type ?? null,
+          suggestion_source: candidate.suggestion_source,
         }),
       );
       setCandidateActions(candidateRows);
@@ -122,7 +178,7 @@ export default function ParseConfirmWizard() {
         template_library_id: suggestion.suggested_library_id ?? undefined,
         template_name: task.template_id ? task.suggestion?.suggested_library_name ?? "" : "",
         template_type: "technical_bid",
-        product_category_ids: suggestion.suggested_product_category_ids ?? [],
+        product_category_ids: [],
         create_library_name: suggestion.suggested_library_name ?? "",
         create_library_type: "technical",
       });
@@ -160,6 +216,17 @@ export default function ParseConfirmWizard() {
   const updateCandidate = (tempId: string, patch: Partial<CandidateActionRow>) => {
     setCandidateActions((prev) =>
       prev.map((item) => (item.temp_id === tempId ? { ...item, ...patch } : item)),
+    );
+  };
+
+  const applyQuickCategoriesToChapters = () => {
+    const quick = form.getFieldValue("product_category_ids") ?? [];
+    if (!quick.length) {
+      message.info("请先在 Step1 选择快捷产品分类");
+      return;
+    }
+    setChapters((prev) =>
+      prev.map((chapter) => ({ ...chapter, product_category_ids: [...quick] })),
     );
   };
 
@@ -203,6 +270,9 @@ export default function ParseConfirmWizard() {
           temp_id: item.temp_id,
           candidate_type: item.candidate_type,
           accepted: item.accepted,
+          product_category_ids: item.product_category_ids ?? [],
+          chapter_taxonomy_id: item.chapter_taxonomy_id ?? null,
+          knowledge_type: item.knowledge_type ?? null,
         })),
       });
       message.success(`确认成功，已创建 ${result.candidate_stubs_created} 条候选占位`);
@@ -252,6 +322,47 @@ export default function ParseConfirmWizard() {
           onChange={(next) => updateChapter(record.temp_id, { parent_temp_id: next ?? null })}
         />
       ),
+    },
+    {
+      title: "章节类型",
+      dataIndex: "chapter_taxonomy_id",
+      key: "chapter_taxonomy_id",
+      width: 200,
+      render: (value: string | null, record: ParseSuggestionChapterNode) => (
+        <TreeSelect
+          allowClear
+          style={{ width: 180 }}
+          treeData={chapterTaxonomyTreeData}
+          value={value ?? undefined}
+          onChange={(next) =>
+            updateChapter(record.temp_id, { chapter_taxonomy_id: (next as string) ?? null })
+          }
+        />
+      ),
+    },
+    {
+      title: "产品分类",
+      dataIndex: "product_category_ids",
+      key: "product_category_ids",
+      width: 200,
+      render: (value: string[], record: ParseSuggestionChapterNode) => (
+        <Select
+          mode="multiple"
+          allowClear
+          style={{ width: 180 }}
+          options={categoryOptions}
+          value={value ?? []}
+          onChange={(next) => updateChapter(record.temp_id, { product_category_ids: next })}
+        />
+      ),
+    },
+    {
+      title: "建议来源",
+      dataIndex: "suggestion_source",
+      key: "suggestion_source",
+      width: 100,
+      render: (value: string | undefined) =>
+        value ? <Tag>{value}</Tag> : <Tag>rule</Tag>,
     },
     {
       title: "属性",
@@ -306,6 +417,28 @@ export default function ParseConfirmWizard() {
           onChange={(next) => updateMaterial(record.temp_id, { chapter_temp_id: next ?? null })}
         />
       ),
+    },
+    {
+      title: "产品分类",
+      dataIndex: "product_category_ids",
+      key: "product_category_ids",
+      render: (value: string[] | undefined, record: ParseSuggestionMaterial) => (
+        <Select
+          mode="multiple"
+          allowClear
+          style={{ width: 160 }}
+          options={categoryOptions}
+          value={value ?? []}
+          onChange={(next) => updateMaterial(record.temp_id, { product_category_ids: next })}
+        />
+      ),
+    },
+    {
+      title: "建议来源",
+      dataIndex: "suggestion_source",
+      key: "suggestion_source",
+      width: 100,
+      render: (value: string | undefined) => (value ? <Tag>{value}</Tag> : null),
     },
     {
       title: "候选提取",
@@ -365,6 +498,44 @@ export default function ParseConfirmWizard() {
       ),
     },
     {
+      title: "知识类型",
+      dataIndex: "knowledge_type",
+      key: "knowledge_type",
+      width: 140,
+      render: (value: string | null | undefined, record: CandidateActionRow) => (
+        <Select
+          allowClear
+          style={{ width: 120 }}
+          options={KNOWLEDGE_TYPE_OPTIONS}
+          value={value ?? undefined}
+          onChange={(next) => updateCandidate(record.temp_id, { knowledge_type: next ?? null })}
+        />
+      ),
+    },
+    {
+      title: "产品分类",
+      dataIndex: "product_category_ids",
+      key: "product_category_ids",
+      width: 180,
+      render: (value: string[] | undefined, record: CandidateActionRow) => (
+        <Select
+          mode="multiple"
+          allowClear
+          style={{ width: 160 }}
+          options={categoryOptions}
+          value={value ?? []}
+          onChange={(next) => updateCandidate(record.temp_id, { product_category_ids: next })}
+        />
+      ),
+    },
+    {
+      title: "建议来源",
+      dataIndex: "suggestion_source",
+      key: "suggestion_source",
+      width: 100,
+      render: (value: string | undefined) => (value ? <Tag>{value}</Tag> : null),
+    },
+    {
       title: "接受",
       dataIndex: "accepted",
       key: "accepted",
@@ -421,7 +592,7 @@ export default function ParseConfirmWizard() {
               <Form.Item name="template_type" label="模板类型" rules={[{ required: true, message: "请选择模板类型" }]}>
                 <Select options={TEMPLATE_TYPE_OPTIONS} />
               </Form.Item>
-              <Form.Item name="product_category_ids" label="产品分类">
+              <Form.Item name="product_category_ids" label="快捷产品分类（可选，可批量应用到章节）">
                 <Select mode="multiple" allowClear options={categoryOptions} placeholder="可多选产品分类" />
               </Form.Item>
               <Space style={{ marginBottom: 16 }}>
@@ -455,13 +626,18 @@ export default function ParseConfirmWizard() {
         </Form>
 
         {currentStep === 1 ? (
-          <Table
-            rowKey="temp_id"
-            pagination={false}
-            columns={chapterColumns}
-            dataSource={chapters}
-            locale={{ emptyText: "暂无章节建议" }}
-          />
+          <>
+            <Space style={{ marginBottom: 12 }}>
+              <Button onClick={applyQuickCategoriesToChapters}>将 Step1 快捷分类应用到全部章节</Button>
+            </Space>
+            <Table
+              rowKey="temp_id"
+              pagination={false}
+              columns={chapterColumns}
+              dataSource={chapters}
+              locale={{ emptyText: "暂无章节建议" }}
+            />
+          </>
         ) : null}
 
         {currentStep === 2 ? (

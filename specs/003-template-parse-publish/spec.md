@@ -10,6 +10,14 @@
 
 **Source**: `docs/epics/epic2-模板库解析与发布.md` · `docs/总需求.md` §6.4–6.9、§7、§15.2、§17、§18 Phase 2、§19.1、§20、§22
 
+## Clarifications
+
+### Session 2026-06-12
+
+- Q: 分类粒度应落在文件还是提取后的知识块？ → A: 对提取出的知识库块（Candidate Knowledge / 章节片段 / Template Material 等）进行分类；导入文件本身可能是完整标书、标书模板、产品方案或资质合集，不对文件做细粒度小分类。
+- Q: 大模型调用如何配置与切换？ → A: 通过环境变量（`LLM_PROVIDER`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`）配置；默认使用千问（Qwen）兼容 OpenAI 接口；未配置 Key 或调用失败时降级为规则引擎，不阻塞主流程。
+- Q: 大文件是否可整文件一次性 LLM 处理？ → A: 否；导入文件可能很大，LLM 仅对按章节/段落/素材切分后的知识块分批调用，整文件 MUST NOT 一次性送入模型。
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - 模板文件解析为结构化资产 (Priority: P1)
@@ -137,6 +145,9 @@ Template Material，并生成待人工确认的知识候选，形成可治理的
   给出可操作的校验提示。
 - 人工已确认的章节树与再次解析产生的结构不一致时，系统 MUST 生成待确认差异而非
   静默覆盖。
+- 导入文件为超大文档（如数百页完整标书或资质合集）时，解析 MUST 先结构化切分为
+  章节/素材块，再对每个块独立执行分类建议与 LLM 辅助；整文件 LLM 处理 MUST 被拒绝
+  或自动拆批。
 - Bid Outline 转换生成 Template 不在本 Epic 范围；若用户期望此路径，系统不在 MVP
   中提供该入口。
 
@@ -150,7 +161,12 @@ Template Material，并生成待人工确认的知识候选，形成可治理的
   并依据文档内前缀数字确定章节排序。
 - **FR-003**: 系统 MUST 从模板文档中提取固定段落、表格、图片等为 Template Material
   或 Candidate Knowledge 候选，并关联至对应章节或 Template。
-- **FR-004**: 系统 MUST 基于文件名与文档标题，为产品分类与章节类型生成可覆盖的建议。
+- **FR-004**: 系统 MUST 基于文件名与文档标题，为产品分类与章节类型生成可覆盖的建议；
+  该建议作用于解析产出的知识块（Template Chapter、Template Material、Candidate Knowledge），
+  而非对导入文件本身做细粒度分类。导入文件可能是完整标书、标书模板、产品方案或资质合集，
+  文件级仅保留 Epic 1 已确认的 `file_purpose`，不在本 Epic 重复细分文件类型。
+- **FR-004a**: 系统 MUST 对 Candidate Knowledge 及关联章节/素材块执行产品分类、章节类型、
+  知识类型等分类建议；人工确认界面以知识块为粒度展示与修正分类结果。
 - **FR-005**: 系统 MUST 提供模板解析任务状态查询，且任务失败 MUST NOT 破坏或删除
   原 File Import 记录。
 - **FR-006**: 系统 MUST 提供人工确认界面，支持确认或修正：Template Library 归类、
@@ -181,6 +197,14 @@ Template Material，并生成待人工确认的知识候选，形成可治理的
 - **FR-020**: 系统 MUST NOT 在本 Epic 中实现：文件夹批量生成 Template Library、
   复杂变量表达式或脚本计算、完整 Template Instance 生成、招标约束驱动的章节草稿生成、
   Bid Outline 转 Template。
+- **FR-021**: 凡需 LLM 辅助的步骤（如章节/素材块分类建议、摘要生成）MUST 通过可配置
+  的 LLM 客户端调用；配置项包括 provider、api_key、base_url、model，均来自环境变量，
+  支持在不改代码的情况下切换千问或其他 OpenAI 兼容提供商。
+- **FR-022**: LLM 调用 MUST 以知识块为批次单位（章节节点、段落片段、Template Material
+  等）；MUST NOT 将整份导入文件一次性送入模型。单块超出模型上下文上限时 MUST 进一步
+  切分或截断并记录处理策略。
+- **FR-023**: 未配置 `LLM_API_KEY` 或 LLM 调用失败时，系统 MUST 降级为规则/启发式
+  建议并继续解析任务，MUST NOT 因 LLM 不可用而阻断模板解析主流程。
 
 ### Key Entities *(include if feature involves data)*
 
@@ -218,6 +242,9 @@ Template Material，并生成待人工确认的知识候选，形成可治理的
   时间戳，满足 100% 关键操作可追溯。
 - **SC-007**: 90% 的管理员可在首次使用时，在无额外培训情况下完成「解析 → 确认 →
   发布」主流程（以内部可用性走查计）。
+- **SC-008**: 对超过 50MB 或超过 200 页的模板/标书类导入文件，解析任务 MUST 在
+  合理时间内完成首批可确认知识块产出（分批 LLM），且不因整文件 LLM 调用导致 OOM
+  或超时失败。
 
 ## Assumptions
 
@@ -235,6 +262,13 @@ Template Material，并生成待人工确认的知识候选，形成可治理的
   招标约束优先级高于模板建议（与 Constitution 一致）。
 - 「未归类模板」为有效中间状态，允许 Template 暂不归入任何 Template Library，
   直至管理员完成归类或发布决策。
+- 导入文件类型多样（完整标书、标书模板、产品方案、资质合集等）；Epic 1 的
+  `file_purpose` 为文件级粗粒度用途，本 Epic 的细粒度分类（产品分类、章节类型、
+  知识类型）均在解析后的知识块上执行。
+- LLM 为可选增强能力：默认 provider 为千问（Qwen），通过环境变量切换；无 Key 时
+  全流程仍可用规则引擎完成解析与建议。
+- 大文件处理假设：先 docx/文档结构解析得到章节树与素材块，再按块调度 LLM；
+  不存在「整文件一次 LLM」的设计路径。
 
 ## Dependencies
 

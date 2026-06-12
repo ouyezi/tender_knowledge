@@ -31,7 +31,15 @@ const todoColumns: ColumnsType<TemplateParseTaskListItem> = [
     title: "状态",
     dataIndex: "status",
     key: "status",
-    render: (value: string) => {
+    render: (value: string, record: TemplateParseTaskListItem) => {
+      if (value === "running" && record.llm_progress) {
+        const progress = record.llm_progress;
+        return (
+          <Tag color="processing">
+            块级分类 {progress.completed_chunks}/{progress.total_chunks}
+          </Tag>
+        );
+      }
       if (value === "parse_ready") return <Tag color="warning">待确认</Tag>;
       if (value === "running") return <Tag color="processing">解析中</Tag>;
       if (value === "pending") return <Tag>排队中</Tag>;
