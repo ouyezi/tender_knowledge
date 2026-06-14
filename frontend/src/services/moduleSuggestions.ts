@@ -6,8 +6,10 @@ export interface ModuleSuggestionPayload {
   project_type?: string;
   customer_type?: string;
   requirement_text?: string;
+  requirement_context_id?: string;
   outline_nodes: OutlineNodePayload[];
   tender_requirement_context?: {
+    outline_title?: string;
     score_points?: string[];
     rejection_clauses?: string[];
     format_requirements?: string[];
@@ -43,6 +45,11 @@ export interface ModuleSuggestionItem {
   available_ku_count: number;
   available_wiki_count: number;
   knowledge_pack_items: unknown[];
+  status?: string;
+  adoption_reason?: string | null;
+  adopted_by?: string | null;
+  adopted_at?: string | null;
+  requirement_context_id?: string | null;
 }
 
 export interface ModuleSuggestionResponse {
@@ -67,4 +74,15 @@ export async function getModuleSuggestion(
   suggestionId: string,
 ): Promise<ModuleSuggestionItem & { trace_id: string }> {
   return apiRequest(`/api/v1/kbs/${kbId}/module-suggestions/${suggestionId}`);
+}
+
+export async function patchSuggestionAdoption(
+  kbId: string,
+  suggestionId: string,
+  payload: { status: "adopted" | "rejected" | string; adoption_reason?: string },
+): Promise<{ suggestion_id: string; status: string; adopted_by?: string; adopted_at?: string }> {
+  return apiRequest(`/api/v1/kbs/${kbId}/module-suggestions/${suggestionId}/adoption`, {
+    method: "PATCH",
+    body: payload,
+  });
 }

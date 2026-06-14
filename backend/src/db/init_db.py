@@ -18,7 +18,11 @@ from src.models.retrieval_index_entry import (
     RetrievalIndexStatus,
     RetrievalObjectType,
 )
+from src.models.chapter_draft import DraftOutcomeStatus
+from src.models.generation_task import GenerationTaskStatus
+from src.models.module_assembly_suggestion import ModuleAssemblySuggestionStatus
 from src.models.retrieval_trace import RetrievalIntent, RetrievalTraceStatus
+from src.models.tender_requirement_context import TenderRequirementStatus
 from src.models import (  # noqa: F401
     actual_bid_audit_log,
     actual_bid_parse_task,
@@ -29,6 +33,7 @@ from src.models import (  # noqa: F401
     candidate_confirm_audit_log,
     candidate_knowledge,
     candidate_knowledge_stub,
+    chapter_draft,
     chapter_pattern,
     chapter_pattern_mining_task,
     chapter_taxonomy,
@@ -39,6 +44,8 @@ from src.models import (  # noqa: F401
     downstream_task_entry,
     file_import,
     file_purpose_suggestion,
+    generation_snapshot,
+    generation_task,
     import_audit_log,
     import_task,
     kb_clone_log,
@@ -47,6 +54,7 @@ from src.models import (  # noqa: F401
     manual_asset,
     module_assembly_suggestion,
     product_category,
+    prompt_config_version,
     retrieval_eval_case,
     retrieval_eval_run,
     retrieval_eval_set,
@@ -65,6 +73,7 @@ from src.models import (  # noqa: F401
     template_rule,
     template_structure_diff,
     template_variable,
+    tender_requirement_context,
     wiki,
 )
 
@@ -197,6 +206,51 @@ def _sync_epic4_columns(conn) -> None:
     )
 
 
+def _sync_epic6_columns(conn) -> None:
+    """Add Epic 6 generation-assist columns to existing PostgreSQL tables."""
+    conn.execute(
+        text(
+            "ALTER TABLE module_assembly_suggestions "
+            "ADD COLUMN IF NOT EXISTS requirement_context_id UUID"
+        )
+    )
+    conn.execute(
+        text(
+            "DO $$ BEGIN "
+            "CREATE TYPE moduleassemblysuggestionstatus AS ENUM ('draft', 'adopted', 'rejected'); "
+            "EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE module_assembly_suggestions "
+            "ADD COLUMN IF NOT EXISTS status moduleassemblysuggestionstatus "
+            "NOT NULL DEFAULT 'draft'"
+        )
+    )
+    for column in (
+        "adoption_reason TEXT",
+        "adopted_by VARCHAR(128)",
+        "adopted_at TIMESTAMPTZ",
+    ):
+        conn.execute(text(f"ALTER TABLE module_assembly_suggestions ADD COLUMN IF NOT EXISTS {column}"))
+    conn.execute(
+        text(
+            "ALTER TABLE module_assembly_suggestions "
+            "DROP CONSTRAINT IF EXISTS fk_module_assembly_suggestions_requirement_context_id"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE module_assembly_suggestions "
+            "ADD CONSTRAINT fk_module_assembly_suggestions_requirement_context_id "
+            "FOREIGN KEY (requirement_context_id) "
+            "REFERENCES tender_requirement_contexts(requirement_context_id) "
+            "NOT VALID"
+        )
+    )
+
+
 def init_db() -> None:
     if engine.dialect.name == "postgresql":
         with engine.begin() as conn:
@@ -285,5 +339,26 @@ def init_db() -> None:
             "retrievalevalrunstatus",
             [member.value for member in RetrievalEvalRunStatus],
         )
+        _sync_postgres_enum(
+            conn,
+            "tenderrequirementstatus",
+            [member.value for member in TenderRequirementStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "generationtaskstatus",
+            [member.value for member in GenerationTaskStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "draftoutcomestatus",
+            [member.value for member in DraftOutcomeStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "moduleassemblysuggestionstatus",
+            [member.value for member in ModuleAssemblySuggestionStatus],
+        )
         _sync_missing_columns(conn)
         _sync_epic4_columns(conn)
+        _sync_epic6_columns(conn)
