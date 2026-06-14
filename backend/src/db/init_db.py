@@ -2,6 +2,9 @@ from sqlalchemy import text
 
 from src.db.session import Base, engine
 from src.models.bid_outline import BidOutlineExtractStrategy
+from src.models.candidate_confirm_audit_log import CandidateConfirmAuditAction
+from src.models.candidate_knowledge import CandidateKnowledgeStatus, CandidateKnowledgeType
+from src.models.candidate_knowledge_stub import CandidateKnowledgeStubStatus
 from src.models.classification_reference import ReferenceObjectType
 from src.models.import_audit_log import ImportAuditAction
 from src.models import (  # noqa: F401
@@ -11,6 +14,7 @@ from src.models import (  # noqa: F401
     bid_outline,
     bid_outline_node,
     bid_outline_structure_diff,
+    candidate_confirm_audit_log,
     candidate_knowledge,
     candidate_knowledge_stub,
     chapter_pattern,
@@ -27,6 +31,8 @@ from src.models import (  # noqa: F401
     import_task,
     kb_clone_log,
     knowledge_base,
+    knowledge_unit,
+    manual_asset,
     product_category,
     template,
     template_audit_log,
@@ -39,6 +45,7 @@ from src.models import (  # noqa: F401
     template_rule,
     template_structure_diff,
     template_variable,
+    wiki,
 )
 
 
@@ -99,6 +106,71 @@ def _sync_missing_columns(conn) -> None:
         conn.execute(text(stmt))
 
 
+def _sync_epic4_columns(conn) -> None:
+    """Add Epic 4 confirm-workbench columns to existing PostgreSQL tables."""
+    candidate_epic4_columns = (
+        "confirmed_object_type VARCHAR(64)",
+        "confirmed_object_id UUID",
+        "searchable BOOLEAN",
+        "usage_hint VARCHAR(256)",
+        "review_comment TEXT",
+        "merged_into_id UUID",
+        "split_from_id UUID",
+        "lineage JSONB DEFAULT '{}'::jsonb",
+        "last_publish_error TEXT",
+        "publish_attempt_count INTEGER DEFAULT 0",
+        "updated_by VARCHAR(128)",
+    )
+    for column in candidate_epic4_columns:
+        conn.execute(
+            text(f"ALTER TABLE candidate_knowledges ADD COLUMN IF NOT EXISTS {column}")
+        )
+
+    stub_epic4_columns = (
+        "epic4_batch_id UUID",
+        "confirmed_object_type VARCHAR(64)",
+        "confirmed_object_id UUID",
+        "searchable BOOLEAN",
+        "usage_hint VARCHAR(256)",
+        "review_comment TEXT",
+        "merged_into_id UUID",
+        "split_from_id UUID",
+        "lineage JSONB DEFAULT '{}'::jsonb",
+        "last_publish_error TEXT",
+        "publish_attempt_count INTEGER DEFAULT 0",
+        "updated_by VARCHAR(128)",
+    )
+    for column in stub_epic4_columns:
+        conn.execute(
+            text(f"ALTER TABLE candidate_knowledge_stubs ADD COLUMN IF NOT EXISTS {column}")
+        )
+
+    conn.execute(
+        text(
+            "UPDATE candidate_knowledges SET lineage = '{}'::jsonb "
+            "WHERE lineage IS NULL"
+        )
+    )
+    conn.execute(
+        text(
+            "UPDATE candidate_knowledge_stubs SET lineage = '{}'::jsonb "
+            "WHERE lineage IS NULL"
+        )
+    )
+    conn.execute(
+        text(
+            "UPDATE candidate_knowledges SET publish_attempt_count = 0 "
+            "WHERE publish_attempt_count IS NULL"
+        )
+    )
+    conn.execute(
+        text(
+            "UPDATE candidate_knowledge_stubs SET publish_attempt_count = 0 "
+            "WHERE publish_attempt_count IS NULL"
+        )
+    )
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     if engine.dialect.name != "postgresql":
@@ -119,4 +191,25 @@ def init_db() -> None:
             "bidoutlineextractstrategy",
             [member.value for member in BidOutlineExtractStrategy],
         )
+        _sync_postgres_enum(
+            conn,
+            "candidateknowledgetype",
+            [member.value for member in CandidateKnowledgeType],
+        )
+        _sync_postgres_enum(
+            conn,
+            "candidateknowledgestatus",
+            [member.value for member in CandidateKnowledgeStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "candidateknowledgestubstatus",
+            [member.value for member in CandidateKnowledgeStubStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "candidateconfirmauditaction",
+            [member.value for member in CandidateConfirmAuditAction],
+        )
         _sync_missing_columns(conn)
+        _sync_epic4_columns(conn)

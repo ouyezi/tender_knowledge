@@ -5,6 +5,7 @@ from src.models.actual_bid_parse_task import ActualBidParseTask
 from src.models.bid_outline import BidOutline
 from src.models.bid_outline_node import BidOutlineNode
 from src.models.bid_outline_structure_diff import BidOutlineStructureDiff
+from src.models.candidate_confirm_audit_log import CandidateConfirmAuditLog
 from src.models.candidate_knowledge import CandidateKnowledge
 from src.models.candidate_knowledge_stub import CandidateKnowledgeStub
 from src.models.chapter_pattern import ChapterPattern
@@ -17,6 +18,8 @@ from src.models.file_import import FileImport
 from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.import_audit_log import ImportAuditLog
 from src.models.import_task import ImportTask
+from src.models.knowledge_unit import KnowledgeUnit
+from src.models.manual_asset import ManualAsset
 from src.models.template import Template
 from src.models.template_audit_log import TemplateAuditLog
 from src.models.template_chapter import TemplateChapter
@@ -28,6 +31,7 @@ from src.models.template_publish_snapshot import TemplatePublishSnapshot
 from src.models.template_rule import TemplateRule
 from src.models.template_structure_diff import TemplateStructureDiff
 from src.models.template_variable import TemplateVariable
+from src.models.wiki import Wiki
 
 __all__ = [
     "ActualBidAuditLog",
@@ -35,6 +39,7 @@ __all__ = [
     "BidOutline",
     "BidOutlineNode",
     "BidOutlineStructureDiff",
+    "CandidateConfirmAuditLog",
     "CandidateKnowledge",
     "CandidateKnowledgeStub",
     "ChapterPattern",
@@ -47,6 +52,8 @@ __all__ = [
     "FilePurposeSuggestion",
     "ImportAuditLog",
     "ImportTask",
+    "KnowledgeUnit",
+    "ManualAsset",
     "Template",
     "TemplateAuditLog",
     "TemplateChapter",
@@ -58,4 +65,5 @@ __all__ = [
     "TemplateRule",
     "TemplateStructureDiff",
     "TemplateVariable",
+    "Wiki",
 ]

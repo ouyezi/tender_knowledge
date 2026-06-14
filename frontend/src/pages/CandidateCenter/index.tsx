@@ -1,13 +1,33 @@
-import { Alert, Button, Card, Descriptions, Drawer, Empty, Spin, Table, Tag, Typography, message } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Form,
+  InputNumber,
+  Select,
+  Space,
+  Table,
+  Tag,
+  message,
+} from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useKBContext } from "../../layout/KBContext";
 import {
   getCandidate,
   listCandidates,
+  type BatchOperationResult,
   type CandidateDetail,
   type CandidateListItem,
+  type ListCandidatesParams,
 } from "../../services/candidates";
+import BatchConfirmModal from "./BatchConfirmModal";
+import BatchResultDrawer from "./BatchResultDrawer";
+import CandidateDetailDrawer from "./CandidateDetailDrawer";
+import CandidateMergeModal from "./CandidateMergeModal";
+import CandidateSplitModal from "./CandidateSplitModal";
 
 const STATUS_TAG: Record<string, { color: string; label: string }> = {
   pending: { color: "warning", label: "待处理" },
@@ -27,29 +47,43 @@ const CANDIDATE_TYPE_LABEL: Record<string, string> = {
   wiki: "Wiki",
 };
 
+const DEFAULT_FILTERS: ListCandidatesParams = {
+  status: "pending",
+};
+
+interface CandidateFilterFormValues {
+  status?: string;
+  source_channel?: string;
+  candidate_type?: string;
+  confidence_min?: number;
+}
+
 function formatDateTime(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
-function renderSourceTraceDetail(trace?: CandidateDetail["source_trace"]) {
-  if (!trace || Object.keys(trace).length === 0) {
-    return <Empty description="暂无来源追溯信息" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+function toListParams(values: CandidateFilterFormValues): ListCandidatesParams {
+  const params: ListCandidatesParams = {};
+  if (values.status) {
+    params.status = values.status;
   }
-
-  const entries = Object.entries(trace).filter(([, value]) => value !== undefined && value !== null && value !== "");
-  return (
-    <Descriptions column={1} size="small" bordered>
-      {entries.map(([key, value]) => (
-        <Descriptions.Item key={key} label={key}>
-          {String(value)}
-        </Descriptions.Item>
-      ))}
-    </Descriptions>
-  );
+  if (values.source_channel) {
+    params.source_channel = values.source_channel;
+  }
+  if (values.candidate_type) {
+    params.candidate_type = values.candidate_type;
+  }
+  if (values.confidence_min !== undefined && values.confidence_min !== null) {
+    params.confidence_min = values.confidence_min;
+  }
+  return params;
 }
 
 export default function CandidateCenterPage() {
+  const navigate = useNavigate();
   const { selectedKbId } = useKBContext();
+  const [form] = Form.useForm<CandidateFilterFormValues>();
+  const [filters, setFilters] = useState<ListCandidatesParams>(DEFAULT_FILTERS);
   const [items, setItems] = useState<CandidateListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -57,8 +91,23 @@ export default function CandidateCenterPage() {
   const [loading, setLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string>();
   const [detail, setDetail] = useState<CandidateDetail>();
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchResultOpen, setBatchResultOpen] = useState(false);
+  const [batchResult, setBatchResult] = useState<BatchOperationResult>();
+
+  const selectedRows = useMemo(
+    () => items.filter((item) => selectedRowKeys.includes(item.candidate_id)),
+    [items, selectedRowKeys],
+  );
+
+  const splitCandidateRow = useMemo(
+    () => (selectedRows.length === 1 ? selectedRows[0] : undefined),
+    [selectedRows],
+  );
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
@@ -68,7 +117,11 @@ export default function CandidateCenterPage() {
     }
     setLoading(true);
     try {
-      const result = await listCandidates(selectedKbId, { page, page_size: pageSize });
+      const result = await listCandidates(selectedKbId, {
+        page,
+        page_size: pageSize,
+        ...filters,
+      });
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
     } catch (error) {
@@ -76,18 +129,29 @@ export default function CandidateCenterPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, selectedKbId]);
+  }, [filters, page, pageSize, selectedKbId]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const handleSearch = useCallback(() => {
+    const values = form.getFieldsValue();
+    setFilters(toListParams(values));
+    setPage(1);
+  }, [form]);
+
+  const handleReset = useCallback(() => {
+    form.resetFields();
+    setFilters(DEFAULT_FILTERS);
+    setPage(1);
+  }, [form]);
 
   const openDetail = useCallback(
     async (record: CandidateListItem) => {
       if (!selectedKbId) {
         return;
       }
-      setSelectedCandidateId(record.candidate_id);
       setDetailOpen(true);
       setDetail(undefined);
       setDetailLoading(true);
@@ -112,6 +176,36 @@ export default function CandidateCenterPage() {
     },
     [selectedKbId],
   );
+
+  const handleBatchComplete = useCallback(
+    (result: BatchOperationResult) => {
+      setBatchResult(result);
+      setBatchResultOpen(true);
+      setSelectedRowKeys([]);
+      void loadData();
+    },
+    [loadData],
+  );
+
+  const handleMergeSplitSuccess = useCallback(() => {
+    setSelectedRowKeys([]);
+    void loadData();
+  }, [loadData]);
+
+  const handleDetailSaved = useCallback((nextDetail: CandidateDetail) => {
+    setDetail(nextDetail);
+    setItems((prev) =>
+      prev.map((item) =>
+        item.candidate_id === nextDetail.candidate_id
+          ? {
+              ...item,
+              title: nextDetail.title,
+              summary: nextDetail.summary,
+            }
+          : item,
+      ),
+    );
+  }, []);
 
   const columns: ColumnsType<CandidateListItem> = useMemo(
     () => [
@@ -156,15 +250,24 @@ export default function CandidateCenterPage() {
       {
         title: "操作",
         key: "actions",
-        width: 100,
+        width: 160,
         render: (_value, record) => (
-          <Button type="link" size="small" onClick={() => void openDetail(record)}>
-            查看详情
-          </Button>
+          <Space size="small">
+            <Button type="link" size="small" onClick={() => void openDetail(record)}>
+              查看详情
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              onClick={() => navigate(`/candidates/confirm/${record.candidate_id}`)}
+            >
+              发布
+            </Button>
+          </Space>
         ),
       },
     ],
-    [openDetail],
+    [navigate, openDetail],
   );
 
   if (!selectedKbId) {
@@ -173,13 +276,99 @@ export default function CandidateCenterPage() {
 
   return (
     <>
-      <Card title="候选知识">
+      <Card
+        title="候选知识"
+        extra={
+          <Link to="/candidates/audit">
+            <Button type="link">操作日志</Button>
+          </Link>
+        }
+      >
+        <Form
+          form={form}
+          layout="inline"
+          initialValues={{ status: "pending" }}
+          style={{ marginBottom: 16 }}
+          onFinish={handleSearch}
+        >
+          <Form.Item name="status" label="状态">
+            <Select
+              allowClear
+              placeholder="全部状态"
+              style={{ width: 140 }}
+              options={Object.entries(STATUS_TAG).map(([value, meta]) => ({
+                value,
+                label: meta.label,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="source_channel" label="来源">
+            <Select
+              allowClear
+              placeholder="全部来源"
+              style={{ width: 140 }}
+              options={[
+                { value: "all", label: SOURCE_CHANNEL_LABEL.all },
+                { value: "document", label: SOURCE_CHANNEL_LABEL.document },
+                { value: "template", label: SOURCE_CHANNEL_LABEL.template },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="candidate_type" label="类型">
+            <Select
+              allowClear
+              placeholder="全部类型"
+              style={{ width: 140 }}
+              options={Object.entries(CANDIDATE_TYPE_LABEL).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="confidence_min" label="最低置信度">
+            <InputNumber min={0} max={1} step={0.1} placeholder="0-1" style={{ width: 120 }} />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                查询
+              </Button>
+              <Button onClick={handleReset}>重置</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+
+        {selectedRowKeys.length > 0 ? (
+          <Space style={{ marginBottom: 16 }}>
+            <span>已选 {selectedRowKeys.length} 条</span>
+            <Button type="primary" onClick={() => setBatchOpen(true)}>
+              批量确认
+            </Button>
+            <Button
+              disabled={selectedRows.length < 2}
+              onClick={() => setMergeOpen(true)}
+            >
+              合并
+            </Button>
+            <Button
+              disabled={selectedRows.length !== 1 || splitCandidateRow?.source_channel !== "document"}
+              onClick={() => setSplitOpen(true)}
+            >
+              拆分
+            </Button>
+          </Space>
+        ) : null}
+
         <Table
           rowKey="candidate_id"
           size="small"
           loading={loading}
           columns={columns}
           dataSource={items}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys as string[]),
+          }}
           locale={{ emptyText: <Empty description="暂无候选知识" /> }}
           pagination={{
             current: page,
@@ -195,73 +384,49 @@ export default function CandidateCenterPage() {
         />
       </Card>
 
-      <Drawer
-        title={detail?.title ?? "候选详情"}
-        width={720}
-        open={detailOpen}
-        onClose={() => {
-          setDetailOpen(false);
-          setSelectedCandidateId(undefined);
-          setDetail(undefined);
-        }}
-        destroyOnClose
-      >
-        {detailLoading ? (
-          <Spin />
-        ) : detail ? (
-          <>
-            <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
-              <Descriptions.Item label="候选 ID">{detail.candidate_id}</Descriptions.Item>
-              <Descriptions.Item label="状态">
-                {(() => {
-                  const meta = STATUS_TAG[detail.status] ?? { color: "default", label: detail.status };
-                  return <Tag color={meta.color}>{meta.label}</Tag>;
-                })()}
-              </Descriptions.Item>
-              <Descriptions.Item label="类型">
-                {detail.candidate_type
-                  ? (CANDIDATE_TYPE_LABEL[detail.candidate_type] ?? detail.candidate_type)
-                  : "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="来源">
-                {SOURCE_CHANNEL_LABEL[detail.source_channel] ?? detail.source_channel}
-              </Descriptions.Item>
-              <Descriptions.Item label="创建时间" span={2}>
-                {formatDateTime(detail.created_at)}
-              </Descriptions.Item>
-              {detail.summary ? (
-                <Descriptions.Item label="摘要" span={2}>
-                  {detail.summary}
-                </Descriptions.Item>
-              ) : null}
-            </Descriptions>
+      {detailOpen ? (
+        <CandidateDetailDrawer
+          kbId={selectedKbId}
+          open={detailOpen}
+          loading={detailLoading}
+          detail={detail}
+          onClose={() => {
+            setDetailOpen(false);
+            setDetail(undefined);
+          }}
+          onSaved={handleDetailSaved}
+        />
+      ) : null}
 
-            <Typography.Title level={5}>来源追溯</Typography.Title>
-            <div style={{ marginBottom: 16 }}>{renderSourceTraceDetail(detail.source_trace)}</div>
+      <CandidateMergeModal
+        kbId={selectedKbId}
+        open={mergeOpen}
+        selected={selectedRows}
+        onClose={() => setMergeOpen(false)}
+        onSuccess={handleMergeSplitSuccess}
+      />
 
-            <Typography.Title level={5}>内容预览</Typography.Title>
-            {detail.content ? (
-              <Typography.Paragraph
-                style={{
-                  whiteSpace: "pre-wrap",
-                  maxHeight: 360,
-                  overflow: "auto",
-                  marginBottom: 0,
-                  padding: 12,
-                  background: "#fafafa",
-                  borderRadius: 6,
-                }}
-              >
-                {detail.content}
-              </Typography.Paragraph>
-            ) : (
-              <Empty description="暂无内容预览" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            )}
-          </>
-        ) : selectedCandidateId ? (
-          <Empty description="未找到候选详情" />
-        ) : null}
-      </Drawer>
+      <CandidateSplitModal
+        kbId={selectedKbId}
+        open={splitOpen}
+        candidate={splitCandidateRow}
+        onClose={() => setSplitOpen(false)}
+        onSuccess={handleMergeSplitSuccess}
+      />
+
+      <BatchConfirmModal
+        kbId={selectedKbId}
+        open={batchOpen}
+        selected={selectedRows}
+        onClose={() => setBatchOpen(false)}
+        onComplete={handleBatchComplete}
+      />
+
+      <BatchResultDrawer
+        open={batchResultOpen}
+        result={batchResult}
+        onClose={() => setBatchResultOpen(false)}
+      />
     </>
   );
 }
