@@ -49,7 +49,7 @@ export default function PublishModal({
         void form.validateFields().then((values) => onSubmit(values));
       }}
       okText="发布"
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical">
         <Form.Item name="target_type" label="发布对象">

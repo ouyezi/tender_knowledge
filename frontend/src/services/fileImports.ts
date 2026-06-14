@@ -358,16 +358,44 @@ export async function listImportAuditLogs(
 export interface DeleteFileImportResult {
   import_id: string;
   file_name: string;
+  status: string;
+  deprecated_counts: Record<string, number>;
   deleted_counts: Record<string, number>;
+}
+
+export interface FileImportPurgeImpact {
+  import_id: string;
+  file_name: string;
+  has_published_assets: boolean;
+  published_counts: Record<string, number>;
+  published_total: number;
+  intermediate_counts: Record<string, number>;
+}
+
+export async function getFileImportPurgeImpact(
+  kbId: string,
+  importId: string,
+): Promise<FileImportPurgeImpact> {
+  return apiRequest<FileImportPurgeImpact>(
+    `/api/v1/kbs/${kbId}/file-imports/${importId}/purge-impact`,
+    { method: "GET" },
+  );
 }
 
 export async function deleteFileImport(
   kbId: string,
   importId: string,
+  options?: { deprecatePublished?: boolean },
 ): Promise<DeleteFileImportResult> {
-  return apiRequest<DeleteFileImportResult>(`/api/v1/kbs/${kbId}/file-imports/${importId}`, {
-    method: "DELETE",
-  });
+  const params = new URLSearchParams();
+  if (options?.deprecatePublished) {
+    params.set("deprecate_published", "true");
+  }
+  const query = params.toString();
+  return apiRequest<DeleteFileImportResult>(
+    `/api/v1/kbs/${kbId}/file-imports/${importId}${query ? `?${query}` : ""}`,
+    { method: "DELETE" },
+  );
 }
 
 export interface PurgeAllImportsResult {

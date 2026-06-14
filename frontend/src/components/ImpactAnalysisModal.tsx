@@ -1,5 +1,5 @@
 import { Modal, Table, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ImpactReport } from "../services/lifecycleApi";
 
 const OBJECT_TYPE_LABELS: Record<string, string> = {
@@ -17,7 +17,13 @@ interface ImpactAnalysisModalProps {
   title?: string;
   loading?: boolean;
   report?: ImpactReport;
+  counts?: Record<string, number>;
+  totalCount?: number;
+  description?: string;
   onClose: () => void;
+  onConfirm?: () => void;
+  confirmText?: string;
+  confirmLoading?: boolean;
 }
 
 export default function ImpactAnalysisModal({
@@ -25,38 +31,46 @@ export default function ImpactAnalysisModal({
   title = "影响分析",
   loading = false,
   report,
+  counts,
+  totalCount,
+  description,
   onClose,
+  onConfirm,
+  confirmText = "确认",
+  confirmLoading = false,
 }: ImpactAnalysisModalProps) {
-  const [visible, setVisible] = useState(open);
-
-  useEffect(() => {
-    setVisible(open);
-  }, [open]);
-
   const dataSource = useMemo(() => {
-    if (!report) {
+    const source = counts ?? report?.by_object_type;
+    if (!source) {
       return [];
     }
-    return Object.entries(report.by_object_type).map(([key, count]) => ({
+    return Object.entries(source).map(([key, count]) => ({
       key,
       object_type: key,
       label: OBJECT_TYPE_LABELS[key] ?? key,
       count,
     }));
-  }, [report]);
+  }, [counts, report]);
+
+  const resolvedTotal = totalCount ?? report?.total_count ?? 0;
 
   return (
     <Modal
       title={title}
-      open={visible}
+      open={open}
       onCancel={onClose}
-      footer={null}
+      onOk={onConfirm}
+      okText={confirmText}
+      okButtonProps={{ danger: Boolean(onConfirm), loading: confirmLoading }}
+      cancelText="取消"
+      footer={onConfirm ? undefined : null}
       width={560}
-      destroyOnClose
+      destroyOnHidden
     >
-      <Typography.Paragraph type="secondary">
-        引用总数：{report?.total_count ?? 0}
-      </Typography.Paragraph>
+      {description ? (
+        <Typography.Paragraph type="warning">{description}</Typography.Paragraph>
+      ) : null}
+      <Typography.Paragraph type="secondary">引用总数：{resolvedTotal}</Typography.Paragraph>
       <Table
         loading={loading}
         size="small"

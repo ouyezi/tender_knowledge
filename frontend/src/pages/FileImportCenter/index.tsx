@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Modal, Popconfirm, Space, Table, Tag, Upload, message } from "antd";
+import { Alert, Button, Card, Modal, Space, Table, Tag, Upload, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { RcFile } from "antd/es/upload/interface";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,8 +8,10 @@ import ConfirmDrawer from "./ConfirmDrawer";
 import DuplicateFileModal from "./DuplicateFileModal";
 import TaskLogDrawer from "./TaskLogDrawer";
 import OperationLogDrawer from "./OperationLogDrawer";
+import ImpactAnalysisModal from "../../components/ImpactAnalysisModal";
 import {
   deleteFileImport,
+  getFileImportPurgeImpact,
   purgeAllFileImports,
   retryActualBidParse,
   retryImport,
@@ -17,6 +19,7 @@ import {
   getFileImport,
   listFileImports,
   type FileImportListItem,
+  type FileImportPurgeImpact,
   type ParseStatus,
   uploadFile,
 } from "../../services/fileImports";
@@ -93,6 +96,11 @@ export default function FileImportCenterPage() {
   const [operationLogOpen, setOperationLogOpen] = useState(false);
   const [operationLogImportId, setOperationLogImportId] = useState<string>();
   const [purgingAll, setPurgingAll] = useState(false);
+  const [deleteImpactOpen, setDeleteImpactOpen] = useState(false);
+  const [deleteImpactLoading, setDeleteImpactLoading] = useState(false);
+  const [deleteConfirmLoading, setDeleteConfirmLoading] = useState(false);
+  const [pendingDeleteImport, setPendingDeleteImport] = useState<FileImportListItem | null>(null);
+  const [purgeImpact, setPurgeImpact] = useState<FileImportPurgeImpact | undefined>();
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
@@ -136,6 +144,67 @@ export default function FileImportCenterPage() {
       }
     },
     [loadData, selectedKbId],
+  );
+
+  const handleDeleteImport = useCallback(
+    async (record: FileImportListItem, deprecatePublished: boolean) => {
+      if (!selectedKbId) {
+        return;
+      }
+      if (deprecatePublished) {
+        setDeleteConfirmLoading(true);
+      }
+      try {
+        await deleteFileImport(selectedKbId, record.import_id, { deprecatePublished });
+        message.success(
+          deprecatePublished ? "已删除，相关已发布资产已废弃" : "已删除",
+        );
+        setDeleteImpactOpen(false);
+        setPendingDeleteImport(null);
+        setPurgeImpact(undefined);
+        void loadData();
+      } catch (error) {
+        message.error((error as Error).message);
+      } finally {
+        setDeleteConfirmLoading(false);
+      }
+    },
+    [loadData, selectedKbId],
+  );
+
+  const handleDeleteClick = useCallback(
+    async (record: FileImportListItem) => {
+      if (!selectedKbId) {
+        return;
+      }
+      setPendingDeleteImport(record);
+      setDeleteImpactLoading(true);
+      try {
+        const impact = await getFileImportPurgeImpact(selectedKbId, record.import_id);
+        setPurgeImpact(impact);
+        if (impact.has_published_assets) {
+          setDeleteImpactOpen(true);
+          return;
+        }
+        setPendingDeleteImport(null);
+        setPurgeImpact(undefined);
+        Modal.confirm({
+          title: "确定删除该导入记录？",
+          content: "将删除导入文件及解析数据，不可恢复。",
+          okText: "删除",
+          okButtonProps: { danger: true },
+          cancelText: "取消",
+          onOk: () => handleDeleteImport(record, false),
+        });
+      } catch (error) {
+        message.error((error as Error).message);
+        setPendingDeleteImport(null);
+        setPurgeImpact(undefined);
+      } finally {
+        setDeleteImpactLoading(false);
+      }
+    },
+    [handleDeleteImport, selectedKbId],
   );
 
   useEffect(() => {
@@ -245,32 +314,22 @@ export default function FileImportCenterPage() {
             >
               操作日志
             </Button>
-            <Popconfirm
-              title="确定删除该导入记录？"
-              description="将删除文件、解析结果及下游数据，不可恢复。"
-              onConfirm={async () => {
-                if (!selectedKbId) {
-                  return;
-                }
-                try {
-                  await deleteFileImport(selectedKbId, record.import_id);
-                  message.success("已删除");
-                  void loadData();
-                } catch (error) {
-                  message.error((error as Error).message);
-                }
+            <Button
+              size="small"
+              danger
+              loading={deleteImpactLoading && pendingDeleteImport?.import_id === record.import_id}
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleDeleteClick(record);
               }}
-              onCancel={(event) => event?.stopPropagation()}
             >
-              <Button size="small" danger onClick={(event) => event.stopPropagation()}>
-                删除
-              </Button>
-            </Popconfirm>
+              删除
+            </Button>
           </Space>
         ),
       },
     ],
-    [handleRetryParse, retryingParseImportIds, loadData, selectedKbId],
+    [deleteImpactLoading, handleDeleteClick, handleRetryParse, pendingDeleteImport?.import_id, retryingParseImportIds, loadData, selectedKbId],
   );
 
   if (!selectedKbId) {
@@ -446,6 +505,32 @@ export default function FileImportCenterPage() {
         kbId={selectedKbId}
         importId={operationLogImportId}
         onClose={() => setOperationLogOpen(false)}
+      />
+      <ImpactAnalysisModal
+        open={deleteImpactOpen}
+        title="删除影响确认"
+        loading={deleteImpactLoading}
+        counts={purgeImpact?.published_counts}
+        totalCount={purgeImpact?.published_total}
+        description={
+          purgeImpact
+            ? `将废弃 ${purgeImpact.published_total} 个已发布知识资产，并删除导入文件及解析数据，不可恢复。`
+            : undefined
+        }
+        onClose={() => {
+          setDeleteImpactOpen(false);
+          setPendingDeleteImport(null);
+          setPurgeImpact(undefined);
+        }}
+        onConfirm={
+          pendingDeleteImport
+            ? () => {
+                void handleDeleteImport(pendingDeleteImport, true);
+              }
+            : undefined
+        }
+        confirmText="废弃已发布资产并删除"
+        confirmLoading={deleteConfirmLoading}
       />
     </Card>
   );

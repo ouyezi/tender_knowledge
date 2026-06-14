@@ -179,7 +179,7 @@ export default function ConfirmDrawer({ open, kbId, importId, onClose, onSaved }
       width={560}
       open={open}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
       extra={
         <Space>
           <Button onClick={handleIgnore} disabled={submitting}>

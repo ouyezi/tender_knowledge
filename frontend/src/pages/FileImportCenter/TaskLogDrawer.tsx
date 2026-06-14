@@ -56,7 +56,7 @@ export default function TaskLogDrawer({ open, kbId, importId, onClose }: TaskLog
   );
 
   return (
-    <Drawer title="任务日志" width={760} open={open} onClose={onClose} destroyOnClose>
+    <Drawer title="任务日志" width={760} open={open} onClose={onClose} destroyOnHidden>
       {loading ? (
         <Spin />
       ) : (

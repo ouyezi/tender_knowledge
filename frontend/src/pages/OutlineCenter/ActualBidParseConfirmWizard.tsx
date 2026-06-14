@@ -444,13 +444,35 @@ export default function ActualBidParseConfirmWizard() {
         ) : null}
 
         {currentStep === 2 ? (
-          <Table
-            rowKey="candidate_id"
-            pagination={false}
-            columns={candidateColumns}
-            dataSource={candidateRows}
-            locale={{ emptyText: "暂无候选数据" }}
-          />
+          <>
+            {candidateRows.length === 0 ? (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message="暂无候选知识"
+                description={
+                  <Space direction="vertical" size={4}>
+                    <span>
+                      解析阶段未生成候选条目（建议数：{taskDetail?.suggestion?.candidate_count ?? 0}）。
+                      常见原因：标题未匹配到章节类型，或匹配到的类型在规则中标记为 ignore。
+                    </span>
+                    <span>
+                      请先在「章节类型」中维护与标书标题一致的名称/同义词；若本条记录完成于修复前，请在来源导入中心对该文件
+                      <strong>重新触发解析</strong>后再查看。
+                    </span>
+                  </Space>
+                }
+              />
+            ) : null}
+            <Table
+              rowKey="candidate_id"
+              pagination={false}
+              columns={candidateColumns}
+              dataSource={candidateRows}
+              locale={{ emptyText: "暂无候选数据" }}
+            />
+          </>
         ) : null}
       </Spin>
       <Space>

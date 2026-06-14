@@ -32,6 +32,7 @@ from src.models.downstream_task_entry import (
 )
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
 from src.services import bid_outline_diff_service, bid_outline_extract_service, candidate_generate_service
+from src.services.document_tree_classification_service import classify_heading_nodes_for_document
 from src.services.docm_converter import ensure_docx_for_parse
 from src.services.docx_document_walker import walk_document
 from src.services.docx_image_extractor import extract_docx_images
@@ -558,6 +559,7 @@ def _persist_parse_suggestion(
     generated_candidate_count: int,
     outline_quality: dict | None = None,
     filter_decisions: list | None = None,
+    classification_summary: dict | None = None,
 ) -> None:
     suggestion = (
         db.query(DocumentParseSuggestion)
@@ -589,10 +591,11 @@ def _persist_parse_suggestion(
             "needs_manual_review": walked.needs_manual_review,
         },
         "hierarchy_inference": hierarchy_inference,
-        "chunk_classification": {
+        "chunk_classification": classification_summary
+        or {
             "mode": "skipped",
             "suggestion_source": "rule",
-            "reason": "P1 runner uses rule-only fallback metadata",
+            "reason": "classification not run",
         },
         "candidate_count": generated_candidate_count,
     }
@@ -921,6 +924,40 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
             f"目录抽取完成：{len(toc_result.entries)} 条目，策略 {toc_result.strategy.value}",
         )
 
+        # Phase 2.5: classify heading nodes before candidate generation
+        _set_task_phase(
+            task,
+            db,
+            ActualBidParseTaskPhase.candidate_generate,
+            message="章节分类",
+        )
+        with _timed_step(
+            task,
+            db,
+            "document_tree.classify_headings",
+            user_visible=True,
+            document_id=str(document.document_id),
+        ):
+            classification_summary = classify_heading_nodes_for_document(
+                db,
+                kb_id=file_import.kb_id,
+                document_id=document.document_id,
+            )
+        _append_parse_log(
+            task,
+            db,
+            (
+                f"章节分类完成：{classification_summary.taxonomy_assigned_count}/"
+                f"{classification_summary.heading_count} 个标题已匹配章节类型"
+            ),
+        )
+        logger.info(
+            "actual_bid_parse task=%s classify_headings assigned=%d/%d",
+            task.parse_task_id,
+            classification_summary.taxonomy_assigned_count,
+            classification_summary.heading_count,
+        )
+
         # Phase 3: candidate_generate_service.generate
         _set_task_phase(
             task,
@@ -959,6 +996,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
                 generated_candidate_count=len(created_candidates),
                 outline_quality=outline_quality,
                 filter_decisions=filter_decisions,
+                classification_summary=classification_summary.to_payload(),
             )
 
         task.status = ActualBidParseTaskStatus.ready

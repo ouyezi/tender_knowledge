@@ -88,7 +88,7 @@ export default function MergeWizard({
         onOk={handleConfirm}
         okText="确认合并"
         okButtonProps={{ disabled: !targetId, loading: mergeLoading }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Space direction="vertical" style={{ width: "100%" }} size="middle">
           <Typography.Text>

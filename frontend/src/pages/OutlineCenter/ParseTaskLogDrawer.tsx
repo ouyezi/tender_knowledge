@@ -42,7 +42,7 @@ export default function ParseTaskLogDrawer({ open, loading, task, onClose }: Par
   const phaseTimings = task?.llm_progress?.phase_timings_ms ?? {};
 
   return (
-    <Drawer title={task?.file_name ?? "解析任务日志"} width={720} open={open} onClose={onClose} destroyOnClose>
+    <Drawer title={task?.file_name ?? "解析任务日志"} width={720} open={open} onClose={onClose} destroyOnHidden>
       {loading ? (
         <Spin />
       ) : !task ? (

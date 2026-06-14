@@ -176,7 +176,7 @@ export default function KnowledgeBaseListPage() {
         onCancel={() => setCreateOpen(false)}
         onOk={handleCreate}
         okButtonProps={{ loading: saving, disabled: readOnly }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" preserve={false}>
           <Form.Item

@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_kb_or_404, get_operator_id, kb_write_guard
@@ -12,6 +13,7 @@ from src.db.session import get_db
 from src.models.file_import import FileImport
 from src.models.file_import import (
     DuplicateResolution,
+    FileImportStatus,
     FilePurpose,
     TargetObjectType,
 )
@@ -31,6 +33,7 @@ from src.services.actual_bid_parse_runner import run_actual_bid_parse_in_new_ses
 from src.services.file_import_service import FileImportServiceError, upload_file_and_enqueue
 from src.services.file_import_purge_service import (
     FileImportPurgeServiceError,
+    check_purge_impact,
     purge_all_file_imports,
     purge_file_import,
 )
@@ -75,7 +78,10 @@ def list_file_imports(
     _: KnowledgeBase = Depends(get_kb_or_404),
 ):
     offset = max(page - 1, 0) * page_size
-    q = db.query(FileImport).filter(FileImport.kb_id == kb_id)
+    q = db.query(FileImport).filter(
+        FileImport.kb_id == kb_id,
+        FileImport.status != FileImportStatus.deleted,
+    )
     total = q.count()
     rows = (
         q.order_by(FileImport.created_at.desc())
@@ -559,10 +565,28 @@ def retry_import(
     return success(retry_data, trace_id=get_trace_id())
 
 
+@router.get("/{import_id}/purge-impact")
+def get_file_import_purge_impact(
+    kb_id: UUID,
+    import_id: UUID,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    try:
+        report = check_purge_impact(db, kb_id=kb_id, import_id=import_id)
+    except FileImportPurgeServiceError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    return success(report.to_dict(), trace_id=get_trace_id())
+
+
 @router.delete("/{import_id}")
 def delete_file_import(
     kb_id: UUID,
     import_id: UUID,
+    deprecate_published: bool = False,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(kb_write_guard),
     operator_id: str = Depends(get_operator_id),
@@ -574,18 +598,36 @@ def delete_file_import(
             import_id=import_id,
             operator_id=operator_id,
             trace_id=get_trace_id(),
+            deprecate_published=deprecate_published,
         )
         db.commit()
     except FileImportPurgeServiceError as exc:
         db.rollback()
         return JSONResponse(
             status_code=exc.status_code,
-            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+            content=error(
+                exc.code,
+                str(exc),
+                trace_id=get_trace_id(),
+                details=exc.details,
+            ),
+        )
+    except IntegrityError:
+        db.rollback()
+        return JSONResponse(
+            status_code=409,
+            content=error(
+                "PURGE_CONFLICT",
+                "Unable to purge import due to remaining references",
+                trace_id=get_trace_id(),
+            ),
         )
     return success(
         {
             "import_id": summary.import_id,
             "file_name": summary.file_name,
+            "status": summary.status,
+            "deprecated_counts": summary.deprecated_counts,
             "deleted_counts": summary.deleted_counts,
         },
         trace_id=get_trace_id(),

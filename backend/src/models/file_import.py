@@ -49,6 +49,7 @@ class FileImportStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
     ignored = "ignored"
+    deleted = "deleted"
 
 
 class HashStatus(str, enum.Enum):
