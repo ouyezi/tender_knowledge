@@ -8,7 +8,9 @@ from zipfile import ZipFile
 
 from lxml import etree
 
-from src.services.docx_outline_parser import parse_outline
+from src.services.docx_content_collector import collect_content
+from src.services.docx_hierarchy_inferrer import infer_hierarchy
+from src.services.docx_tree_materializer import materialize_outline_nodes
 from src.services.text_sanitize import sanitize_pg_text
 
 _DOC_XML_PATH = "word/document.xml"
@@ -20,6 +22,7 @@ _TRAILING_PAGE_RE = re.compile(r"\s+\d+\s*$")
 class ExtractStrategy(str, enum.Enum):
     toc = "toc"
     heading_heuristic = "heading_heuristic"
+    content_heuristic = "content_heuristic"
     flat_fallback = "flat_fallback"
 
 
@@ -100,8 +103,22 @@ def _extract_toc_entries_from_docx_xml(path: Path) -> list[TocEntry]:
     return entries
 
 
+def _resolve_fallback_strategy(inferred) -> ExtractStrategy:
+    if inferred.used_flat_fallback:
+        return ExtractStrategy.flat_fallback
+    if inferred.medium_confidence_count > 0:
+        high_patterns = {"heading_style", "numeric"}
+        if inferred.patterns_used and not any(p in high_patterns for p in inferred.patterns_used):
+            return ExtractStrategy.content_heuristic
+        if any(p not in high_patterns for p in inferred.patterns_used):
+            return ExtractStrategy.content_heuristic
+    return ExtractStrategy.heading_heuristic
+
+
 def _to_fallback_entries(path: Path) -> TocExtractResult:
-    nodes = parse_outline(path)
+    collected = collect_content(path)
+    inferred = infer_hierarchy(collected.blocks)
+    nodes = materialize_outline_nodes(inferred, collected.blocks)
     entries = [
         TocEntry(
             temp_id=node.temp_id,
@@ -112,10 +129,7 @@ def _to_fallback_entries(path: Path) -> TocExtractResult:
         )
         for node in nodes
     ]
-    if nodes and all(node.needs_manual_review for node in nodes):
-        strategy = ExtractStrategy.flat_fallback
-    else:
-        strategy = ExtractStrategy.heading_heuristic
+    strategy = _resolve_fallback_strategy(inferred)
     return TocExtractResult(entries=entries, strategy=strategy)
 
 

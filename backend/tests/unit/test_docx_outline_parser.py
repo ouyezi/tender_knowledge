@@ -52,3 +52,19 @@ def test_parse_outline_marks_manual_review_when_no_headings(sample_docx_path):
     nodes = parse_outline(sample_docx_path)
     assert len(nodes) >= 1
     assert all(node.needs_manual_review is True for node in nodes)
+
+
+def test_parse_outline_detects_chinese_numbering(tmp_path):
+    docx_path = tmp_path / "chinese.docx"
+    _build_docx(
+        docx_path,
+        [
+            ("Normal", "第一章 总则"),
+            ("Normal", "一、适用范围"),
+            ("Normal", "（一）适用对象"),
+        ],
+    )
+    nodes = parse_outline(docx_path)
+    assert [n.level for n in nodes] == [1, 2, 3]
+    assert nodes[1].parent_temp_id == nodes[0].temp_id
+    assert all(n.needs_manual_review for n in nodes)
