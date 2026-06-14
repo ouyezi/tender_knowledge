@@ -217,6 +217,13 @@ export default function CandidateCenterPage() {
         render: (value: string) => value || "-",
       },
       {
+        title: "内容摘要",
+        dataIndex: "content_excerpt",
+        key: "content_excerpt",
+        ellipsis: true,
+        render: (value: string) => value || "（仅标题）",
+      },
+      {
         title: "类型",
         dataIndex: "candidate_type",
         key: "candidate_type",

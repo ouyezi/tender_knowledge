@@ -13,11 +13,11 @@ import {
   Spin,
   Switch,
   Tabs,
-  Typography,
   message,
 } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import RichContentViewer from "../../components/RichContentViewer";
 import { useKBContext } from "../../layout/KBContext";
 import {
   confirmCandidate,
@@ -369,15 +369,9 @@ export default function CandidateConfirmPage() {
           {renderSourceTrace(candidate.source_trace)}
         </Card>
         <Card title="内容预览">
-          {candidate.content ? (
-            <Typography.Paragraph
-              style={{ whiteSpace: "pre-wrap", maxHeight: 520, overflow: "auto", marginBottom: 0 }}
-            >
-              {candidate.content}
-            </Typography.Paragraph>
-          ) : (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无内容预览" />
-          )}
+          <div style={{ maxHeight: 520, overflow: "auto" }}>
+            <RichContentViewer kbId={selectedKbId} content={candidate.content} />
+          </div>
         </Card>
       </Col>
 

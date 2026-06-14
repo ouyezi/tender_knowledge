@@ -20,6 +20,7 @@ export interface CandidateListItem {
   candidate_type: string;
   title: string;
   summary?: string;
+  content_excerpt?: string;
   suggested_knowledge_type?: string | null;
   suggested_chapter_taxonomy_id?: string | null;
   suggested_product_category_ids?: string[];
