@@ -563,7 +563,7 @@ export default function ParseConfirmWizard() {
         </Space>
       }
       style={{ minHeight: "calc(100vh - 120px)" }}
-      bodyStyle={{ display: "flex", flexDirection: "column", gap: 16 }}
+      styles={{ body: { display: "flex", flexDirection: "column", gap: 16 } }}
     >
       <Steps
         current={currentStep}
