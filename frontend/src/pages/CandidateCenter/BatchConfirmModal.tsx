@@ -126,7 +126,7 @@ export default function BatchConfirmModal({
       onOk={() => void handleOk()}
       okText="提交"
       confirmLoading={submitting}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form
         form={form}

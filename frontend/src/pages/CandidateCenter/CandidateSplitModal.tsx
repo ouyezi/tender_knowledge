@@ -72,7 +72,7 @@ export default function CandidateSplitModal({
       onOk={() => void handleOk()}
       okText="确认拆分"
       width={640}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical">
         <Form.List name="splits">

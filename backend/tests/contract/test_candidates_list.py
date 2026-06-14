@@ -256,3 +256,18 @@ def test_get_candidate_detail_not_found(client, seeded_kb):
     )
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "CANDIDATE_NOT_FOUND"
+
+
+def test_list_candidates_pending_confirm_does_not_500(client, db_session, seeded_kb):
+    _seed_document_candidate(db_session, seeded_kb)
+    _seed_template_candidate(db_session, seeded_kb)
+
+    resp = client.get(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/candidates",
+        params={"status": "pending_confirm"},
+        headers={"X-Operator-Id": "admin"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()["data"]
+    assert payload["total"] == 1
+    assert payload["items"][0]["source_channel"] == "template"

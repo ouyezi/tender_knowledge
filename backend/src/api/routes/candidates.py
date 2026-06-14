@@ -94,8 +94,24 @@ class SplitRequest(BaseModel):
     review_comment: str | None = None
 
 
-def _status_to_stub_status(status: str | None) -> str | None:
+def _document_status_filter(status: str | None) -> str | None:
+    """Map API status filter to CandidateKnowledge.status; None skips document rows."""
+    if status is None:
+        return None
+    if status == "pending_confirm":
+        return None
     if status == "pending":
+        return "pending"
+    return status
+
+
+def _stub_status_filter(status: str | None) -> str | None:
+    """Map API status filter to CandidateKnowledgeStub.status."""
+    if status is None:
+        return None
+    if status == "pending":
+        return "pending_confirm"
+    if status == "pending_confirm":
         return "pending_confirm"
     return status
 
@@ -146,14 +162,16 @@ def list_candidates(
     include_template = source_channel in {"all", "template"}
     rows: list[dict] = []
 
-    if include_document:
+    doc_status = _document_status_filter(status)
+
+    if include_document and doc_status is not None:
         doc_q = (
             db.query(CandidateKnowledge, FileImport, Document, DocumentTreeNode)
             .join(FileImport, FileImport.import_id == CandidateKnowledge.import_id)
             .join(Document, Document.document_id == CandidateKnowledge.source_doc_id)
             .outerjoin(DocumentTreeNode, DocumentTreeNode.node_id == CandidateKnowledge.source_node_id)
             .filter(CandidateKnowledge.kb_id == kb_id)
-            .filter(CandidateKnowledge.status == status)
+            .filter(CandidateKnowledge.status == doc_status)
         )
         if import_id:
             doc_q = doc_q.filter(CandidateKnowledge.import_id == import_id)
@@ -204,8 +222,9 @@ def list_candidates(
                 }
             )
 
-    if include_template:
-        stub_status = _status_to_stub_status(status)
+    stub_status = _stub_status_filter(status)
+
+    if include_template and stub_status is not None:
         tpl_q = (
             db.query(CandidateKnowledgeStub, FileImport, Template, TemplateChapter)
             .join(FileImport, FileImport.import_id == CandidateKnowledgeStub.import_id)
@@ -273,6 +292,49 @@ def list_candidates(
         {"items": paged_rows, "total": total, "page": page, "page_size": page_size},
         trace_id=get_trace_id(),
     )
+
+
+@router.post("/merge")
+def merge_candidate(
+    kb_id: UUID,
+    body: MergeRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    trace_id = get_trace_id() or UUID(int=0)
+    try:
+        result = merge_candidates(
+            db,
+            kb_id=kb_id,
+            target_candidate_id=body.target_candidate_id,
+            source_candidate_ids=body.source_candidate_ids,
+            payload=body.model_dump(exclude_unset=True),
+            operator_id=operator_id,
+            trace_id=trace_id,
+        )
+    except CandidateNotFoundError:
+        return _candidate_not_found_response()
+    except MergeInvalidTargetError:
+        return JSONResponse(
+            status_code=409,
+            content=error("MERGE_INVALID_TARGET", "Invalid merge target", trace_id=trace_id),
+        )
+    except MergeSourceNotPendingError as exc:
+        return JSONResponse(
+            status_code=409,
+            content=error(
+                "MERGE_SOURCE_NOT_PENDING",
+                f"Merge source not pending: {exc.candidate_id} status={exc.status}",
+                trace_id=trace_id,
+            ),
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content=error("VALIDATION_ERROR", str(exc), trace_id=trace_id),
+        )
+    return success(result, trace_id=trace_id)
 
 
 @router.get("/{candidate_id}")
@@ -454,49 +516,6 @@ def _publish_error_response(exc: Exception, trace_id: UUID) -> JSONResponse:
         status_code=422,
         content=error("PUBLISH_VALIDATION_FAILED", str(exc), trace_id=trace_id),
     )
-
-
-@router.post("/merge")
-def merge_candidate(
-    kb_id: UUID,
-    body: MergeRequest,
-    db: Session = Depends(get_db),
-    _: KnowledgeBase = Depends(kb_write_guard),
-    operator_id: str = Depends(get_operator_id),
-):
-    trace_id = get_trace_id() or UUID(int=0)
-    try:
-        result = merge_candidates(
-            db,
-            kb_id=kb_id,
-            target_candidate_id=body.target_candidate_id,
-            source_candidate_ids=body.source_candidate_ids,
-            payload=body.model_dump(exclude_unset=True),
-            operator_id=operator_id,
-            trace_id=trace_id,
-        )
-    except CandidateNotFoundError:
-        return _candidate_not_found_response()
-    except MergeInvalidTargetError:
-        return JSONResponse(
-            status_code=409,
-            content=error("MERGE_INVALID_TARGET", "Invalid merge target", trace_id=trace_id),
-        )
-    except MergeSourceNotPendingError as exc:
-        return JSONResponse(
-            status_code=409,
-            content=error(
-                "MERGE_SOURCE_NOT_PENDING",
-                f"Merge source not pending: {exc.candidate_id} status={exc.status}",
-                trace_id=trace_id,
-            ),
-        )
-    except ValueError as exc:
-        return JSONResponse(
-            status_code=422,
-            content=error("VALIDATION_ERROR", str(exc), trace_id=trace_id),
-        )
-    return success(result, trace_id=trace_id)
 
 
 @router.post("/{candidate_id}/split")

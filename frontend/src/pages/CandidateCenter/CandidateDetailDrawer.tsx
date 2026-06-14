@@ -144,7 +144,7 @@ export default function CandidateDetailDrawer({
       width={720}
       open={open}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
       extra={
         detail ? (
           <Space>

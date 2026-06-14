@@ -76,7 +76,7 @@ export default function CandidateMergeModal({
       onCancel={onClose}
       onOk={() => void handleOk()}
       okText="确认合并"
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical">
         <Form.Item

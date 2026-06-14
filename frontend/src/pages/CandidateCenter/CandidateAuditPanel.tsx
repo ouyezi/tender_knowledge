@@ -260,7 +260,7 @@ export default function CandidateAuditPanel() {
           setDetailOpen(false);
           setDetail(undefined);
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         {detailLoading ? (
           <Typography.Text type="secondary">加载中...</Typography.Text>

@@ -64,7 +64,7 @@ export default function BatchResultDrawer({ open, result, onClose }: BatchResult
       width={720}
       open={open}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
       extra={
         result ? (
           <Space>
