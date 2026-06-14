@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from src.models.knowledge_unit import KnowledgeUnit, KnowledgeUnitStatus
+from src.services.retrieval.indexing.index_builder import IndexBuilder
 
 
 def publish(
@@ -48,6 +49,7 @@ def publish(
     )
     db.add(row)
     db.flush()
+    IndexBuilder(db).upsert_from_ku(row)
     return {
         "confirmed_object_type": "ku",
         "confirmed_object_id": row.ku_id,

@@ -30,6 +30,8 @@ import {
   type BidOutlineNode,
 } from "../../services/bidOutlines";
 import OutlineDiffDrawer from "./OutlineDiffDrawer";
+import ModuleSuggestionWizard from "./ModuleSuggestionWizard";
+import OutlineSimilarityDrawer from "./OutlineSimilarityDrawer";
 import OutlineTreeEditor, { type OutlineTreeNode } from "./OutlineTreeEditor";
 
 type FlatNode = BidOutlineNode;
@@ -154,6 +156,8 @@ export default function OutlineDetailPage() {
   const [taxonomyNodes, setTaxonomyNodes] = useState<ChapterTaxonomyNode[]>([]);
   const [categoryNodes, setCategoryNodes] = useState<ProductCategoryNode[]>([]);
   const [diffDrawerOpen, setDiffDrawerOpen] = useState(false);
+  const [similarityDrawerOpen, setSimilarityDrawerOpen] = useState(false);
+  const [suggestionWizardOpen, setSuggestionWizardOpen] = useState(false);
 
   const treeRoots = useMemo(() => buildTree(flatNodes), [flatNodes]);
   const selectedNode = useMemo(
@@ -167,6 +171,17 @@ export default function OutlineDetailPage() {
     () => flatNodes.map((node) => ({ label: node.title, value: node.outline_node_id })),
     [flatNodes],
   );
+  const outlinePayload = useMemo(
+    () =>
+      flatNodes.map((node) => ({
+        title: node.title,
+        level: node.level,
+        sort_order: node.sort_order,
+        parent_id: node.parent_id,
+      })),
+    [flatNodes],
+  );
+  const categoryIds = useMemo(() => outline?.product_category_ids ?? [], [outline?.product_category_ids]);
 
   const reload = useCallback(async () => {
     if (!selectedKbId || !bidOutlineId) return;
@@ -288,6 +303,8 @@ export default function OutlineDetailPage() {
             <Tag color={outline?.status === "confirmed" ? "green" : "default"}>{outline?.status ?? "-"}</Tag>
             <Button onClick={() => navigate("/outlines")}>返回目录中心</Button>
             <Button onClick={() => setDiffDrawerOpen(true)}>查看差异</Button>
+            <Button onClick={() => setSimilarityDrawerOpen(true)}>目录相似度</Button>
+            <Button onClick={() => setSuggestionWizardOpen(true)}>模块建议</Button>
             <Button type="primary" disabled={readOnly} loading={saving} onClick={() => void handleConfirmOutline()}>
               确认目录
             </Button>
@@ -381,6 +398,20 @@ export default function OutlineDetailPage() {
         bidOutlineId={bidOutlineId}
         onClose={() => setDiffDrawerOpen(false)}
         onApplied={reload}
+      />
+      <OutlineSimilarityDrawer
+        open={similarityDrawerOpen}
+        kbId={selectedKbId}
+        outlineNodes={outlinePayload}
+        productCategoryIds={categoryIds}
+        onClose={() => setSimilarityDrawerOpen(false)}
+      />
+      <ModuleSuggestionWizard
+        open={suggestionWizardOpen}
+        kbId={selectedKbId}
+        outlineNodes={outlinePayload}
+        productCategoryIds={categoryIds}
+        onClose={() => setSuggestionWizardOpen(false)}
       />
     </>
   );

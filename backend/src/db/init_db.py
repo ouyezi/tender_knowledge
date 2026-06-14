@@ -7,6 +7,18 @@ from src.models.candidate_knowledge import CandidateKnowledgeStatus, CandidateKn
 from src.models.candidate_knowledge_stub import CandidateKnowledgeStubStatus
 from src.models.classification_reference import ReferenceObjectType
 from src.models.import_audit_log import ImportAuditAction
+from src.models.retrieval_eval_case import (
+    RetrievalEvalCaseCreatedFrom,
+    RetrievalEvalCaseStatus,
+)
+from src.models.retrieval_eval_run import RetrievalEvalRunStatus
+from src.models.retrieval_eval_set import RetrievalEvalSetStatus
+from src.models.retrieval_feedback import RetrievalFeedbackType
+from src.models.retrieval_index_entry import (
+    RetrievalIndexStatus,
+    RetrievalObjectType,
+)
+from src.models.retrieval_trace import RetrievalIntent, RetrievalTraceStatus
 from src.models import (  # noqa: F401
     actual_bid_audit_log,
     actual_bid_parse_task,
@@ -33,7 +45,15 @@ from src.models import (  # noqa: F401
     knowledge_base,
     knowledge_unit,
     manual_asset,
+    module_assembly_suggestion,
     product_category,
+    retrieval_eval_case,
+    retrieval_eval_run,
+    retrieval_eval_set,
+    retrieval_feedback,
+    retrieval_index_entry,
+    retrieval_strategy_version,
+    retrieval_trace,
     template,
     template_audit_log,
     template_chapter,
@@ -47,6 +67,12 @@ from src.models import (  # noqa: F401
     template_variable,
     wiki,
 )
+
+
+def _ensure_pgvector_extension(conn) -> None:
+    if conn.dialect.name != "postgresql":
+        return
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
 
 def _sync_postgres_enum(conn, type_name: str, values: list[str]) -> None:
@@ -172,6 +198,9 @@ def _sync_epic4_columns(conn) -> None:
 
 
 def init_db() -> None:
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as conn:
+            _ensure_pgvector_extension(conn)
     Base.metadata.create_all(bind=engine)
     if engine.dialect.name != "postgresql":
         return
@@ -210,6 +239,51 @@ def init_db() -> None:
             conn,
             "candidateconfirmauditaction",
             [member.value for member in CandidateConfirmAuditAction],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalobjecttype",
+            [member.value for member in RetrievalObjectType],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalindexstatus",
+            [member.value for member in RetrievalIndexStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalintent",
+            [member.value for member in RetrievalIntent],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievaltracestatus",
+            [member.value for member in RetrievalTraceStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalfeedbacktype",
+            [member.value for member in RetrievalFeedbackType],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalevalsetstatus",
+            [member.value for member in RetrievalEvalSetStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalevalcasecreatedfrom",
+            [member.value for member in RetrievalEvalCaseCreatedFrom],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalevalcasestatus",
+            [member.value for member in RetrievalEvalCaseStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "retrievalevalrunstatus",
+            [member.value for member in RetrievalEvalRunStatus],
         )
         _sync_missing_columns(conn)
         _sync_epic4_columns(conn)

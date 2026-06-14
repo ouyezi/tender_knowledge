@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { key: "/file-imports", label: <Link to="/file-imports">来源导入</Link> },
   { key: "/template-libraries", label: <Link to="/template-libraries">模板库</Link> },
   { key: "/outlines", label: <Link to="/outlines">目录</Link> },
+  { key: "/retrieval-optimization", label: <Link to="/retrieval-optimization">检索优化</Link> },
   { key: "/candidates", label: <Link to="/candidates">候选</Link> },
 ];
 
