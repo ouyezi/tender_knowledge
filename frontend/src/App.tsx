@@ -7,6 +7,7 @@ import ProductCategoryCenterPage from "./pages/ProductCategoryCenter";
 import ParseConfirmWizard from "./pages/TemplateLibraryCenter/ParseConfirmWizard";
 import TemplateDetailPage from "./pages/TemplateLibraryCenter/TemplateDetailPage";
 import CandidateCenterPage from "./pages/CandidateCenter";
+import KnowledgeCenterPage from "./pages/KnowledgeCenter";
 import CandidateAuditPanel from "./pages/CandidateCenter/CandidateAuditPanel";
 import CandidateConfirmPage from "./pages/CandidateCenter/CandidateConfirmPage";
 import OutlineCenterPage from "./pages/OutlineCenter";
@@ -35,6 +36,7 @@ export default function App() {
           element={<ActualBidParseConfirmWizard />}
         />
         <Route path="/candidates" element={<CandidateCenterPage />} />
+        <Route path="/knowledge" element={<KnowledgeCenterPage />} />
         <Route path="/candidates/audit" element={<CandidateAuditPanel />} />
         <Route path="/candidates/confirm/:candidateId" element={<CandidateConfirmPage />} />
         <Route
