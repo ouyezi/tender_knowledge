@@ -10,7 +10,6 @@ import {
   Space,
   Spin,
   Steps,
-  Switch,
   Table,
   Tag,
   TreeSelect,
@@ -24,13 +23,12 @@ import { getChapterTaxonomyTree, type ChapterTaxonomyNode } from "../../services
 import {
   confirmActualBidParseTask,
   getActualBidDocument,
-  getActualBidDocumentTree,
   getActualBidParseTask,
   listActualBidCandidates,
   type ActualBidParseTaskDetail,
   type CandidateListItem,
-  type DocumentTreeNode,
 } from "../../services/actualBidParse";
+import { getNodes, type BidOutlineNode } from "../../services/bidOutlines";
 import { getProductCategoryTree } from "../../services/productCategoryApi";
 
 type ProductCategoryOption = { label: string; value: string };
@@ -69,7 +67,8 @@ export default function ActualBidParseConfirmWizard() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [taskDetail, setTaskDetail] = useState<ActualBidParseTaskDetail | null>(null);
-  const [documentTreeNodes, setDocumentTreeNodes] = useState<DocumentTreeNode[]>([]);
+  const [outlineNodes, setOutlineNodes] = useState<BidOutlineNode[]>([]);
+  const [documentNodeCount, setDocumentNodeCount] = useState(0);
   const [candidateRows, setCandidateRows] = useState<CandidateListItem[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<ProductCategoryOption[]>([]);
   const [taxonomyNodes, setTaxonomyNodes] = useState<ChapterTaxonomyNode[]>([]);
@@ -94,10 +93,14 @@ export default function ActualBidParseConfirmWizard() {
         message.error("任务缺少 document_id，无法进入确认向导");
         return;
       }
+      if (!task.bid_outline_id) {
+        message.error("目录尚未生成，请稍后在文件导入中心查看解析进度");
+        return;
+      }
 
-      const [document, tree, candidates] = await Promise.all([
+      const [document, outlineResult, candidates] = await Promise.all([
         getActualBidDocument(selectedKbId, task.document_id),
-        getActualBidDocumentTree(selectedKbId, task.document_id),
+        getNodes(selectedKbId, task.bid_outline_id),
         listActualBidCandidates(selectedKbId, {
           page_size: 200,
           import_id: task.import_id,
@@ -110,8 +113,9 @@ export default function ActualBidParseConfirmWizard() {
         bid_customer_name: document.bid_customer_name ?? "",
         product_category_ids: document.product_category_ids ?? [],
       });
-      setDocumentTreeNodes(
-        (tree.nodes ?? []).map((node) => ({
+      setDocumentNodeCount(task.suggestion?.node_count ?? 0);
+      setOutlineNodes(
+        (outlineResult.nodes ?? []).map((node) => ({
           ...node,
           product_category_ids: node.product_category_ids ?? [],
         })),
@@ -128,24 +132,31 @@ export default function ActualBidParseConfirmWizard() {
     void loadData();
   }, [loadData]);
 
-  const updateTreeNode = (nodeId: string, patch: Partial<DocumentTreeNode>) => {
-    setDocumentTreeNodes((prev) =>
-      prev.map((item) => (item.node_id === nodeId ? { ...item, ...patch } : item)),
+  const updateOutlineNode = (outlineNodeId: string, patch: Partial<BidOutlineNode>) => {
+    setOutlineNodes((prev) =>
+      prev.map((item) => (item.outline_node_id === outlineNodeId ? { ...item, ...patch } : item)),
     );
   };
 
   const parentOptions = useMemo(
-    () => documentTreeNodes.map((item) => ({ label: item.title, value: item.node_id })),
-    [documentTreeNodes],
+    () =>
+      outlineNodes.map((item) => ({
+        label: item.title || "未命名章节",
+        value: item.outline_node_id,
+      })),
+    [outlineNodes],
   );
 
-  const treeColumns: ColumnsType<DocumentTreeNode> = [
+  const treeColumns: ColumnsType<BidOutlineNode> = [
     {
       title: "标题",
       dataIndex: "title",
       key: "title",
       render: (value: string, record) => (
-        <Input value={value} onChange={(event) => updateTreeNode(record.node_id, { title: event.target.value })} />
+        <Input
+          value={value}
+          onChange={(event) => updateOutlineNode(record.outline_node_id, { title: event.target.value })}
+        />
       ),
     },
     {
@@ -158,7 +169,7 @@ export default function ActualBidParseConfirmWizard() {
           min={1}
           max={9}
           value={value}
-          onChange={(next) => updateTreeNode(record.node_id, { level: Number(next ?? 1) })}
+          onChange={(next) => updateOutlineNode(record.outline_node_id, { level: Number(next ?? 1) })}
         />
       ),
     },
@@ -172,8 +183,8 @@ export default function ActualBidParseConfirmWizard() {
           allowClear
           style={{ width: 200 }}
           value={value ?? undefined}
-          options={parentOptions.filter((item) => item.value !== record.node_id)}
-          onChange={(next) => updateTreeNode(record.node_id, { parent_id: (next as string) ?? null })}
+          options={parentOptions.filter((item) => item.value !== record.outline_node_id)}
+          onChange={(next) => updateOutlineNode(record.outline_node_id, { parent_id: (next as string) ?? null })}
         />
       ),
     },
@@ -189,7 +200,7 @@ export default function ActualBidParseConfirmWizard() {
           treeData={taxonomyTreeData}
           value={value ?? undefined}
           onChange={(next) =>
-            updateTreeNode(record.node_id, { chapter_taxonomy_id: (next as string) ?? null })
+            updateOutlineNode(record.outline_node_id, { chapter_taxonomy_id: (next as string) ?? null })
           }
         />
       ),
@@ -206,20 +217,7 @@ export default function ActualBidParseConfirmWizard() {
           style={{ width: 200 }}
           options={categoryOptions}
           value={value ?? []}
-          onChange={(next) => updateTreeNode(record.node_id, { product_category_ids: next })}
-        />
-      ),
-    },
-    {
-      title: "纳入目录",
-      dataIndex: "is_outline_node",
-      key: "is_outline_node",
-      width: 120,
-      render: (value: boolean, record) => (
-        <Switch
-          size="small"
-          checked={Boolean(value)}
-          onChange={(next) => updateTreeNode(record.node_id, { is_outline_node: next })}
+          onChange={(next) => updateOutlineNode(record.outline_node_id, { product_category_ids: next })}
         />
       ),
     },
@@ -285,9 +283,8 @@ export default function ActualBidParseConfirmWizard() {
           bid_customer_name: values.bid_customer_name ?? "",
           product_category_ids: values.product_category_ids ?? [],
         },
-        outline_nodes: documentTreeNodes.map((node) => ({
-          outline_node_id: node.node_id,
-          node_id: node.node_id,
+        outline_nodes: outlineNodes.map((node) => ({
+          outline_node_id: node.outline_node_id,
           parent_id: node.parent_id ?? null,
           title: node.title,
           level: node.level,
@@ -354,13 +351,15 @@ export default function ActualBidParseConfirmWizard() {
         {currentStep === 1 ? (
           <>
             <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
-              可编辑目录标题、层级、父子关系与章节分类，提交时将统一保存。
+              已从文档抽取 {outlineNodes.length} 条目录
+              {documentNodeCount > 0 ? `（文档共 ${documentNodeCount} 个内容块）` : ""}
+              ，可编辑标题、层级、父子关系与章节分类。
             </Typography.Text>
             <Table
-              rowKey="node_id"
-              pagination={false}
+              rowKey="outline_node_id"
+              pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ["20", "50", "100"] }}
               columns={treeColumns}
-              dataSource={documentTreeNodes}
+              dataSource={outlineNodes}
               locale={{ emptyText: "暂无目录节点" }}
             />
           </>

@@ -2,6 +2,7 @@ from sqlalchemy import text
 
 from src.db.session import Base, engine
 from src.models.classification_reference import ReferenceObjectType
+from src.models.import_audit_log import ImportAuditAction
 from src.models import (  # noqa: F401
     actual_bid_audit_log,
     actual_bid_parse_task,
@@ -64,6 +65,37 @@ def _sync_missing_columns(conn) -> None:
             "ADD COLUMN IF NOT EXISTS llm_progress JSONB"
         )
     )
+    conn.execute(
+        text(
+            "ALTER TABLE import_audit_logs "
+            "ALTER COLUMN import_id DROP NOT NULL"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE import_audit_logs "
+            "DROP CONSTRAINT IF EXISTS import_audit_logs_import_id_fkey"
+        )
+    )
+    conn.execute(
+        text(
+            "ALTER TABLE import_audit_logs "
+            "ADD CONSTRAINT import_audit_logs_import_id_fkey "
+            "FOREIGN KEY (import_id) REFERENCES file_imports(import_id) "
+            "ON DELETE SET NULL"
+        )
+    )
+    for stmt in (
+        "ALTER TABLE candidate_knowledge_stubs "
+        "ADD COLUMN IF NOT EXISTS suggested_knowledge_type VARCHAR(64)",
+        "ALTER TABLE candidate_knowledge_stubs "
+        "ADD COLUMN IF NOT EXISTS suggestion_source VARCHAR(16)",
+        "ALTER TABLE candidate_knowledge_stubs "
+        "ADD COLUMN IF NOT EXISTS classification_confidence DOUBLE PRECISION",
+        "ALTER TABLE candidate_knowledge_stubs "
+        "ADD COLUMN IF NOT EXISTS chunk_ref VARCHAR(256)",
+    ):
+        conn.execute(text(stmt))
 
 
 def init_db() -> None:
@@ -75,5 +107,10 @@ def init_db() -> None:
             conn,
             "referenceobjecttype",
             [member.value for member in ReferenceObjectType],
+        )
+        _sync_postgres_enum(
+            conn,
+            "importauditaction",
+            [member.value for member in ImportAuditAction],
         )
         _sync_missing_columns(conn)

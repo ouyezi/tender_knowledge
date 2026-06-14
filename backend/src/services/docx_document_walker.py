@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import re
+import time
+from collections.abc import Callable
 from typing import Iterator
 
 from docx import Document
@@ -12,7 +15,14 @@ from docx.oxml.text.paragraph import CT_P
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
+logger = logging.getLogger(__name__)
+
 _NUMBERED_HEADING_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)[\.、]?\s+\S+")
+
+
+def _sanitize_text(text: str) -> str:
+    # PostgreSQL TEXT columns reject NUL bytes; docm/macros may leak binary fragments.
+    return text.replace("\x00", "")
 
 
 @dataclass
@@ -86,8 +96,20 @@ def _paragraph_has_image(paragraph: Paragraph) -> bool:
     return bool(paragraph._p.xpath(".//w:drawing"))
 
 
-def walk_document(path: str | Path) -> DocumentWalkResult:
+def walk_document(
+    path: str | Path,
+    *,
+    on_block_progress: Callable[[int], None] | None = None,
+    block_progress_interval: int = 200,
+) -> DocumentWalkResult:
     file_path = Path(path)
+    file_size = file_path.stat().st_size if file_path.exists() else 0
+    logger.info(
+        "walk_document START path=%s size_mb=%.1f",
+        file_path,
+        file_size / (1024 * 1024),
+    )
+    started = time.perf_counter()
     nodes: list[WalkedNode] = []
     heading_stack: list[tuple[int, str]] = []
     current_section_temp_id: str | None = None
@@ -108,7 +130,7 @@ def walk_document(path: str | Path) -> DocumentWalkResult:
             parent_temp_id=parent_temp_id,
             section_temp_id=section_temp_id,
             node_type=node_type,
-            text=text,
+            text=_sanitize_text(text),
             level=level,
             sort_order=idx - 1,
             is_outline_node=is_outline_node,
@@ -117,8 +139,24 @@ def walk_document(path: str | Path) -> DocumentWalkResult:
         return node
 
     try:
+        logger.info("walk_document opening docx path=%s", file_path)
+        open_started = time.perf_counter()
         doc = Document(str(file_path))
+        logger.info(
+            "walk_document docx opened path=%s elapsed_ms=%d",
+            file_path,
+            int((time.perf_counter() - open_started) * 1000),
+        )
     except Exception:
+        logger.exception("walk_document docx open failed, using text fallback path=%s", file_path)
+        fallback_started = time.perf_counter()
+        fallback_texts = _iter_paragraph_texts_from_fallback(file_path)
+        logger.info(
+            "walk_document text fallback lines=%d elapsed_ms=%d path=%s",
+            len(fallback_texts),
+            int((time.perf_counter() - fallback_started) * 1000),
+            file_path,
+        )
         fallback_nodes = [
             WalkedNode(
                 temp_id=f"n{idx + 1}",
@@ -131,15 +169,32 @@ def walk_document(path: str | Path) -> DocumentWalkResult:
                 is_outline_node=False,
                 needs_manual_review=True,
             )
-            for idx, text in enumerate(_iter_paragraph_texts_from_fallback(file_path))
+            for idx, text in enumerate(fallback_texts)
         ]
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logger.warning(
+            "walk_document DONE via text_fallback nodes=%d elapsed_ms=%d path=%s",
+            len(fallback_nodes),
+            elapsed_ms,
+            file_path,
+        )
         return DocumentWalkResult(
             nodes=fallback_nodes,
             used_flat_fallback=True,
             needs_manual_review=True,
         )
 
+    block_count = 0
+    logger.info("walk_document iterating blocks path=%s", file_path)
     for block_type, block in _iter_document_blocks(doc):
+        block_count += 1
+        if (
+            on_block_progress is not None
+            and block_progress_interval > 0
+            and block_count % block_progress_interval == 0
+        ):
+            on_block_progress(block_count)
+
         if block_type == "paragraph":
             paragraph = block
             text = (paragraph.text or "").strip()
@@ -203,15 +258,30 @@ def walk_document(path: str | Path) -> DocumentWalkResult:
             is_outline_node=False,
         )
 
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
     if not has_heading:
         for node in nodes:
             node.needs_manual_review = True
+        logger.warning(
+            "walk_document DONE no_heading flat_fallback nodes=%d blocks=%d elapsed_ms=%d path=%s",
+            len(nodes),
+            block_count,
+            elapsed_ms,
+            file_path,
+        )
         return DocumentWalkResult(
             nodes=nodes,
             used_flat_fallback=True,
             needs_manual_review=True,
         )
 
+    logger.info(
+        "walk_document DONE nodes=%d blocks=%d elapsed_ms=%d path=%s",
+        len(nodes),
+        block_count,
+        elapsed_ms,
+        file_path,
+    )
     return DocumentWalkResult(
         nodes=nodes,
         used_flat_fallback=False,

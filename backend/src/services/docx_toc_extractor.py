@@ -9,6 +9,7 @@ from zipfile import ZipFile
 from lxml import etree
 
 from src.services.docx_outline_parser import parse_outline
+from src.services.text_sanitize import sanitize_pg_text
 
 _DOC_XML_PATH = "word/document.xml"
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -71,7 +72,7 @@ def _extract_toc_entries_from_docx_xml(path: Path) -> list[TocEntry]:
 
         level = max(int(match.group(1)), 1)
         raw_title = "".join(paragraph.xpath(".//w:t/text()", namespaces=_NS))
-        title = _TRAILING_PAGE_RE.sub("", " ".join(raw_title.split())).strip()
+        title = sanitize_pg_text(_TRAILING_PAGE_RE.sub("", " ".join(raw_title.split())).strip())
         if not title:
             continue
 

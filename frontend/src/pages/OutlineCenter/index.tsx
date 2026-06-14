@@ -102,6 +102,13 @@ export default function OutlineCenterPage() {
       ),
     },
     {
+      title: "章节数",
+      dataIndex: "node_count",
+      key: "node_count",
+      width: 90,
+      render: (value: number | undefined) => (value != null ? value : "—"),
+    },
+    {
       title: "项目名",
       dataIndex: "project_name",
       key: "project_name",

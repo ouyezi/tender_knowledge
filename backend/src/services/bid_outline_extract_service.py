@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from src.models.bid_outline import BidOutline, BidOutlineExtractStrategy
 from src.models.bid_outline_node import BidOutlineNode
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
+from src.services.text_sanitize import sanitize_pg_text
 
 
 @dataclass
@@ -112,7 +113,7 @@ def persist_outline(
         heading_index.setdefault(key, []).append(node.node_id)
 
     parent_map: dict[str, uuid.UUID] = {}
-    created_count = 0
+    created_nodes: list[BidOutlineNode] = []
     for entry in sorted(toc_entries, key=lambda item: int(getattr(item, "sort_order", 0) or 0)):
         temp_id = str(getattr(entry, "temp_id"))
         parent_temp_id = getattr(entry, "parent_temp_id", None)
@@ -122,11 +123,12 @@ def persist_outline(
             source_node_by_temp_id=source_node_by_temp_id,
             heading_index=heading_index,
         )
+        raw_title = sanitize_pg_text(str(getattr(entry, "title", "")).strip()) or "未命名章节"
         node = BidOutlineNode(
             kb_id=kb_id,
             bid_outline_id=outline.bid_outline_id,
             parent_id=parent_id,
-            title=str(getattr(entry, "title", "")).strip() or "未命名章节",
+            title=raw_title[:512],
             level=max(int(getattr(entry, "level", 1) or 1), 1),
             sort_order=max(int(getattr(entry, "sort_order", 0) or 0), 0),
             source_node_id=source_node_id,
@@ -134,8 +136,8 @@ def persist_outline(
             needs_manual_review=source_node_id is None,
         )
         db.add(node)
-        db.flush()
         parent_map[temp_id] = node.outline_node_id
-        created_count += 1
+        created_nodes.append(node)
 
-    return PersistedOutlineResult(bid_outline=outline, node_count=created_count)
+    db.flush()
+    return PersistedOutlineResult(bid_outline=outline, node_count=len(created_nodes))

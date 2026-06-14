@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_kb_or_404, get_operator_id, kb_write_guard
@@ -166,10 +167,66 @@ def list_bid_outlines(
     kb_id: UUID,
     page: int = 1,
     page_size: int = 20,
+    import_id: UUID | None = None,
+    source_doc_id: UUID | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(get_kb_or_404),
 ):
+    query = db.query(BidOutline).filter(BidOutline.kb_id == kb_id)
+    if import_id is not None:
+        query = query.filter(BidOutline.import_id == import_id)
+    if source_doc_id is not None:
+        query = query.filter(BidOutline.source_doc_id == source_doc_id)
+    if status:
+        try:
+            query = query.filter(BidOutline.status == BidOutlineStatus(status))
+        except ValueError:
+            pass
+    if q:
+        query = query.filter(BidOutline.outline_name.ilike(f"%{q.strip()}%"))
+
+    total = query.count()
+    offset = max(page - 1, 0) * page_size
+    rows = (
+        query.order_by(BidOutline.updated_at.desc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
+
+    outline_ids = [row.bid_outline_id for row in rows]
+    stats_by_outline: dict[UUID, tuple[int, bool]] = {}
+    if outline_ids:
+        for outline_id, node_count, needs_review in (
+            db.query(
+                BidOutlineNode.bid_outline_id,
+                func.count(BidOutlineNode.outline_node_id),
+                func.bool_or(BidOutlineNode.needs_manual_review),
+            )
+            .filter(
+                BidOutlineNode.kb_id == kb_id,
+                BidOutlineNode.bid_outline_id.in_(outline_ids),
+            )
+            .group_by(BidOutlineNode.bid_outline_id)
+            .all()
+        ):
+            stats_by_outline[outline_id] = (int(node_count), bool(needs_review))
+
+    items = []
+    for outline in rows:
+        node_count, needs_manual_review = stats_by_outline.get(outline.bid_outline_id, (0, False))
+        items.append(
+            {
+                **_serialize_outline(outline),
+                "node_count": node_count,
+                "needs_manual_review": needs_manual_review,
+            }
+        )
+
     return success(
-        {"items": [], "total": 0, "page": page, "page_size": page_size},
+        {"items": items, "total": total, "page": page, "page_size": page_size},
         trace_id=get_trace_id(),
     )
 

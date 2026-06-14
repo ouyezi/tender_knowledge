@@ -29,8 +29,14 @@ from src.services.confirm_service import (
 )
 from src.services.actual_bid_parse_runner import run_actual_bid_parse_in_new_session
 from src.services.file_import_service import FileImportServiceError, upload_file_and_enqueue
+from src.services.file_import_purge_service import (
+    FileImportPurgeServiceError,
+    purge_all_file_imports,
+    purge_file_import,
+)
 from src.services.import_task_runner import retry_import_tasks
 from src.services.template_parse_runner import run_template_parse_in_new_session
+from src.models.import_audit_log import ImportAuditLog
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/file-imports",
@@ -54,6 +60,10 @@ class IgnoreImportRequest(BaseModel):
 
 class RetryImportRequest(BaseModel):
     scope: str = "all"
+
+
+class PurgeAllImportsRequest(BaseModel):
+    confirm: bool = False
 
 
 @router.get("")
@@ -218,6 +228,95 @@ def upload_file_import(
             "status": rec.status.value,
             "version_no": rec.version_no,
             "created_at": rec.created_at.isoformat() if rec.created_at else None,
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.get("/audit-logs")
+def list_import_audit_logs(
+    kb_id: UUID,
+    import_id: UUID | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    offset = max(page - 1, 0) * page_size
+    q = db.query(ImportAuditLog).filter(ImportAuditLog.kb_id == kb_id)
+    if import_id:
+        q = q.filter(ImportAuditLog.import_id == import_id)
+    total = q.count()
+    rows = (
+        q.order_by(ImportAuditLog.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
+    return success(
+        {
+            "items": [
+                {
+                    "audit_id": str(row.audit_id),
+                    "import_id": str(row.import_id) if row.import_id else None,
+                    "operator_id": row.operator_id,
+                    "action": row.action.value,
+                    "payload_summary": row.payload_summary,
+                    "trace_id": str(row.trace_id),
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in rows
+            ],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/purge-all")
+def purge_all_imports(
+    kb_id: UUID,
+    body: PurgeAllImportsRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    if not body.confirm:
+        return JSONResponse(
+            status_code=422,
+            content=error(
+                "CONFIRM_REQUIRED",
+                "Set confirm=true to purge all file imports",
+                trace_id=get_trace_id(),
+            ),
+        )
+    try:
+        summaries = purge_all_file_imports(
+            db,
+            kb_id=kb_id,
+            operator_id=operator_id,
+            trace_id=get_trace_id(),
+        )
+        db.commit()
+    except FileImportPurgeServiceError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    return success(
+        {
+            "purged_count": len(summaries),
+            "items": [
+                {
+                    "import_id": item.import_id,
+                    "file_name": item.file_name,
+                    "deleted_counts": item.deleted_counts,
+                }
+                for item in summaries
+            ],
         },
         trace_id=get_trace_id(),
     )
@@ -458,3 +557,36 @@ def retry_import(
     )
     retry_data["tasks_enqueued"] = list(dict.fromkeys(tasks_enqueued + retry_data["tasks_enqueued"]))
     return success(retry_data, trace_id=get_trace_id())
+
+
+@router.delete("/{import_id}")
+def delete_file_import(
+    kb_id: UUID,
+    import_id: UUID,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    try:
+        summary = purge_file_import(
+            db,
+            kb_id=kb_id,
+            import_id=import_id,
+            operator_id=operator_id,
+            trace_id=get_trace_id(),
+        )
+        db.commit()
+    except FileImportPurgeServiceError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    return success(
+        {
+            "import_id": summary.import_id,
+            "file_name": summary.file_name,
+            "deleted_counts": summary.deleted_counts,
+        },
+        trace_id=get_trace_id(),
+    )

@@ -67,6 +67,9 @@ def test_actual_bid_parse_runner_creates_parse_outputs(db_session, seeded_kb):
     assert task.status == ActualBidParseTaskStatus.ready
     assert task.document_id is not None
     assert task.bid_outline_id is not None
+    assert task.llm_progress is not None
+    assert task.llm_progress.get("phase_timings_ms")
+    assert task.llm_progress.get("logs")
 
     document = db_session.get(Document, task.document_id)
     assert document is not None

@@ -18,6 +18,8 @@ class ImportAuditAction(str, enum.Enum):
     duplicate_skip = "duplicate_skip"
     duplicate_new_version = "duplicate_new_version"
     route = "route"
+    delete = "delete"
+    purge_all = "purge_all"
 
 
 class ImportAuditLog(Base):
@@ -28,8 +30,10 @@ class ImportAuditLog(Base):
     )
     trace_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     kb_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
-    import_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("file_imports.import_id"), nullable=False
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("file_imports.import_id", ondelete="SET NULL"),
+        nullable=True,
     )
     operator_id: Mapped[str] = mapped_column(String(128), nullable=False)
     action: Mapped[ImportAuditAction] = mapped_column(Enum(ImportAuditAction), nullable=False)

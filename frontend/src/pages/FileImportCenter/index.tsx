@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Space, Table, Tag, Upload, message } from "antd";
+import { Alert, Button, Card, Modal, Popconfirm, Space, Table, Tag, Upload, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { RcFile } from "antd/es/upload/interface";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -7,7 +7,10 @@ import { useKBContext } from "../../layout/KBContext";
 import ConfirmDrawer from "./ConfirmDrawer";
 import DuplicateFileModal from "./DuplicateFileModal";
 import TaskLogDrawer from "./TaskLogDrawer";
+import OperationLogDrawer from "./OperationLogDrawer";
 import {
+  deleteFileImport,
+  purgeAllFileImports,
   retryActualBidParse,
   retryImport,
   retryTemplateParse,
@@ -87,6 +90,9 @@ export default function FileImportCenterPage() {
   const [duplicateImportIds, setDuplicateImportIds] = useState<string[]>([]);
   const [duplicateHash, setDuplicateHash] = useState<string>();
   const [retryingParseImportIds, setRetryingParseImportIds] = useState<Set<string>>(new Set());
+  const [operationLogOpen, setOperationLogOpen] = useState(false);
+  const [operationLogImportId, setOperationLogImportId] = useState<string>();
+  const [purgingAll, setPurgingAll] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
@@ -229,6 +235,37 @@ export default function FileImportCenterPage() {
             >
               任务日志
             </Button>
+            <Button
+              size="small"
+              onClick={(event) => {
+                event.stopPropagation();
+                setOperationLogImportId(record.import_id);
+                setOperationLogOpen(true);
+              }}
+            >
+              操作日志
+            </Button>
+            <Popconfirm
+              title="确定删除该导入记录？"
+              description="将删除文件、解析结果及下游数据，不可恢复。"
+              onConfirm={async () => {
+                if (!selectedKbId) {
+                  return;
+                }
+                try {
+                  await deleteFileImport(selectedKbId, record.import_id);
+                  message.success("已删除");
+                  void loadData();
+                } catch (error) {
+                  message.error((error as Error).message);
+                }
+              }}
+              onCancel={(event) => event?.stopPropagation()}
+            >
+              <Button size="small" danger onClick={(event) => event.stopPropagation()}>
+                删除
+              </Button>
+            </Popconfirm>
           </Space>
         ),
       },
@@ -296,8 +333,45 @@ export default function FileImportCenterPage() {
     }
   };
 
+  const handlePurgeAll = () => {
+    if (!selectedKbId) {
+      return;
+    }
+    Modal.confirm({
+      title: "清空全部来源导入？",
+      content: "将删除当前知识库下所有导入记录、上传文件及解析产物，不可恢复。",
+      okText: "确认清空",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        setPurgingAll(true);
+        try {
+          const result = await purgeAllFileImports(selectedKbId);
+          message.success(`已清空 ${result.purged_count} 条导入记录`);
+          void loadData();
+        } catch (error) {
+          message.error((error as Error).message);
+        } finally {
+          setPurgingAll(false);
+        }
+      },
+    });
+  };
+
   return (
-    <Card title="来源导入">
+    <Card
+      title="来源导入"
+      extra={
+        <Space>
+          <Button onClick={() => { setOperationLogImportId(undefined); setOperationLogOpen(true); }}>
+            操作日志
+          </Button>
+          <Button danger loading={purgingAll} onClick={handlePurgeAll}>
+            清空全部
+          </Button>
+        </Space>
+      }
+    >
       <Upload.Dragger
         multiple={false}
         showUploadList={false}
@@ -366,6 +440,12 @@ export default function FileImportCenterPage() {
         kbId={selectedKbId}
         importId={taskLogImportId}
         onClose={() => setTaskLogOpen(false)}
+      />
+      <OperationLogDrawer
+        open={operationLogOpen}
+        kbId={selectedKbId}
+        importId={operationLogImportId}
+        onClose={() => setOperationLogOpen(false)}
       />
     </Card>
   );
