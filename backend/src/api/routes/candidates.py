@@ -11,6 +11,7 @@ from src.api.envelope import error, success
 from src.api.middleware.audit import get_trace_id
 from src.db.session import get_db
 from src.services.candidate_adapter import CandidateNotEditableError, CandidateNotFoundError
+from src.services.content_blocks import content_excerpt
 from src.services.candidate_edit_service import (
     InvalidProductCategoryError,
     InvalidTaxonomyError,
@@ -204,6 +205,7 @@ def list_candidates(
                     "candidate_type": candidate.candidate_type.value,
                     "title": candidate.title,
                     "summary": candidate.summary,
+                    "content_excerpt": content_excerpt(candidate.content),
                     "suggested_knowledge_type": candidate.suggested_knowledge_type,
                     "suggested_chapter_taxonomy_id": (
                         str(candidate.suggested_chapter_taxonomy_id)
@@ -268,6 +270,7 @@ def list_candidates(
                     "candidate_type": stub.candidate_type.value,
                     "title": stub.title,
                     "summary": stub.summary,
+                    "content_excerpt": content_excerpt(stub.content_preview),
                     "suggested_knowledge_type": stub.suggested_knowledge_type,
                     "suggested_chapter_taxonomy_id": (
                         str(stub.chapter_taxonomy_id) if stub.chapter_taxonomy_id else None
