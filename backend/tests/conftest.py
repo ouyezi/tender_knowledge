@@ -14,10 +14,21 @@ from src.models.knowledge_base import KBStatus, KnowledgeBase
 from src.models.file_import import FileImport
 from src.services.import_task_runner import run_post_upload
 from src.models import (  # noqa: F401
+    actual_bid_audit_log,
+    actual_bid_parse_task,
     audit_log,
+    bid_outline,
+    bid_outline_node,
+    bid_outline_structure_diff,
+    candidate_knowledge,
     candidate_knowledge_stub,
+    chapter_pattern,
+    chapter_pattern_mining_task,
     chapter_taxonomy,
     classification_reference,
+    document,
+    document_parse_suggestion,
+    document_tree_node,
     downstream_task_entry,
     file_import,
     file_purpose_suggestion,

@@ -53,7 +53,12 @@ def _append_log(task: TemplateParseTask, message: str, *, level: str = "info") -
 
 
 def _resolve_docx_path(file_import: FileImport) -> Path:
-    return Path(Settings().storage_root) / file_import.storage_path
+    from src.services.docm_converter import ensure_docx_for_parse
+
+    source = Path(Settings().storage_root) / file_import.storage_path
+    if source.suffix.lower() == ".docm":
+        return ensure_docx_for_parse(source)
+    return source
 
 
 def _pick_template_type(file_import: FileImport) -> TemplateType:

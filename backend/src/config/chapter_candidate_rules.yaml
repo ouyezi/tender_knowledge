@@ -1,0 +1,28 @@
+{
+  "default": {
+    "candidate_type": "ignore",
+    "suggested_knowledge_type": null
+  },
+  "rules": {
+    "technical_solution": {
+      "candidate_type": "ku",
+      "suggested_knowledge_type": "solution"
+    },
+    "product_capability": {
+      "candidate_type": "ku",
+      "suggested_knowledge_type": "product_capability"
+    },
+    "supply_chain": {
+      "candidate_type": "ku",
+      "suggested_knowledge_type": "capability"
+    },
+    "enterprise_qualification": {
+      "candidate_type": "ku",
+      "suggested_knowledge_type": "qualification"
+    },
+    "general_requirements": {
+      "candidate_type": "wiki",
+      "suggested_knowledge_type": "general"
+    }
+  }
+}

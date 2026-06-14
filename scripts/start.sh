@@ -18,36 +18,73 @@ start_postgres() {
   log "postgres: starting via docker compose"
   docker compose -f "${ROOT_DIR}/docker-compose.yml" up -d postgres
   wait_for_port "127.0.0.1" "${POSTGRES_PORT}" "postgres"
+  wait_for_postgres_ready
 }
 
 start_backend() {
   local pid
   pid="$(read_pid_file "${BACKEND_PID_FILE}")"
-  if is_pid_running "${pid}"; then
-    log "backend: already running (pid ${pid})"
+
+  if backend_health_ok; then
+    if is_pid_running "${pid}"; then
+      log "backend: already running (pid ${pid})"
+    else
+      log "backend: already responding on :${BACKEND_PORT} (refreshing stale pid file)"
+      pids_listening_on_port "${BACKEND_PORT}" | head -n 1 >"${BACKEND_PID_FILE}" || true
+    fi
     return 0
   fi
-  rm -f "${BACKEND_PID_FILE}"
 
-  log "backend: starting on :${BACKEND_PORT} (db ${POSTGRES_PORT})"
+  if is_port_listening "${BACKEND_PORT}" || is_pid_running "${pid}"; then
+    stop_backend_processes
+  fi
+
+  if backend_health_ok; then
+    log "backend: already responding on :${BACKEND_PORT} after cleanup"
+    pids_listening_on_port "${BACKEND_PORT}" | head -n 1 >"${BACKEND_PID_FILE}" || true
+    return 0
+  fi
+  if is_port_listening "${BACKEND_PORT}"; then
+    die "backend: port ${BACKEND_PORT} still in use after cleanup"
+  fi
+
+  log "backend: starting on :${BACKEND_PORT} (db ${POSTGRES_PORT}, reload=${BACKEND_RELOAD:-0})"
   (
     cd "${BACKEND_DIR}"
     export DATABASE_URL
+    export BACKEND_RELOAD="${BACKEND_RELOAD:-0}"
     nohup "${VENV_PYTHON}" startup.py >>"${LOG_DIR}/backend.log" 2>&1 &
     echo $! >"${BACKEND_PID_FILE}"
   )
 
   pid="$(read_pid_file "${BACKEND_PID_FILE}")"
-  wait_for_http "http://127.0.0.1:${BACKEND_PORT}/health" "backend"
+  if ! is_pid_running "${pid}"; then
+    die "backend: process exited immediately — check logs/backend.log"
+  fi
+
+  wait_for_backend_health "${pid}"
+  pids_listening_on_port "${BACKEND_PORT}" | head -n 1 >"${BACKEND_PID_FILE}" || true
+  pid="$(read_pid_file "${BACKEND_PID_FILE}")"
   log "backend: pid ${pid}, log → logs/backend.log"
 }
 
 start_frontend() {
   local pid
   pid="$(read_pid_file "${FRONTEND_PID_FILE}")"
-  if is_pid_running "${pid}"; then
-    log "frontend: already running (pid ${pid})"
+
+  if is_port_listening "${FRONTEND_PORT}"; then
+    if is_pid_running "${pid}"; then
+      log "frontend: already running (pid ${pid})"
+    else
+      log "frontend: already listening on :${FRONTEND_PORT} (refreshing stale pid file)"
+      pids_listening_on_port "${FRONTEND_PORT}" | head -n 1 >"${FRONTEND_PID_FILE}" || true
+    fi
     return 0
+  fi
+
+  if is_pid_running "${pid}"; then
+    log "frontend: stale process pid ${pid} without open port — stopping"
+    kill "${pid}" 2>/dev/null || true
   fi
   rm -f "${FRONTEND_PID_FILE}"
 

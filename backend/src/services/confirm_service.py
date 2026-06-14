@@ -25,6 +25,7 @@ from src.models.downstream_task_entry import (
 )
 from src.models.import_audit_log import ImportAuditAction, ImportAuditLog
 from src.models.product_category import CategoryStatus, ProductCategory
+from src.services.actual_bid_parse_runner import enqueue_actual_bid_parse
 
 
 class ConfirmServiceError(Exception):
@@ -352,10 +353,21 @@ def confirm_import(
         operator_id=operator_id,
         trace_id=trace_id,
     )
+    actual_bid_parse_task_id: str | None = None
+    if file_purpose == FilePurpose.actual_bid and enter_parsing:
+        actual_bid_parse_task = enqueue_actual_bid_parse(
+            db,
+            kb_id=kb_id,
+            import_id=import_id,
+            operator_id=operator_id,
+            trace_id=trace_id,
+        )
+        actual_bid_parse_task_id = str(actual_bid_parse_task.parse_task_id)
     db.commit()
     db.refresh(record)
     payload = _build_confirm_payload(record)
     payload["downstream_entries_created"] = created_downstream_entries
+    payload["actual_bid_parse_task_id"] = actual_bid_parse_task_id
     return payload
 
 

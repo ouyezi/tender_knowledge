@@ -10,8 +10,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 STOP_POSTGRES="${STOP_POSTGRES:-1}"
 
 main() {
-  stop_pid_file "frontend" "${FRONTEND_PID_FILE}"
-  stop_pid_file "backend" "${BACKEND_PID_FILE}"
+  stop_pid_file "frontend" "${FRONTEND_PID_FILE}" "${FRONTEND_PORT}"
+  stop_backend_processes
 
   if [[ "${STOP_POSTGRES}" == "1" ]]; then
     if command -v docker >/dev/null 2>&1; then

@@ -12,7 +12,14 @@ export type FileImportStatus =
 
 export type FileType = "docx" | "pdf" | "ppt" | "xlsx" | "image" | "other" | string;
 
-export type ParseStatus = "running" | "parse_ready" | "failed" | null;
+export type ParseStatus =
+  | "running"
+  | "parsing"
+  | "parse_ready"
+  | "parse_confirmed"
+  | "failed"
+  | "parse_failed"
+  | null;
 
 export interface FileImportListItem {
   import_id: string;
@@ -23,6 +30,7 @@ export interface FileImportListItem {
   file_purpose: string | null;
   status: FileImportStatus;
   parse_status?: ParseStatus;
+  latest_parse_task_id?: string | null;
   version_no: number;
   created_at: string;
   updated_at: string;
@@ -288,5 +296,88 @@ export async function retryTemplateParse(
   return apiRequest<RetryTemplateParseResult>(`/api/v1/kbs/${kbId}/template-parse/trigger`, {
     method: "POST",
     body: { import_id: importId, force_reparse: true },
+  });
+}
+
+export interface RetryActualBidParseResult {
+  parse_task_id: string;
+  import_id: string;
+  document_id: string | null;
+  status: string;
+  trace_id: string | null;
+}
+
+export async function retryActualBidParse(
+  kbId: string,
+  importId: string,
+): Promise<RetryActualBidParseResult> {
+  return apiRequest<RetryActualBidParseResult>(`/api/v1/kbs/${kbId}/actual-bid-parse/trigger`, {
+    method: "POST",
+    body: { import_id: importId, force_reparse: true },
+  });
+}
+
+export interface ImportAuditLogItem {
+  audit_id: string;
+  import_id: string | null;
+  operator_id: string;
+  action: string;
+  payload_summary: Record<string, unknown> | null;
+  trace_id: string;
+  created_at: string;
+}
+
+export interface ImportAuditLogListResult {
+  items: ImportAuditLogItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export async function listImportAuditLogs(
+  kbId: string,
+  params: { import_id?: string; page?: number; page_size?: number } = {},
+): Promise<ImportAuditLogListResult> {
+  const searchParams = new URLSearchParams();
+  if (params.import_id) {
+    searchParams.set("import_id", params.import_id);
+  }
+  if (params.page !== undefined) {
+    searchParams.set("page", String(params.page));
+  }
+  if (params.page_size !== undefined) {
+    searchParams.set("page_size", String(params.page_size));
+  }
+  const query = searchParams.toString();
+  return apiRequest<ImportAuditLogListResult>(
+    `/api/v1/kbs/${kbId}/file-imports/audit-logs${query ? `?${query}` : ""}`,
+    { method: "GET" },
+  );
+}
+
+export interface DeleteFileImportResult {
+  import_id: string;
+  file_name: string;
+  deleted_counts: Record<string, number>;
+}
+
+export async function deleteFileImport(
+  kbId: string,
+  importId: string,
+): Promise<DeleteFileImportResult> {
+  return apiRequest<DeleteFileImportResult>(`/api/v1/kbs/${kbId}/file-imports/${importId}`, {
+    method: "DELETE",
+  });
+}
+
+export interface PurgeAllImportsResult {
+  purged_count: number;
+  items: DeleteFileImportResult[];
+}
+
+export async function purgeAllFileImports(kbId: string): Promise<PurgeAllImportsResult> {
+  return apiRequest<PurgeAllImportsResult>(`/api/v1/kbs/${kbId}/file-imports/purge-all`, {
+    method: "POST",
+    body: { confirm: true },
   });
 }

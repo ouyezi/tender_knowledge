@@ -4,6 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.middleware.audit import AuditMiddleware
+from src.api.routes.actual_bid_parse import router as actual_bid_parse_router
+from src.api.routes.bid_outlines import router as bid_outlines_router
+from src.api.routes.candidates import router as candidates_router
+from src.api.routes.chapter_patterns import router as chapter_patterns_router
 from src.api.routes.chapter_taxonomies import router as chapter_taxonomy_router
 from src.api.routes.file_imports import router as file_imports_router
 from src.api.routes.knowledge_bases import router as kb_router
@@ -43,6 +47,10 @@ app.include_router(template_libraries_router)
 app.include_router(templates_router)
 app.include_router(template_chapters_router)
 app.include_router(template_assets_router)
+app.include_router(actual_bid_parse_router)
+app.include_router(bid_outlines_router)
+app.include_router(candidates_router)
+app.include_router(chapter_patterns_router)
 
 
 @app.get("/health")

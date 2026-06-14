@@ -12,6 +12,8 @@ const NAV_ITEMS = [
   { key: "/chapter-taxonomies", label: <Link to="/chapter-taxonomies">章节分类</Link> },
   { key: "/file-imports", label: <Link to="/file-imports">来源导入</Link> },
   { key: "/template-libraries", label: <Link to="/template-libraries">模板库</Link> },
+  { key: "/outlines", label: <Link to="/outlines">目录</Link> },
+  { key: "/candidates", label: <Link to="/candidates">候选</Link> },
 ];
 
 export default function AppShell() {

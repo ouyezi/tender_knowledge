@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Space, Table, Tag, Upload, message } from "antd";
+import { Alert, Button, Card, Modal, Popconfirm, Space, Table, Tag, Upload, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { RcFile } from "antd/es/upload/interface";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -7,7 +7,11 @@ import { useKBContext } from "../../layout/KBContext";
 import ConfirmDrawer from "./ConfirmDrawer";
 import DuplicateFileModal from "./DuplicateFileModal";
 import TaskLogDrawer from "./TaskLogDrawer";
+import OperationLogDrawer from "./OperationLogDrawer";
 import {
+  deleteFileImport,
+  purgeAllFileImports,
+  retryActualBidParse,
   retryImport,
   retryTemplateParse,
   getFileImport,
@@ -16,26 +20,27 @@ import {
   type ParseStatus,
   uploadFile,
 } from "../../services/fileImports";
-import { listParseTasks } from "../../services/templates";
 import { ApiError } from "../../services/apiClient";
 
-const PARSE_STATUS_TAG: Record<
-  Exclude<ParseStatus, null>,
-  { color: string; label: string }
-> = {
+const PARSE_STATUS_TAG: Record<string, { color: string; label: string }> = {
   running: { color: "processing", label: "解析中" },
+  parsing: { color: "processing", label: "解析中" },
   parse_ready: { color: "warning", label: "待确认" },
+  parse_confirmed: { color: "success", label: "已确认" },
   failed: { color: "error", label: "失败" },
+  parse_failed: { color: "error", label: "失败" },
 };
 
 function ParseStatusCell({
+  filePurpose,
   parseStatus,
   parseTaskId,
   retrying,
   onRetry,
 }: {
+  filePurpose?: string | null;
   parseStatus?: ParseStatus;
-  parseTaskId?: string;
+  parseTaskId?: string | null;
   retrying: boolean;
   onRetry: () => void;
 }) {
@@ -43,15 +48,24 @@ function ParseStatusCell({
     return <>—</>;
   }
 
-  const tagMeta = PARSE_STATUS_TAG[parseStatus];
+  const tagMeta = PARSE_STATUS_TAG[parseStatus] ?? {
+    color: "default",
+    label: parseStatus,
+  };
+  const isActualBid = filePurpose === "actual_bid";
+  const isFailed = parseStatus === "failed" || parseStatus === "parse_failed";
 
   return (
     <Space size="small">
       <Tag color={tagMeta.color}>{tagMeta.label}</Tag>
       {parseStatus === "parse_ready" && parseTaskId ? (
-        <Link to={`/template-libraries?highlight=${parseTaskId}`}>前往确认</Link>
+        isActualBid ? (
+          <Link to={`/outlines/parse-confirm/${parseTaskId}`}>前往确认</Link>
+        ) : (
+          <Link to={`/template-libraries?highlight=${parseTaskId}`}>前往确认</Link>
+        )
       ) : null}
-      {parseStatus === "failed" ? (
+      {isFailed ? (
         <Button type="link" size="small" loading={retrying} onClick={onRetry}>
           重试
         </Button>
@@ -75,32 +89,22 @@ export default function FileImportCenterPage() {
   const [pendingDuplicateFile, setPendingDuplicateFile] = useState<RcFile>();
   const [duplicateImportIds, setDuplicateImportIds] = useState<string[]>([]);
   const [duplicateHash, setDuplicateHash] = useState<string>();
-  const [parseTaskIdByImport, setParseTaskIdByImport] = useState<Record<string, string>>({});
   const [retryingParseImportIds, setRetryingParseImportIds] = useState<Set<string>>(new Set());
+  const [operationLogOpen, setOperationLogOpen] = useState(false);
+  const [operationLogImportId, setOperationLogImportId] = useState<string>();
+  const [purgingAll, setPurgingAll] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
       setItems([]);
       setTotal(0);
-      setParseTaskIdByImport({});
       return;
     }
     setLoading(true);
     try {
-      const [result, taskResult] = await Promise.all([
-        listFileImports(selectedKbId, { page, page_size: pageSize }),
-        listParseTasks(selectedKbId, { page_size: 200 }),
-      ]);
+      const result = await listFileImports(selectedKbId, { page, page_size: pageSize });
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
-
-      const taskMap: Record<string, string> = {};
-      for (const task of taskResult.items ?? []) {
-        if (!taskMap[task.import_id]) {
-          taskMap[task.import_id] = task.parse_task_id;
-        }
-      }
-      setParseTaskIdByImport(taskMap);
     } catch (error) {
       message.error((error as Error).message);
     } finally {
@@ -108,15 +112,18 @@ export default function FileImportCenterPage() {
     }
   }, [page, pageSize, selectedKbId]);
 
-  const handleRetryTemplateParse = useCallback(
-    async (importId: string) => {
+  const handleRetryParse = useCallback(
+    async (importId: string, filePurpose?: string | null) => {
       if (!selectedKbId) {
         return;
       }
       setRetryingParseImportIds((prev) => new Set(prev).add(importId));
       try {
-        const result = await retryTemplateParse(selectedKbId, importId);
-        message.success(`已触发模板解析重试：${result.parse_task_id}`);
+        const result =
+          filePurpose === "actual_bid"
+            ? await retryActualBidParse(selectedKbId, importId)
+            : await retryTemplateParse(selectedKbId, importId);
+        message.success(`已触发解析重试：${result.parse_task_id}`);
         void loadData();
       } catch (error) {
         message.error((error as Error).message);
@@ -166,11 +173,12 @@ export default function FileImportCenterPage() {
         key: "parse_status",
         render: (value: ParseStatus | undefined, record) => (
           <ParseStatusCell
+            filePurpose={record.file_purpose}
             parseStatus={value ?? null}
-            parseTaskId={parseTaskIdByImport[record.import_id]}
+            parseTaskId={record.latest_parse_task_id}
             retrying={retryingParseImportIds.has(record.import_id)}
             onRetry={() => {
-              void handleRetryTemplateParse(record.import_id);
+              void handleRetryParse(record.import_id, record.file_purpose);
             }}
           />
         ),
@@ -227,11 +235,42 @@ export default function FileImportCenterPage() {
             >
               任务日志
             </Button>
+            <Button
+              size="small"
+              onClick={(event) => {
+                event.stopPropagation();
+                setOperationLogImportId(record.import_id);
+                setOperationLogOpen(true);
+              }}
+            >
+              操作日志
+            </Button>
+            <Popconfirm
+              title="确定删除该导入记录？"
+              description="将删除文件、解析结果及下游数据，不可恢复。"
+              onConfirm={async () => {
+                if (!selectedKbId) {
+                  return;
+                }
+                try {
+                  await deleteFileImport(selectedKbId, record.import_id);
+                  message.success("已删除");
+                  void loadData();
+                } catch (error) {
+                  message.error((error as Error).message);
+                }
+              }}
+              onCancel={(event) => event?.stopPropagation()}
+            >
+              <Button size="small" danger onClick={(event) => event.stopPropagation()}>
+                删除
+              </Button>
+            </Popconfirm>
           </Space>
         ),
       },
     ],
-    [handleRetryTemplateParse, parseTaskIdByImport, retryingParseImportIds, loadData, selectedKbId],
+    [handleRetryParse, retryingParseImportIds, loadData, selectedKbId],
   );
 
   if (!selectedKbId) {
@@ -294,8 +333,45 @@ export default function FileImportCenterPage() {
     }
   };
 
+  const handlePurgeAll = () => {
+    if (!selectedKbId) {
+      return;
+    }
+    Modal.confirm({
+      title: "清空全部来源导入？",
+      content: "将删除当前知识库下所有导入记录、上传文件及解析产物，不可恢复。",
+      okText: "确认清空",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        setPurgingAll(true);
+        try {
+          const result = await purgeAllFileImports(selectedKbId);
+          message.success(`已清空 ${result.purged_count} 条导入记录`);
+          void loadData();
+        } catch (error) {
+          message.error((error as Error).message);
+        } finally {
+          setPurgingAll(false);
+        }
+      },
+    });
+  };
+
   return (
-    <Card title="来源导入">
+    <Card
+      title="来源导入"
+      extra={
+        <Space>
+          <Button onClick={() => { setOperationLogImportId(undefined); setOperationLogOpen(true); }}>
+            操作日志
+          </Button>
+          <Button danger loading={purgingAll} onClick={handlePurgeAll}>
+            清空全部
+          </Button>
+        </Space>
+      }
+    >
       <Upload.Dragger
         multiple={false}
         showUploadList={false}
@@ -364,6 +440,12 @@ export default function FileImportCenterPage() {
         kbId={selectedKbId}
         importId={taskLogImportId}
         onClose={() => setTaskLogOpen(false)}
+      />
+      <OperationLogDrawer
+        open={operationLogOpen}
+        kbId={selectedKbId}
+        importId={operationLogImportId}
+        onClose={() => setOperationLogOpen(false)}
       />
     </Card>
   );
