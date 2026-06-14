@@ -18,11 +18,16 @@ import { useKBContext } from "../../layout/KBContext";
 import {
   getCandidate,
   listCandidates,
+  type BatchOperationResult,
   type CandidateDetail,
   type CandidateListItem,
   type ListCandidatesParams,
 } from "../../services/candidates";
+import BatchConfirmModal from "./BatchConfirmModal";
+import BatchResultDrawer from "./BatchResultDrawer";
 import CandidateDetailDrawer from "./CandidateDetailDrawer";
+import CandidateMergeModal from "./CandidateMergeModal";
+import CandidateSplitModal from "./CandidateSplitModal";
 
 const STATUS_TAG: Record<string, { color: string; label: string }> = {
   pending: { color: "warning", label: "待处理" },
@@ -87,6 +92,22 @@ export default function CandidateCenterPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<CandidateDetail>();
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchResultOpen, setBatchResultOpen] = useState(false);
+  const [batchResult, setBatchResult] = useState<BatchOperationResult>();
+
+  const selectedRows = useMemo(
+    () => items.filter((item) => selectedRowKeys.includes(item.candidate_id)),
+    [items, selectedRowKeys],
+  );
+
+  const splitCandidateRow = useMemo(
+    () => (selectedRows.length === 1 ? selectedRows[0] : undefined),
+    [selectedRows],
+  );
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
@@ -156,23 +177,35 @@ export default function CandidateCenterPage() {
     [selectedKbId],
   );
 
-  const handleDetailSaved = useCallback(
-    (nextDetail: CandidateDetail) => {
-      setDetail(nextDetail);
-      setItems((prev) =>
-        prev.map((item) =>
-          item.candidate_id === nextDetail.candidate_id
-            ? {
-                ...item,
-                title: nextDetail.title,
-                summary: nextDetail.summary,
-              }
-            : item,
-        ),
-      );
+  const handleBatchComplete = useCallback(
+    (result: BatchOperationResult) => {
+      setBatchResult(result);
+      setBatchResultOpen(true);
+      setSelectedRowKeys([]);
+      void loadData();
     },
-    [],
+    [loadData],
   );
+
+  const handleMergeSplitSuccess = useCallback(() => {
+    setSelectedRowKeys([]);
+    void loadData();
+  }, [loadData]);
+
+  const handleDetailSaved = useCallback((nextDetail: CandidateDetail) => {
+    setDetail(nextDetail);
+    setItems((prev) =>
+      prev.map((item) =>
+        item.candidate_id === nextDetail.candidate_id
+          ? {
+              ...item,
+              title: nextDetail.title,
+              summary: nextDetail.summary,
+            }
+          : item,
+      ),
+    );
+  }, []);
 
   const columns: ColumnsType<CandidateListItem> = useMemo(
     () => [
@@ -298,12 +331,37 @@ export default function CandidateCenterPage() {
           </Form.Item>
         </Form>
 
+        {selectedRowKeys.length > 0 ? (
+          <Space style={{ marginBottom: 16 }}>
+            <span>已选 {selectedRowKeys.length} 条</span>
+            <Button type="primary" onClick={() => setBatchOpen(true)}>
+              批量确认
+            </Button>
+            <Button
+              disabled={selectedRows.length < 2}
+              onClick={() => setMergeOpen(true)}
+            >
+              合并
+            </Button>
+            <Button
+              disabled={selectedRows.length !== 1 || splitCandidateRow?.source_channel !== "document"}
+              onClick={() => setSplitOpen(true)}
+            >
+              拆分
+            </Button>
+          </Space>
+        ) : null}
+
         <Table
           rowKey="candidate_id"
           size="small"
           loading={loading}
           columns={columns}
           dataSource={items}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys as string[]),
+          }}
           locale={{ emptyText: <Empty description="暂无候选知识" /> }}
           pagination={{
             current: page,
@@ -332,6 +390,36 @@ export default function CandidateCenterPage() {
           onSaved={handleDetailSaved}
         />
       ) : null}
+
+      <CandidateMergeModal
+        kbId={selectedKbId}
+        open={mergeOpen}
+        selected={selectedRows}
+        onClose={() => setMergeOpen(false)}
+        onSuccess={handleMergeSplitSuccess}
+      />
+
+      <CandidateSplitModal
+        kbId={selectedKbId}
+        open={splitOpen}
+        candidate={splitCandidateRow}
+        onClose={() => setSplitOpen(false)}
+        onSuccess={handleMergeSplitSuccess}
+      />
+
+      <BatchConfirmModal
+        kbId={selectedKbId}
+        open={batchOpen}
+        selected={selectedRows}
+        onClose={() => setBatchOpen(false)}
+        onComplete={handleBatchComplete}
+      />
+
+      <BatchResultDrawer
+        open={batchResultOpen}
+        result={batchResult}
+        onClose={() => setBatchResultOpen(false)}
+      />
     </>
   );
 }

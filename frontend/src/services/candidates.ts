@@ -173,3 +173,106 @@ export async function retryPublishCandidate(
     },
   );
 }
+
+export interface MergeCandidatesPayload {
+  target_candidate_id: string;
+  source_candidate_ids: string[];
+  title?: string;
+  summary?: string;
+  content?: string;
+  review_comment?: string;
+}
+
+export interface MergeCandidatesResult {
+  target_candidate_id: string;
+  merged_count: number;
+  status: string;
+  trace_id: string;
+}
+
+export async function mergeCandidates(
+  kbId: string,
+  payload: MergeCandidatesPayload,
+): Promise<MergeCandidatesResult> {
+  return apiRequest<MergeCandidatesResult>(`/api/v1/kbs/${kbId}/candidates/merge`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export interface SplitItemPayload {
+  title: string;
+  summary?: string;
+  content?: string;
+  candidate_type?: string;
+  suggested_chapter_taxonomy_id?: string | null;
+  suggested_product_category_ids?: string[];
+}
+
+export interface SplitCandidatePayload {
+  splits: SplitItemPayload[];
+  review_comment?: string;
+}
+
+export interface SplitCandidateResult {
+  source_candidate_id: string;
+  new_candidate_ids: string[];
+  source_status: string;
+  trace_id: string;
+}
+
+export async function splitCandidate(
+  kbId: string,
+  candidateId: string,
+  payload: SplitCandidatePayload,
+): Promise<SplitCandidateResult> {
+  return apiRequest<SplitCandidateResult>(
+    `/api/v1/kbs/${kbId}/candidates/${candidateId}/split`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+export interface BatchConfirmItem extends ConfirmRequest {
+  candidate_id: string;
+}
+
+export interface BatchResultItem {
+  candidate_id: string;
+  status: string;
+  confirmed_object_type?: string | null;
+  confirmed_object_id?: string | null;
+  error?: { code: string; message: string } | null;
+}
+
+export interface BatchOperationResult {
+  batch_id: string;
+  trace_id: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BatchResultItem[];
+  finished_at: string;
+}
+
+export async function batchConfirmCandidates(
+  kbId: string,
+  body: { items: BatchConfirmItem[]; batch_comment?: string },
+): Promise<BatchOperationResult> {
+  return apiRequest<BatchOperationResult>(`/api/v1/kbs/${kbId}/candidates/batch/confirm`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function batchRejectCandidates(
+  kbId: string,
+  body: { candidate_ids: string[]; review_comment?: string },
+): Promise<BatchOperationResult> {
+  return apiRequest<BatchOperationResult>(`/api/v1/kbs/${kbId}/candidates/batch/reject`, {
+    method: "POST",
+    body,
+  });
+}

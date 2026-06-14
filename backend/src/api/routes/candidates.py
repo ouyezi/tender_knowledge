@@ -18,6 +18,13 @@ from src.services.candidate_edit_service import (
 )
 from src.services.candidate_publish_service import PublishConflictError, publish
 from src.services.candidate_publish_validator import PublishValidationError
+from src.services.candidate_merge_service import (
+    MergeInvalidTargetError,
+    MergeSourceNotPendingError,
+    SplitNotSupportedError,
+    merge_candidates,
+    split_candidate,
+)
 from src.models.candidate_knowledge import CandidateKnowledge
 from src.models.candidate_knowledge_stub import CandidateKnowledgeStub
 from src.models.document import Document
@@ -61,6 +68,30 @@ class ConfirmRequest(BaseModel):
     category_code: str | None = None
     parent_category_id: UUID | None = None
     storage_path: str | None = None
+
+
+class MergeRequest(BaseModel):
+    target_candidate_id: str
+    source_candidate_ids: list[str]
+    title: str | None = None
+    summary: str | None = None
+    content: str | None = None
+    review_comment: str | None = None
+
+
+class SplitItem(BaseModel):
+    title: str
+    summary: str | None = None
+    content: str | None = None
+    candidate_type: str
+    suggested_knowledge_type: str | None = None
+    suggested_chapter_taxonomy_id: UUID | None = None
+    suggested_product_category_ids: list[UUID] | None = None
+
+
+class SplitRequest(BaseModel):
+    splits: list[SplitItem]
+    review_comment: str | None = None
 
 
 def _status_to_stub_status(status: str | None) -> str | None:
@@ -423,6 +454,93 @@ def _publish_error_response(exc: Exception, trace_id: UUID) -> JSONResponse:
         status_code=422,
         content=error("PUBLISH_VALIDATION_FAILED", str(exc), trace_id=trace_id),
     )
+
+
+@router.post("/merge")
+def merge_candidate(
+    kb_id: UUID,
+    body: MergeRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    trace_id = get_trace_id() or UUID(int=0)
+    try:
+        result = merge_candidates(
+            db,
+            kb_id=kb_id,
+            target_candidate_id=body.target_candidate_id,
+            source_candidate_ids=body.source_candidate_ids,
+            payload=body.model_dump(exclude_unset=True),
+            operator_id=operator_id,
+            trace_id=trace_id,
+        )
+    except CandidateNotFoundError:
+        return _candidate_not_found_response()
+    except MergeInvalidTargetError:
+        return JSONResponse(
+            status_code=409,
+            content=error("MERGE_INVALID_TARGET", "Invalid merge target", trace_id=trace_id),
+        )
+    except MergeSourceNotPendingError as exc:
+        return JSONResponse(
+            status_code=409,
+            content=error(
+                "MERGE_SOURCE_NOT_PENDING",
+                f"Merge source not pending: {exc.candidate_id} status={exc.status}",
+                trace_id=trace_id,
+            ),
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content=error("VALIDATION_ERROR", str(exc), trace_id=trace_id),
+        )
+    return success(result, trace_id=trace_id)
+
+
+@router.post("/{candidate_id}/split")
+def split_candidate_route(
+    kb_id: UUID,
+    candidate_id: str,
+    body: SplitRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    trace_id = get_trace_id() or UUID(int=0)
+    try:
+        result = split_candidate(
+            db,
+            kb_id=kb_id,
+            candidate_id=candidate_id,
+            splits=[item.model_dump(exclude_unset=True) for item in body.splits],
+            review_comment=body.review_comment,
+            operator_id=operator_id,
+            trace_id=trace_id,
+        )
+    except CandidateNotFoundError:
+        return _candidate_not_found_response()
+    except SplitNotSupportedError as exc:
+        return JSONResponse(
+            status_code=422,
+            content=error("SPLIT_UNSUPPORTED_CHANNEL", str(exc), trace_id=trace_id),
+        )
+    except CandidateNotEditableError as exc:
+        return JSONResponse(
+            status_code=409,
+            content=error(
+                "CANDIDATE_NOT_EDITABLE",
+                f"Candidate not editable in status={exc.status}",
+                trace_id=trace_id,
+            ),
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content=error("VALIDATION_ERROR", str(exc), trace_id=trace_id),
+        )
+    return success(result, trace_id=trace_id)
 
 
 @router.post("/{candidate_id}/confirm")
