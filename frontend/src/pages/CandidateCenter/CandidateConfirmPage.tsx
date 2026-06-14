@@ -13,11 +13,11 @@ import {
   Spin,
   Switch,
   Tabs,
-  Typography,
   message,
 } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import RichContentViewer from "../../components/RichContentViewer";
 import { useKBContext } from "../../layout/KBContext";
 import {
   confirmCandidate,
@@ -140,6 +140,8 @@ export default function CandidateConfirmPage() {
   }, [candidate, editForm, publishForm]);
 
   const confirmAs = Form.useWatch("confirm_as", publishForm) ?? "ku";
+  const editContent = Form.useWatch("content", editForm);
+  const previewContent = editContent ?? candidate?.content;
 
   const handleSave = useCallback(async () => {
     if (!selectedKbId || !candidateId || !candidate) {
@@ -369,15 +371,9 @@ export default function CandidateConfirmPage() {
           {renderSourceTrace(candidate.source_trace)}
         </Card>
         <Card title="内容预览">
-          {candidate.content ? (
-            <Typography.Paragraph
-              style={{ whiteSpace: "pre-wrap", maxHeight: 520, overflow: "auto", marginBottom: 0 }}
-            >
-              {candidate.content}
-            </Typography.Paragraph>
-          ) : (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无内容预览" />
-          )}
+          <div style={{ maxHeight: 520, overflow: "auto" }}>
+            <RichContentViewer kbId={selectedKbId} content={candidate.content} />
+          </div>
         </Card>
       </Col>
 
@@ -389,20 +385,43 @@ export default function CandidateConfirmPage() {
                 key: "edit",
                 label: "编辑",
                 children: (
-                  <Form form={editForm} layout="vertical">
-                    <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}>
-                      <Input />
-                    </Form.Item>
-                    <Form.Item name="summary" label="摘要">
-                      <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item name="content" label="内容">
-                      <Input.TextArea rows={12} />
-                    </Form.Item>
-                    <Button type="primary" loading={saving} onClick={() => void handleSave()}>
-                      保存
-                    </Button>
-                  </Form>
+                  <Tabs
+                    items={[
+                      {
+                        key: "edit-form",
+                        label: "编辑",
+                        children: (
+                          <Form form={editForm} layout="vertical">
+                            <Form.Item
+                              name="title"
+                              label="标题"
+                              rules={[{ required: true, message: "请输入标题" }]}
+                            >
+                              <Input />
+                            </Form.Item>
+                            <Form.Item name="summary" label="摘要">
+                              <Input.TextArea rows={3} />
+                            </Form.Item>
+                            <Form.Item name="content" label="内容">
+                              <Input.TextArea rows={12} />
+                            </Form.Item>
+                            <Button type="primary" loading={saving} onClick={() => void handleSave()}>
+                              保存
+                            </Button>
+                          </Form>
+                        ),
+                      },
+                      {
+                        key: "preview",
+                        label: "预览",
+                        children: (
+                          <div style={{ maxHeight: 520, overflow: "auto" }}>
+                            <RichContentViewer kbId={selectedKbId} content={previewContent} />
+                          </div>
+                        ),
+                      },
+                    ]}
+                  />
                 ),
               },
               {

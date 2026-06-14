@@ -11,6 +11,7 @@ from src.models.candidate_knowledge_stub import CandidateKnowledgeStub
 from src.models.chapter_pattern import ChapterPattern
 from src.models.chapter_pattern_mining_task import ChapterPatternMiningTask
 from src.models.document import Document
+from src.models.document_media_asset import DocumentMediaAsset
 from src.models.document_parse_suggestion import DocumentParseSuggestion
 from src.models.document_tree_node import DocumentTreeNode
 from src.models.downstream_task_entry import DownstreamTaskEntry
@@ -58,6 +59,7 @@ __all__ = [
     "ChapterPattern",
     "ChapterPatternMiningTask",
     "Document",
+    "DocumentMediaAsset",
     "DocumentParseSuggestion",
     "DocumentTreeNode",
     "DownstreamTaskEntry",

@@ -258,6 +258,17 @@ def test_get_candidate_detail_not_found(client, seeded_kb):
     assert resp.json()["error"]["code"] == "CANDIDATE_NOT_FOUND"
 
 
+def test_list_candidates_includes_content_excerpt(client, db_session, seeded_kb):
+    candidate, *_ = _seed_document_candidate(db_session, seeded_kb)
+    resp = client.get(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/candidates",
+        params={"source_channel": "document", "status": "pending"},
+    )
+    assert resp.status_code == 200
+    item = resp.json()["data"]["items"][0]
+    assert item["content_excerpt"] == "完整正文内容"
+
+
 def test_list_candidates_pending_confirm_does_not_500(client, db_session, seeded_kb):
     _seed_document_candidate(db_session, seeded_kb)
     _seed_template_candidate(db_session, seeded_kb)

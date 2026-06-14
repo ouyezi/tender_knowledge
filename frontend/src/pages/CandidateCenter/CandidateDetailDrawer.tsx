@@ -13,6 +13,7 @@ import {
 } from "antd";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import RichContentViewer from "../../components/RichContentViewer";
 import {
   patchCandidate,
   type CandidateDetail,
@@ -219,23 +220,18 @@ export default function CandidateDetailDrawer({
           {!editable ? (
             <>
               <Typography.Title level={5}>内容预览</Typography.Title>
-              {detail.content ? (
-                <Typography.Paragraph
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    maxHeight: 360,
-                    overflow: "auto",
-                    marginBottom: 0,
-                    padding: 12,
-                    background: "#fafafa",
-                    borderRadius: 6,
-                  }}
-                >
-                  {detail.content}
-                </Typography.Paragraph>
-              ) : (
-                <Empty description="暂无内容预览" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              )}
+              <div
+                style={{
+                  maxHeight: 360,
+                  overflow: "auto",
+                  marginBottom: 0,
+                  padding: 12,
+                  background: "#fafafa",
+                  borderRadius: 6,
+                }}
+              >
+                <RichContentViewer kbId={kbId} content={detail.content} />
+              </div>
             </>
           ) : null}
         </>
