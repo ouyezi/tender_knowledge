@@ -33,7 +33,22 @@ def test_detect_heading_style_takes_priority_over_markdown():
     assert result.confidence == "high"
 
 
+def test_numbered_body_paragraph_on_normal_style_not_heading():
+    result = detect_heading_level(
+        "1. 根据贵方采购文件要求，我方郑重承诺将按比选文件全部要求履行合同责任和义务。",
+        "Normal",
+    )
+    assert result is None
+
+
+def test_heading_style_numeric_section_still_detected():
+    result = detect_heading_level("1.参选人业绩", "Heading 2")
+    assert result is not None
+    assert result.pattern == "heading_style"
+
+
 def test_chinese_patterns_have_medium_confidence():
     result = detect_heading_level("第一章 总则", None)
     assert result is not None
     assert result.confidence == "medium"
+

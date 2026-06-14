@@ -111,6 +111,9 @@ def seeded_kb(db_session):
 
 @pytest.fixture()
 def sample_docx_path() -> Path:
+    actual = Path(__file__).parent / "fixtures" / "sample-actual-bid.docx"
+    if actual.exists():
+        return actual
     return Path(__file__).parent / "fixtures" / "sample-template.docx"
 
 

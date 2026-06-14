@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 
 from src.services.docx_block_reader import open_docx
-from src.services.docx_content_collector import collect_content
+from src.services.docx_content_collector import CollectResult, RawBlock, collect_content
 from src.services.docx_hierarchy_inferrer import InferResult, infer_hierarchy
 from src.services.docx_tree_materializer import WalkedNode, materialize_walk_result
 
@@ -20,6 +20,7 @@ class DocumentWalkResult:
     used_flat_fallback: bool = False
     needs_manual_review: bool = False
     infer_result: InferResult | None = None
+    collected: CollectResult | None = None
 
 
 def _iter_paragraph_texts_from_fallback(path: Path) -> list[str]:
@@ -28,6 +29,24 @@ def _iter_paragraph_texts_from_fallback(path: Path) -> list[str]:
     except UnicodeDecodeError:
         raw = path.read_text(encoding="utf-8", errors="ignore")
     return [line.strip() for line in raw.splitlines() if line.strip()]
+
+
+def _collect_from_plain_lines(lines: list[str]) -> CollectResult:
+    blocks: list[RawBlock] = []
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        blocks.append(
+            RawBlock(
+                index=len(blocks),
+                block_type="paragraph",
+                text=text,
+                style_name="Normal",
+                has_image=False,
+            )
+        )
+    return CollectResult(blocks=blocks)
 
 
 def walk_document(
@@ -64,31 +83,22 @@ def walk_document(
             int((time.perf_counter() - fallback_started) * 1000),
             file_path,
         )
-        fallback_nodes = [
-            WalkedNode(
-                temp_id=f"n{idx + 1}",
-                parent_temp_id=None,
-                section_temp_id=None,
-                node_type="paragraph",
-                text=text,
-                level=1,
-                sort_order=idx,
-                is_outline_node=False,
-                needs_manual_review=True,
-            )
-            for idx, text in enumerate(fallback_texts)
-        ]
+        collected = _collect_from_plain_lines(fallback_texts)
+        inferred = infer_hierarchy(collected.blocks)
+        materialized = materialize_walk_result(collected.blocks, inferred)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.warning(
             "walk_document DONE via text_fallback nodes=%d elapsed_ms=%d path=%s",
-            len(fallback_nodes),
+            len(materialized.nodes),
             elapsed_ms,
             file_path,
         )
         return DocumentWalkResult(
-            nodes=fallback_nodes,
+            nodes=materialized.nodes,
             used_flat_fallback=True,
             needs_manual_review=True,
+            infer_result=inferred,
+            collected=collected,
         )
 
     block_count = 0
@@ -127,4 +137,5 @@ def walk_document(
         used_flat_fallback=materialized.used_flat_fallback,
         needs_manual_review=materialized.needs_manual_review,
         infer_result=inferred,
+        collected=collected,
     )

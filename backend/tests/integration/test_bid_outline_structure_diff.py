@@ -14,6 +14,8 @@ from src.models.downstream_task_entry import DownstreamTaskEntry, DownstreamTask
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
 from src.services.actual_bid_parse_runner import enqueue_actual_bid_parse, run_actual_bid_parse_pending
 
+ACTUAL_BID_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "sample-actual-bid.docx"
+
 
 def _seed_locked_outline_import(db_session, seeded_kb, sample_docx_path):
     storage_rel = f"{seeded_kb.kb_id}/locked-actual-bid.docx"
@@ -89,9 +91,9 @@ def _seed_locked_outline_import(db_session, seeded_kb, sample_docx_path):
 
 
 def test_force_reparse_locked_outline_generates_pending_diff_without_mutating_nodes(
-    db_session, seeded_kb, sample_docx_path
+    db_session, seeded_kb,
 ):
-    file_import, outline = _seed_locked_outline_import(db_session, seeded_kb, sample_docx_path)
+    file_import, outline = _seed_locked_outline_import(db_session, seeded_kb, ACTUAL_BID_FIXTURE)
     original_titles = [
         node.title
         for node in db_session.query(BidOutlineNode)
@@ -139,10 +141,10 @@ def test_force_reparse_locked_outline_generates_pending_diff_without_mutating_no
 
 
 def test_bid_outline_diff_apply_and_reject_endpoints(
-    api_client, db_session, seeded_kb, sample_docx_path
+    api_client, db_session, seeded_kb,
 ):
     client = TestClient(app)
-    file_import, outline = _seed_locked_outline_import(db_session, seeded_kb, sample_docx_path)
+    file_import, outline = _seed_locked_outline_import(db_session, seeded_kb, ACTUAL_BID_FIXTURE)
 
     enqueue_actual_bid_parse(
         db_session,

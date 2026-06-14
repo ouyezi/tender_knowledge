@@ -9,11 +9,12 @@ from src.api.deps import get_kb_or_404, kb_write_guard
 from src.api.envelope import error, success
 from src.api.middleware.audit import get_trace_id
 from src.db.session import get_db
-from src.models.actual_bid_parse_task import ActualBidParseTask
+from src.models.actual_bid_parse_task import ActualBidParseTask, ActualBidParseTaskPhase
 from src.models.document import Document
 from src.models.document_parse_suggestion import DocumentParseSuggestion
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.downstream_task_entry import DownstreamTaskEntry, DownstreamTaskType
+from src.models.file_import import FileImport
 from src.models.knowledge_base import KnowledgeBase
 from src.services.actual_bid_parse_runner import (
     ActualBidParseServiceError,
@@ -30,6 +31,47 @@ router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/actual-bid-parse",
     tags=["actual-bid-parse"],
 )
+
+
+def _outline_quality_from_suggestion(suggestion: DocumentParseSuggestion | None) -> dict | None:
+    if suggestion is None or not isinstance(suggestion.payload, dict):
+        return None
+    return suggestion.payload.get("outline_quality")
+
+
+def _filtered_meta_from_suggestion(suggestion: DocumentParseSuggestion | None) -> dict:
+    if suggestion is None or not isinstance(suggestion.payload, dict):
+        return {"filtered_total": 0, "filtered_nodes_sample": []}
+    return {
+        "filtered_total": suggestion.payload.get("filtered_total", 0),
+        "filtered_nodes_sample": suggestion.payload.get("filter_decisions_sample", []),
+    }
+
+
+def _serialize_parse_task_row(
+    row: ActualBidParseTask,
+    *,
+    file_import: FileImport | None,
+    suggestion: DocumentParseSuggestion | None,
+) -> dict:
+    return {
+        "parse_task_id": str(row.parse_task_id),
+        "import_id": str(row.import_id),
+        "document_id": str(row.document_id) if row.document_id else None,
+        "bid_outline_id": str(row.bid_outline_id) if row.bid_outline_id else None,
+        "task_phase": row.task_phase.value if row.task_phase else None,
+        "status": row.status.value,
+        "parse_strategy": row.parse_strategy.value if row.parse_strategy else None,
+        "error_message": row.error_message,
+        "retry_count": row.retry_count,
+        "llm_progress": row.llm_progress,
+        "started_at": row.started_at.isoformat() if row.started_at else None,
+        "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+        "created_at": row.created_at.isoformat(),
+        "file_name": file_import.file_name if file_import else None,
+        "outline_quality": _outline_quality_from_suggestion(suggestion),
+        **_filtered_meta_from_suggestion(suggestion),
+    }
 
 
 class TriggerActualBidParseRequest(BaseModel):
@@ -126,6 +168,11 @@ def list_parse_tasks(
         q = q.filter(ActualBidParseTask.import_id == import_id)
     if status:
         q = q.filter(ActualBidParseTask.status == status)
+        if status == "ready":
+            q = q.filter(
+                ActualBidParseTask.error_message.is_(None),
+                ActualBidParseTask.task_phase == ActualBidParseTaskPhase.full_pipeline,
+            )
     total = q.count()
     rows = (
         q.order_by(ActualBidParseTask.created_at.desc())
@@ -133,24 +180,26 @@ def list_parse_tasks(
         .limit(page_size)
         .all()
     )
+    import_ids = [row.import_id for row in rows]
+    parse_task_ids = [row.parse_task_id for row in rows]
+    file_imports = {
+        item.import_id: item
+        for item in db.query(FileImport).filter(FileImport.import_id.in_(import_ids)).all()
+    } if import_ids else {}
+    suggestions = {
+        item.parse_task_id: item
+        for item in db.query(DocumentParseSuggestion)
+        .filter(DocumentParseSuggestion.parse_task_id.in_(parse_task_ids))
+        .all()
+    } if parse_task_ids else {}
     return success(
         {
             "items": [
-                {
-                    "parse_task_id": str(row.parse_task_id),
-                    "import_id": str(row.import_id),
-                    "document_id": str(row.document_id) if row.document_id else None,
-                    "bid_outline_id": str(row.bid_outline_id) if row.bid_outline_id else None,
-                    "task_phase": row.task_phase.value if row.task_phase else None,
-                    "status": row.status.value,
-                    "parse_strategy": row.parse_strategy.value if row.parse_strategy else None,
-                    "error_message": row.error_message,
-                    "retry_count": row.retry_count,
-                    "llm_progress": row.llm_progress,
-                    "started_at": row.started_at.isoformat() if row.started_at else None,
-                    "finished_at": row.finished_at.isoformat() if row.finished_at else None,
-                    "created_at": row.created_at.isoformat(),
-                }
+                _serialize_parse_task_row(
+                    row,
+                    file_import=file_imports.get(row.import_id),
+                    suggestion=suggestions.get(row.parse_task_id),
+                )
                 for row in rows
             ],
             "total": total,
@@ -244,22 +293,15 @@ def get_parse_task(
     walk_result = suggestion_payload.get("walk_result") if isinstance(suggestion_payload, dict) else {}
     if not isinstance(walk_result, dict):
         walk_result = {}
+    file_import = db.get(FileImport, task.import_id)
 
     return success(
         {
-            "parse_task_id": str(task.parse_task_id),
-            "import_id": str(task.import_id),
-            "document_id": str(task.document_id) if task.document_id else None,
-            "bid_outline_id": str(task.bid_outline_id) if task.bid_outline_id else None,
-            "task_phase": task.task_phase.value if task.task_phase else None,
-            "status": task.status.value,
-            "parse_strategy": task.parse_strategy.value if task.parse_strategy else None,
-            "error_message": task.error_message,
-            "retry_count": task.retry_count,
-            "llm_progress": task.llm_progress,
-            "started_at": task.started_at.isoformat() if task.started_at else None,
-            "finished_at": task.finished_at.isoformat() if task.finished_at else None,
-            "created_at": task.created_at.isoformat(),
+            **_serialize_parse_task_row(
+                task,
+                file_import=file_import,
+                suggestion=suggestion,
+            ),
             "suggestion": (
                 {
                     "outline_extract_strategy": suggestion_payload.get("outline_extract_strategy"),

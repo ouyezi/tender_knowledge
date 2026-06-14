@@ -54,6 +54,23 @@ def _resolve_source_node_id(
     return candidates.pop(0)
 
 
+def _resolve_outline_parent_id(
+    *,
+    parent_temp_id: str | None,
+    parent_map: dict[str, uuid.UUID],
+    created_nodes: list[BidOutlineNode],
+    level: int,
+) -> uuid.UUID | None:
+    if parent_temp_id:
+        mapped = parent_map.get(str(parent_temp_id))
+        if mapped is not None:
+            return mapped
+    for node in reversed(created_nodes):
+        if node.level < level:
+            return node.outline_node_id
+    return None
+
+
 def persist_outline(
     db: Session,
     *,
@@ -117,26 +134,34 @@ def persist_outline(
     for entry in sorted(toc_entries, key=lambda item: int(getattr(item, "sort_order", 0) or 0)):
         temp_id = str(getattr(entry, "temp_id"))
         parent_temp_id = getattr(entry, "parent_temp_id", None)
-        parent_id = parent_map.get(str(parent_temp_id)) if parent_temp_id else None
+        level = max(int(getattr(entry, "level", 1) or 1), 1)
+        parent_id = _resolve_outline_parent_id(
+            parent_temp_id=str(parent_temp_id) if parent_temp_id else None,
+            parent_map=parent_map,
+            created_nodes=created_nodes,
+            level=level,
+        )
         source_node_id = _resolve_source_node_id(
             entry=entry,
             source_node_by_temp_id=source_node_by_temp_id,
             heading_index=heading_index,
         )
         raw_title = sanitize_pg_text(str(getattr(entry, "title", "")).strip()) or "未命名章节"
+        outline_node_id = uuid.uuid4()
         node = BidOutlineNode(
+            outline_node_id=outline_node_id,
             kb_id=kb_id,
             bid_outline_id=outline.bid_outline_id,
             parent_id=parent_id,
             title=raw_title[:512],
-            level=max(int(getattr(entry, "level", 1) or 1), 1),
+            level=level,
             sort_order=max(int(getattr(entry, "sort_order", 0) or 0), 0),
             source_node_id=source_node_id,
             product_category_ids=[],
             needs_manual_review=source_node_id is None,
         )
         db.add(node)
-        parent_map[temp_id] = node.outline_node_id
+        parent_map[temp_id] = outline_node_id
         created_nodes.append(node)
 
     db.flush()

@@ -39,3 +39,13 @@ def test_walk_document_detects_chinese_hierarchy(tmp_path):
     assert [h.level for h in headings] == [1, 2, 3]
     paragraphs = [n for n in result.nodes if n.node_type == "paragraph"]
     assert all(p.parent_temp_id is not None for p in paragraphs)
+
+
+def test_walk_document_text_fallback_includes_infer_snapshot(tmp_path):
+    plain = tmp_path / "not-a-docx.txt"
+    plain.write_text("第一章 概述\n概述正文。\n一、背景\n背景正文。\n", encoding="utf-8")
+    result = walk_document(plain)
+    assert result.infer_result is not None
+    assert result.collected is not None
+    assert len(result.collected.blocks) >= 2
+    assert any(n.node_type == "heading" for n in result.nodes)
