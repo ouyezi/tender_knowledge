@@ -20,6 +20,14 @@ from src.models.import_audit_log import ImportAuditLog
 from src.models.import_task import ImportTask
 from src.models.knowledge_unit import KnowledgeUnit
 from src.models.manual_asset import ManualAsset
+from src.models.module_assembly_suggestion import ModuleAssemblySuggestion
+from src.models.retrieval_eval_case import RetrievalEvalCase
+from src.models.retrieval_eval_run import RetrievalEvalRun
+from src.models.retrieval_eval_set import RetrievalEvalSet
+from src.models.retrieval_feedback import RetrievalFeedback
+from src.models.retrieval_index_entry import RetrievalIndexEntry
+from src.models.retrieval_strategy_version import RetrievalStrategyVersion
+from src.models.retrieval_trace import RetrievalTrace
 from src.models.template import Template
 from src.models.template_audit_log import TemplateAuditLog
 from src.models.template_chapter import TemplateChapter
@@ -54,6 +62,14 @@ __all__ = [
     "ImportTask",
     "KnowledgeUnit",
     "ManualAsset",
+    "ModuleAssemblySuggestion",
+    "RetrievalEvalCase",
+    "RetrievalEvalRun",
+    "RetrievalEvalSet",
+    "RetrievalFeedback",
+    "RetrievalIndexEntry",
+    "RetrievalStrategyVersion",
+    "RetrievalTrace",
     "Template",
     "TemplateAuditLog",
     "TemplateChapter",

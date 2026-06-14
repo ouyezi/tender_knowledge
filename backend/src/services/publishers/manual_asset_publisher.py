@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from src.models.manual_asset import ManualAsset, ManualAssetStatus
+from src.services.retrieval.indexing.index_builder import IndexBuilder
 
 
 def publish(
@@ -43,6 +44,7 @@ def publish(
     )
     db.add(row)
     db.flush()
+    IndexBuilder(db).upsert_from_manual_asset(row)
     return {
         "confirmed_object_type": "manual_asset",
         "confirmed_object_id": row.manual_asset_id,

@@ -15,7 +15,11 @@ from src.api.routes.file_imports import router as file_imports_router
 from src.api.routes.knowledge_bases import router as kb_router
 from src.api.routes.knowledge_units import router as knowledge_units_router
 from src.api.routes.manual_assets import router as manual_assets_router
+from src.api.routes.module_suggestions import router as module_suggestions_router
 from src.api.routes.product_categories import router as product_category_router
+from src.api.routes.retrieval import router as retrieval_router
+from src.api.routes.retrieval_eval import router as retrieval_eval_router
+from src.api.routes.retrieval_feedback import router as retrieval_feedback_router
 from src.api.routes.template_assets import router as template_assets_router
 from src.api.routes.template_chapters import router as template_chapters_router
 from src.api.routes.template_libraries import router as template_libraries_router
@@ -61,6 +65,10 @@ app.include_router(knowledge_units_router)
 app.include_router(wikis_router)
 app.include_router(manual_assets_router)
 app.include_router(chapter_patterns_router)
+app.include_router(retrieval_router)
+app.include_router(module_suggestions_router)
+app.include_router(retrieval_feedback_router)
+app.include_router(retrieval_eval_router)
 
 
 @app.get("/health")
