@@ -1,11 +1,18 @@
+import enum
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, JSON, String, Text, Uuid
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.session import Base
+
+
+class ModuleAssemblySuggestionStatus(str, enum.Enum):
+    draft = "draft"
+    adopted = "adopted"
+    rejected = "rejected"
 
 
 class ModuleAssemblySuggestion(Base):
@@ -49,6 +56,19 @@ class ModuleAssemblySuggestion(Base):
     project_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     customer_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tender_context_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    requirement_context_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("tender_requirement_contexts.requirement_context_id"),
+        nullable=True,
+    )
+    status: Mapped[ModuleAssemblySuggestionStatus] = mapped_column(
+        Enum(ModuleAssemblySuggestionStatus),
+        nullable=False,
+        default=ModuleAssemblySuggestionStatus.draft,
+    )
+    adoption_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    adopted_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    adopted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

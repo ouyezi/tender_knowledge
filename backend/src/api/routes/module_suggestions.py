@@ -18,7 +18,10 @@ from src.schemas.retrieval import (
     ReturnOptions,
     TenderRequirementContext,
 )
-from src.services.retrieval.module_suggestion.module_suggestion_service import ModuleSuggestionService
+from src.services.retrieval.module_suggestion.module_suggestion_service import (
+    ModuleSuggestionAdoptionError,
+    ModuleSuggestionService,
+)
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/module-suggestions",
@@ -31,10 +34,16 @@ class ModuleSuggestionRequest(BaseModel):
     project_type: str | None = None
     customer_type: str | None = None
     requirement_text: str = ""
+    requirement_context_id: UUID | None = None
     tender_requirement_context: TenderRequirementContext = Field(default_factory=TenderRequirementContext)
     outline_nodes: list[OutlineNode] = Field(default_factory=list)
     retrieval_options: RetrievalOptions = Field(default_factory=RetrievalOptions)
     return_options: ReturnOptions = Field(default_factory=ReturnOptions)
+
+
+class ModuleSuggestionAdoptionRequest(BaseModel):
+    status: str
+    adoption_reason: str | None = None
 
 
 @router.post("")
@@ -55,11 +64,19 @@ def create_module_suggestion(
         retrieval_options=body.retrieval_options,
         return_options=body.return_options,
     )
-    data = ModuleSuggestionService(db).create_suggestions(
-        kb_id=kb_id,
-        request=request,
-        operator_id=get_operator_id(),
-    )
+    try:
+        data = ModuleSuggestionService(db).create_suggestions(
+            kb_id=kb_id,
+            request=request,
+            operator_id=get_operator_id(),
+            requirement_context_id=body.requirement_context_id,
+        )
+    except ModuleSuggestionAdoptionError as exc:
+        status_code = 404 if exc.code == "NOT_FOUND" else 422
+        return JSONResponse(
+            status_code=status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
     db.commit()
     return success(data, trace_id=get_trace_id())
 
@@ -97,7 +114,48 @@ def get_module_suggestion(
             "risk_flags": suggestion.risk_flags,
             "hit_reason": suggestion.hit_reason,
             "knowledge_pack_snapshot": suggestion.knowledge_pack_snapshot,
+            "status": suggestion.status.value,
+            "adoption_reason": suggestion.adoption_reason,
+            "adopted_by": suggestion.adopted_by,
+            "adopted_at": suggestion.adopted_at.isoformat() if suggestion.adopted_at else None,
+            "requirement_context_id": str(suggestion.requirement_context_id)
+            if suggestion.requirement_context_id
+            else None,
             "created_at": suggestion.created_at.isoformat(),
+        },
+        trace_id=get_trace_id(),
+    )
+
+
+@router.patch("/{suggestion_id}/adoption")
+def adopt_module_suggestion(
+    kb_id: UUID,
+    suggestion_id: UUID,
+    body: ModuleSuggestionAdoptionRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    try:
+        suggestion = ModuleSuggestionService(db).adopt(
+            kb_id=kb_id,
+            suggestion_id=suggestion_id,
+            status=body.status,
+            adoption_reason=body.adoption_reason,
+            operator_id=get_operator_id(),
+        )
+    except ModuleSuggestionAdoptionError as exc:
+        status_code = 404 if exc.code == "SUGGESTION_NOT_FOUND" else 422
+        return JSONResponse(
+            status_code=status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    db.commit()
+    return success(
+        {
+            "suggestion_id": str(suggestion.suggestion_id),
+            "status": suggestion.status.value,
+            "adopted_by": suggestion.adopted_by,
+            "adopted_at": suggestion.adopted_at.isoformat() if suggestion.adopted_at else None,
         },
         trace_id=get_trace_id(),
     )

@@ -19,8 +19,13 @@ from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.import_audit_log import ImportAuditLog
 from src.models.import_task import ImportTask
 from src.models.knowledge_unit import KnowledgeUnit
+from src.models.chapter_draft import ChapterDraft
+from src.models.generation_snapshot import GenerationSnapshot
+from src.models.generation_task import GenerationTask
 from src.models.manual_asset import ManualAsset
 from src.models.module_assembly_suggestion import ModuleAssemblySuggestion
+from src.models.prompt_config_version import PromptConfigVersion
+from src.models.tender_requirement_context import TenderRequirementContext
 from src.models.retrieval_eval_case import RetrievalEvalCase
 from src.models.retrieval_eval_run import RetrievalEvalRun
 from src.models.retrieval_eval_set import RetrievalEvalSet
@@ -61,8 +66,13 @@ __all__ = [
     "ImportAuditLog",
     "ImportTask",
     "KnowledgeUnit",
+    "ChapterDraft",
+    "GenerationSnapshot",
+    "GenerationTask",
     "ManualAsset",
     "ModuleAssemblySuggestion",
+    "PromptConfigVersion",
+    "TenderRequirementContext",
     "RetrievalEvalCase",
     "RetrievalEvalRun",
     "RetrievalEvalSet",

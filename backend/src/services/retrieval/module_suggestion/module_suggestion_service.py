@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from src.models.module_assembly_suggestion import ModuleAssemblySuggestion
+from src.models.module_assembly_suggestion import (
+    ModuleAssemblySuggestion,
+    ModuleAssemblySuggestionStatus,
+)
+from src.models.tender_requirement_context import TenderRequirementContext
 from src.models.retrieval_index_entry import RetrievalIndexEntry, RetrievalIndexStatus, RetrievalObjectType
 from src.models.retrieval_trace import RetrievalIntent
 from src.models.template_chapter import TemplateChapter, TemplateChapterStatus
@@ -17,6 +23,12 @@ from src.services.retrieval.strategy_seed import DEFAULT_STRATEGY_CONFIG
 from src.services.retrieval.trace.retrieval_trace_service import RetrievalTraceService
 
 
+class ModuleSuggestionAdoptionError(Exception):
+    def __init__(self, message: str, *, code: str = "VALIDATION"):
+        self.code = code
+        super().__init__(message)
+
+
 class ModuleSuggestionService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -24,17 +36,68 @@ class ModuleSuggestionService:
         self.conflict_detector = ConflictDetector()
         self.trace_service = RetrievalTraceService(db)
 
+    def _load_requirement_context(
+        self,
+        *,
+        kb_id: UUID,
+        requirement_context_id: UUID | None,
+    ) -> TenderRequirementContext | None:
+        if requirement_context_id is None:
+            return None
+        return (
+            self.db.query(TenderRequirementContext)
+            .filter(
+                TenderRequirementContext.kb_id == kb_id,
+                TenderRequirementContext.requirement_context_id == requirement_context_id,
+            )
+            .one_or_none()
+        )
+
+    @staticmethod
+    def _requirement_context_snapshot(row: TenderRequirementContext) -> dict[str, Any]:
+        return {
+            "requirement_context_id": str(row.requirement_context_id),
+            "title": row.title,
+            "outline_structure": row.outline_structure,
+            "outline_nodes": row.outline_nodes,
+            "score_points": row.score_points,
+            "rejection_clauses": row.rejection_clauses,
+            "format_requirements": row.format_requirements,
+            "qualification_requirements": row.qualification_requirements,
+            "response_clauses": row.response_clauses,
+            "source_note": row.source_note,
+            "status": row.status.value,
+        }
+
     def create_suggestions(
         self,
         *,
         kb_id: UUID,
         request: RetrievalRequest,
         operator_id: str | None = None,
+        requirement_context_id: UUID | None = None,
     ) -> dict:
         started_at = time.perf_counter()
         strategy_config = DEFAULT_STRATEGY_CONFIG
         suggestions: list[dict] = []
         saved_rows: list[ModuleAssemblySuggestion] = []
+
+        requirement_context = self._load_requirement_context(
+            kb_id=kb_id,
+            requirement_context_id=requirement_context_id,
+        )
+        if requirement_context_id is not None and requirement_context is None:
+            raise ModuleSuggestionAdoptionError(
+                "tender requirement context not found",
+                code="NOT_FOUND",
+            )
+
+        tender_context = request.tender_requirement_context
+        rejection_clauses = tender_context.rejection_clauses
+        tender_snapshot = tender_context.model_dump(mode="json")
+        if requirement_context is not None:
+            rejection_clauses = requirement_context.rejection_clauses
+            tender_snapshot = self._requirement_context_snapshot(requirement_context)
 
         trace = self.trace_service.write_trace(
             kb_id=kb_id,
@@ -71,7 +134,7 @@ class ModuleSuggestionService:
                 ]
             conflict_ids, risk_flags = self.conflict_detector.detect(
                 template_chapters=template_rows,
-                rejection_clauses=request.tender_requirement_context.rejection_clauses,
+                rejection_clauses=rejection_clauses,
             )
             filtered_template_ids = [
                 str(item) for item in recall.matched_template_chapter_ids if str(item) not in conflict_ids
@@ -111,7 +174,10 @@ class ModuleSuggestionService:
                 product_category_ids=[str(item) for item in request.product_category_ids],
                 project_type=None,
                 customer_type=None,
-                tender_context_snapshot=request.tender_requirement_context.model_dump(mode="json"),
+                tender_context_snapshot=tender_snapshot,
+                requirement_context_id=requirement_context.requirement_context_id
+                if requirement_context is not None
+                else None,
             )
             self.db.add(row)
             self.db.flush()
@@ -158,6 +224,33 @@ class ModuleSuggestionService:
             )
             .one_or_none()
         )
+
+    def adopt(
+        self,
+        *,
+        kb_id: UUID,
+        suggestion_id: UUID,
+        status: str,
+        adoption_reason: str | None,
+        operator_id: str | None = None,
+    ) -> ModuleAssemblySuggestion:
+        if status not in {
+            ModuleAssemblySuggestionStatus.adopted.value,
+            ModuleAssemblySuggestionStatus.rejected.value,
+        }:
+            raise ModuleSuggestionAdoptionError("status must be adopted or rejected")
+
+        row = self.get_suggestion(kb_id=kb_id, suggestion_id=suggestion_id)
+        if row is None:
+            raise ModuleSuggestionAdoptionError("module suggestion not found", code="SUGGESTION_NOT_FOUND")
+
+        now = datetime.now(timezone.utc)
+        row.status = ModuleAssemblySuggestionStatus(status)
+        row.adoption_reason = adoption_reason
+        row.adopted_by = operator_id
+        row.adopted_at = now if status == ModuleAssemblySuggestionStatus.adopted.value else None
+        self.db.flush()
+        return row
 
     def _collect_knowledge_ids(self, *, kb_id: UUID, product_category_ids: list[str], top_k: int) -> dict[str, list[str]]:
         q = self.db.query(RetrievalIndexEntry).filter(
