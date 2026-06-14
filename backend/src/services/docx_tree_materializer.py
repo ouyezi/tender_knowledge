@@ -15,6 +15,7 @@ class WalkedNode:
     text: str
     level: int
     sort_order: int
+    source_block_index: int | None = None
     is_outline_node: bool = False
     needs_manual_review: bool = False
 
@@ -46,6 +47,7 @@ def materialize_walk_result(blocks: list[RawBlock], inferred: InferResult) -> Ma
                 node_type="heading",
                 text=block.text,
                 level=1,
+                source_block_index=block.index,
                 is_outline_node=True,
                 needs_manual_review=True,
             )
@@ -63,6 +65,7 @@ def materialize_walk_result(blocks: list[RawBlock], inferred: InferResult) -> Ma
             node_type="heading",
             text=heading.title,
             level=heading.level,
+            source_block_index=heading.block_index,
             is_outline_node=True,
             needs_manual_review=heading.confidence == "medium",
         )
@@ -90,6 +93,7 @@ def materialize_walk_result(blocks: list[RawBlock], inferred: InferResult) -> Ma
             node_type=node_type,
             text=text,
             level=0,
+            source_block_index=block.index,
             is_outline_node=False,
             needs_manual_review=False,
         )

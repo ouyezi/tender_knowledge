@@ -22,6 +22,7 @@ from src.models.bid_outline import BidOutline
 from src.models.bid_outline_node import BidOutlineNode
 from src.models.candidate_knowledge import CandidateKnowledge
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
+from src.models.document_media_asset import DocumentMediaAsset
 from src.models.document_parse_suggestion import DocumentParseSuggestion
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.downstream_task_entry import (
@@ -33,6 +34,7 @@ from src.models.file_import import FileImport, FileImportStatus, FilePurpose, Fi
 from src.services import bid_outline_diff_service, bid_outline_extract_service, candidate_generate_service
 from src.services.docm_converter import ensure_docx_for_parse
 from src.services.docx_document_walker import walk_document
+from src.services.docx_image_extractor import extract_docx_images
 from src.services.docx_toc_extractor import TocExtractResult, extract_toc_entries
 from src.services.outline_heading_filter import filter_outline_entries
 from src.services.outline_quality_service import sample_excluded_decisions, summarize_outline_quality
@@ -319,6 +321,9 @@ def _clear_document_tree_for_reparse(
         CandidateKnowledge.import_id == import_id,
         CandidateKnowledge.source_doc_id == document_id,
     ).delete(synchronize_session=False)
+    db.query(DocumentMediaAsset).filter(DocumentMediaAsset.document_id == document_id).delete(
+        synchronize_session=False
+    )
 
     db.query(DocumentTreeNode).filter(DocumentTreeNode.document_id == document_id).update(
         {DocumentTreeNode.parent_id: None},
@@ -331,12 +336,49 @@ def _clear_document_tree_for_reparse(
     return deleted
 
 
+def _persist_document_media_assets(
+    db: Session,
+    *,
+    file_import: FileImport,
+    document: Document,
+    docx_path: Path,
+) -> dict[int, list[uuid.UUID]]:
+    extracted = extract_docx_images(
+        docx_path,
+        storage_root=Path(Settings().storage_root),
+        kb_id=file_import.kb_id,
+        document_id=document.document_id,
+    )
+    if not extracted:
+        return {}
+
+    assets = [
+        DocumentMediaAsset(
+            asset_id=item.asset_id,
+            kb_id=file_import.kb_id,
+            document_id=document.document_id,
+            storage_path=item.storage_path,
+            mime_type=item.mime_type,
+            source_block_index=item.source_block_index,
+        )
+        for item in extracted
+    ]
+    db.add_all(assets)
+    db.flush()
+
+    by_block_index: dict[int, list[uuid.UUID]] = {}
+    for item in extracted:
+        by_block_index.setdefault(item.source_block_index, []).append(item.asset_id)
+    return by_block_index
+
+
 def _persist_document_tree(
     db: Session,
     *,
     file_import: FileImport,
     task: ActualBidParseTask,
     walked_nodes,
+    docx_path: Path,
 ) -> tuple[Document, dict[str, uuid.UUID]]:
     total_nodes = len(walked_nodes)
     logger.info(
@@ -383,6 +425,14 @@ def _persist_document_tree(
             deleted,
         )
 
+    with _timed_step(task, db, "document_tree.extract_docx_images"):
+        image_asset_ids_by_block = _persist_document_media_assets(
+            db,
+            file_import=file_import,
+            document=document,
+            docx_path=docx_path,
+        )
+
     _set_task_phase(
         task,
         db,
@@ -408,6 +458,11 @@ def _persist_document_tree(
             node_type = DocumentTreeNodeType.other
         safe_text = sanitize_pg_text(node.text)
         title = safe_text[:512] if node_type == DocumentTreeNodeType.heading and safe_text else None
+        content_ref = node.temp_id
+        if node_type == DocumentTreeNodeType.image and node.source_block_index is not None:
+            matched_assets = image_asset_ids_by_block.get(node.source_block_index) or []
+            if matched_assets:
+                content_ref = str(matched_assets.pop(0))
         node_id = uuid.uuid4()
         node_id_by_temp_id[node.temp_id] = node_id
         parent_temp_id_by_temp_id[node.temp_id] = node.parent_temp_id
@@ -421,7 +476,7 @@ def _persist_document_tree(
                 title=title,
                 level=node.level if node.level > 0 else None,
                 sort_order=max(int(node.sort_order), 0),
-                content_ref=node.temp_id,
+                content_ref=content_ref,
                 content_preview=safe_text[:4000] if safe_text else None,
                 chapter_taxonomy_id=None,
                 product_category_ids=[],
@@ -761,6 +816,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
                 file_import=file_import,
                 task=task,
                 walked_nodes=walked.nodes,
+                docx_path=docx_path,
             )
         persist_elapsed_ms = int((time.perf_counter() - persist_started) * 1000)
         _record_phase_timing(task, db, "persist_tree", persist_elapsed_ms)
