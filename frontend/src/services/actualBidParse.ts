@@ -1,5 +1,44 @@
 import { apiRequest } from "./apiClient";
 
+export interface EmbeddedRegionSample {
+  trigger_title: string;
+  resume_title: string;
+  skipped_heading_count: number;
+}
+
+export interface OutlineQualitySummary {
+  node_count: number;
+  l1_ratio: number;
+  max_depth: number;
+  warnings: string[];
+  extract_strategy: string;
+  filter_stats?: { excluded: number; kept: number; by_reason?: Record<string, number> };
+  embedded_heading_count?: number;
+  embedded_regions_sample?: EmbeddedRegionSample[];
+}
+
+export interface ParseProgressLogEntry {
+  ts: string;
+  level: string;
+  message: string;
+}
+
+export interface ParseLlmProgress {
+  total_chunks?: number;
+  completed_chunks?: number;
+  failed_chunks?: number;
+  degraded_to_rule?: number;
+  logs?: ParseProgressLogEntry[];
+  phase_timings_ms?: Record<string, number>;
+  phase?: string;
+}
+
+export interface FilteredNodeSample {
+  title: string;
+  reason_code: string;
+  level: number;
+}
+
 export interface ActualBidParseTaskListItem {
   parse_task_id: string;
   import_id: string;
@@ -10,12 +49,11 @@ export interface ActualBidParseTaskListItem {
   parse_strategy: string | null;
   error_message: string | null;
   retry_count: number;
-  llm_progress?: {
-    total_chunks: number;
-    completed_chunks: number;
-    failed_chunks: number;
-    degraded_to_rule: number;
-  } | null;
+  file_name?: string | null;
+  outline_quality?: OutlineQualitySummary | null;
+  filtered_total?: number;
+  filtered_nodes_sample?: FilteredNodeSample[];
+  llm_progress?: ParseLlmProgress | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;

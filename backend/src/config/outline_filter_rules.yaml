@@ -1,0 +1,12 @@
+quality:
+  l1_ratio_warn: 0.6
+  min_nodes_for_l1_warn: 30
+  review_ratio_warn: 0.4
+filter:
+  body_list_min_length: 80
+  date_line_max_length: 40
+  parent_keywords_body_list:
+    - 参选
+    - 承诺
+    - 声明
+    - 响应函

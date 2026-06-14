@@ -12,9 +12,11 @@ from src.api.envelope import error, success
 from src.api.middleware.audit import get_trace_id
 from src.db.session import get_db
 from src.models.actual_bid_audit_log import ActualBidAuditLog
+from src.models.actual_bid_parse_task import ActualBidParseTask
 from src.models.bid_outline import BidOutline, BidOutlineStatus
 from src.models.bid_outline_node import BidOutlineNode
 from src.models.bid_outline_structure_diff import BidOutlineStructureDiff
+from src.models.document_parse_suggestion import DocumentParseSuggestion
 from src.models.knowledge_base import KnowledgeBase
 from src.services.bid_outline_diff_service import (
     BidOutlineDiffServiceError,
@@ -198,6 +200,7 @@ def list_bid_outlines(
 
     outline_ids = [row.bid_outline_id for row in rows]
     stats_by_outline: dict[UUID, tuple[int, bool]] = {}
+    quality_by_outline: dict[UUID, dict | None] = {}
     if outline_ids:
         for outline_id, node_count, needs_review in (
             db.query(
@@ -214,6 +217,31 @@ def list_bid_outlines(
         ):
             stats_by_outline[outline_id] = (int(node_count), bool(needs_review))
 
+        parse_tasks = (
+            db.query(ActualBidParseTask)
+            .filter(
+                ActualBidParseTask.kb_id == kb_id,
+                ActualBidParseTask.bid_outline_id.in_(outline_ids),
+            )
+            .order_by(ActualBidParseTask.created_at.desc())
+            .all()
+        )
+        latest_task_by_outline: dict[UUID, ActualBidParseTask] = {}
+        for task in parse_tasks:
+            if task.bid_outline_id and task.bid_outline_id not in latest_task_by_outline:
+                latest_task_by_outline[task.bid_outline_id] = task
+        parse_task_ids = [task.parse_task_id for task in latest_task_by_outline.values()]
+        suggestions_by_task = {
+            item.parse_task_id: item
+            for item in db.query(DocumentParseSuggestion)
+            .filter(DocumentParseSuggestion.parse_task_id.in_(parse_task_ids))
+            .all()
+        } if parse_task_ids else {}
+        for outline_id, task in latest_task_by_outline.items():
+            suggestion = suggestions_by_task.get(task.parse_task_id)
+            payload = suggestion.payload if suggestion and isinstance(suggestion.payload, dict) else {}
+            quality_by_outline[outline_id] = payload.get("outline_quality")
+
     items = []
     for outline in rows:
         node_count, needs_manual_review = stats_by_outline.get(outline.bid_outline_id, (0, False))
@@ -222,6 +250,7 @@ def list_bid_outlines(
                 **_serialize_outline(outline),
                 "node_count": node_count,
                 "needs_manual_review": needs_manual_review,
+                "outline_quality": quality_by_outline.get(outline.bid_outline_id),
             }
         )
 

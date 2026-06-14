@@ -1,4 +1,5 @@
 import { apiRequest } from "./apiClient";
+import type { OutlineQualitySummary } from "./actualBidParse";
 
 export interface BidOutlineListItem {
   bid_outline_id: string;
@@ -13,6 +14,7 @@ export interface BidOutlineListItem {
   product_category_ids?: string[];
   node_count?: number;
   needs_manual_review?: boolean;
+  outline_quality?: OutlineQualitySummary | null;
   structure_locked_at?: string | null;
   updated_at: string;
 }

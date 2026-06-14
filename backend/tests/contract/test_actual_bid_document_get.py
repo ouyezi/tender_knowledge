@@ -97,6 +97,15 @@ def test_get_document_and_tree_after_parse(client, db_session, seeded_kb):
         DocumentTreeNodeType.other.value,
     }
 
+    task_detail = client.get(
+        f"/api/v1/kbs/{kb_id}/actual-bid-parse/tasks/{task.parse_task_id}",
+        headers={"X-Operator-Id": "admin"},
+    )
+    assert task_detail.status_code == 200
+    task_data = task_detail.json()["data"]
+    assert "outline_quality" in task_data
+    assert "filtered_total" in task_data
+    assert "file_name" in task_data
 
 def test_patch_document_metadata(client, db_session, seeded_kb):
     storage_rel = f"{seeded_kb.kb_id}/bid.docx"

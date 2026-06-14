@@ -58,6 +58,12 @@ def apply_confirm(
             code="INVALID_STATE",
             status_code=422,
         )
+    if task.error_message:
+        raise ActualBidConfirmServiceError(
+            "Parse task failed and cannot be confirmed",
+            code="INVALID_STATE",
+            status_code=422,
+        )
     if task.document_id is None:
         raise ActualBidConfirmServiceError(
             "Parse task document is missing",

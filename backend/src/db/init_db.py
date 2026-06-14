@@ -1,6 +1,7 @@
 from sqlalchemy import text
 
 from src.db.session import Base, engine
+from src.models.bid_outline import BidOutlineExtractStrategy
 from src.models.classification_reference import ReferenceObjectType
 from src.models.import_audit_log import ImportAuditAction
 from src.models import (  # noqa: F401
@@ -112,5 +113,10 @@ def init_db() -> None:
             conn,
             "importauditaction",
             [member.value for member in ImportAuditAction],
+        )
+        _sync_postgres_enum(
+            conn,
+            "bidoutlineextractstrategy",
+            [member.value for member in BidOutlineExtractStrategy],
         )
         _sync_missing_columns(conn)

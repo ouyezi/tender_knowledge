@@ -1,0 +1,6 @@
+{
+  "fixture_docx": "synthetic-noisy-outline",
+  "unfiltered_node_count": 40,
+  "min_reduction_ratio": 0.30,
+  "min_golden_retention_ratio": 0.95
+}

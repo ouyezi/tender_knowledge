@@ -19,6 +19,8 @@ from src.models.actual_bid_parse_task import (
     ActualBidParseTaskStatus,
 )
 from src.models.bid_outline import BidOutline
+from src.models.bid_outline_node import BidOutlineNode
+from src.models.candidate_knowledge import CandidateKnowledge
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_parse_suggestion import DocumentParseSuggestion
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
@@ -31,7 +33,9 @@ from src.models.file_import import FileImport, FileImportStatus, FilePurpose, Fi
 from src.services import bid_outline_diff_service, bid_outline_extract_service, candidate_generate_service
 from src.services.docm_converter import ensure_docx_for_parse
 from src.services.docx_document_walker import walk_document
-from src.services.docx_toc_extractor import extract_toc_entries
+from src.services.docx_toc_extractor import TocExtractResult, extract_toc_entries
+from src.services.outline_heading_filter import filter_outline_entries
+from src.services.outline_quality_service import sample_excluded_decisions, summarize_outline_quality
 from src.services.text_sanitize import sanitize_pg_text
 
 logger = logging.getLogger(__name__)
@@ -53,6 +57,22 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _elapsed_ms(started_at: datetime | None, finished_at: datetime | None) -> int:
+    started = _as_utc(started_at)
+    finished = _as_utc(finished_at)
+    if started is None or finished is None:
+        return 0
+    return int((finished - started).total_seconds() * 1000)
+
+
 def _init_progress(*, file_size_bytes: int) -> dict:
     return {
         "phase": ActualBidParseTaskPhase.document_parse.value,
@@ -68,6 +88,7 @@ def _init_progress(*, file_size_bytes: int) -> dict:
 def _persist_task_progress(
     task_id: uuid.UUID,
     *,
+    db: Session | None = None,
     message: str | None = None,
     level: str = "info",
     task_phase: ActualBidParseTaskPhase | None = None,
@@ -75,16 +96,16 @@ def _persist_task_progress(
     llm_progress: dict | None = None,
     **progress_updates,
 ) -> None:
-    """Commit progress in a separate session so pollers see updates during long parses."""
-    with SessionLocal() as progress_db:
-        task = progress_db.get(ActualBidParseTask, task_id)
-        if task is None:
-            return
+    """Persist progress; uses caller session when provided, else a separate committed session."""
+
+    def _apply(task: ActualBidParseTask) -> None:
         if status is not None:
             task.status = status
         if task_phase is not None:
             task.task_phase = task_phase
-        progress = dict(llm_progress if llm_progress is not None else (task.llm_progress or _init_progress(file_size_bytes=0)))
+        progress = dict(
+            llm_progress if llm_progress is not None else (task.llm_progress or _init_progress(file_size_bytes=0))
+        )
         if message:
             logs = list(progress.get("logs") or [])
             logs.append({"ts": _now().isoformat(), "level": level, "message": message})
@@ -92,10 +113,30 @@ def _persist_task_progress(
             logger.info("actual_bid_parse task=%s %s", task_id, message)
         progress.update(progress_updates)
         task.llm_progress = progress
+
+    if db is not None:
+        task = db.get(ActualBidParseTask, task_id)
+        if task is None:
+            return
+        _apply(task)
+        db.flush()
+        return
+
+    with SessionLocal() as progress_db:
+        task = progress_db.get(ActualBidParseTask, task_id)
+        if task is None:
+            return
+        _apply(task)
         progress_db.commit()
 
 
-def _load_progress(task_id: uuid.UUID) -> dict:
+def _load_progress(task_id: uuid.UUID, db: Session | None = None) -> dict:
+    if db is not None:
+        task = db.get(ActualBidParseTask, task_id)
+        if task is None:
+            return _init_progress(file_size_bytes=0)
+        return dict(task.llm_progress or _init_progress(file_size_bytes=0))
+
     with SessionLocal() as progress_db:
         task = progress_db.get(ActualBidParseTask, task_id)
         if task is None:
@@ -111,14 +152,12 @@ def _append_parse_log(
     level: str = "info",
     **progress_updates,
 ) -> None:
-    _ = db
-    progress = _load_progress(task.parse_task_id)
+    progress = _load_progress(task.parse_task_id, db)
     logs = list(progress.get("logs") or [])
     logs.append({"ts": _now().isoformat(), "level": level, "message": message})
     progress["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
     progress.update(progress_updates)
-    _persist_task_progress(task.parse_task_id, llm_progress=progress)
-    db.expire(task, ["llm_progress"])
+    _persist_task_progress(task.parse_task_id, db=db, llm_progress=progress)
 
 
 def _set_task_phase(
@@ -131,23 +170,20 @@ def _set_task_phase(
 ) -> None:
     if message:
         _append_parse_log(task, db, message, phase=phase.value, **progress_updates)
-        _persist_task_progress(task.parse_task_id, task_phase=phase)
+        _persist_task_progress(task.parse_task_id, db=db, task_phase=phase)
     else:
-        progress = _load_progress(task.parse_task_id)
+        progress = _load_progress(task.parse_task_id, db)
         progress["phase"] = phase.value
         progress.update(progress_updates)
-        _persist_task_progress(task.parse_task_id, task_phase=phase, llm_progress=progress, **progress_updates)
-    # Progress is committed in a separate session; avoid dirty task rows on the main txn.
-    db.expire(task)
+        _persist_task_progress(task.parse_task_id, db=db, task_phase=phase, llm_progress=progress, **progress_updates)
 
 
 def _record_phase_timing(task: ActualBidParseTask, db: Session, phase_key: str, elapsed_ms: int) -> None:
-    progress = _load_progress(task.parse_task_id)
+    progress = _load_progress(task.parse_task_id, db)
     timings = dict(progress.get("phase_timings_ms") or {})
     timings[phase_key] = elapsed_ms
     progress["phase_timings_ms"] = timings
-    _persist_task_progress(task.parse_task_id, llm_progress=progress)
-    db.expire(task, ["llm_progress"])
+    _persist_task_progress(task.parse_task_id, db=db, llm_progress=progress)
 
 
 @contextmanager
@@ -177,6 +213,7 @@ def _timed_step(
             elapsed_ms,
         )
         if user_visible:
+            db.rollback()
             _append_parse_log(task, db, f"[失败] {step}（{elapsed_ms / 1000:.1f}s）", level="error")
         raise
     else:
@@ -245,6 +282,55 @@ def _get_or_create_parse_task(
     return task
 
 
+def _clear_document_tree_for_reparse(
+    db: Session,
+    *,
+    kb_id: uuid.UUID,
+    document_id: uuid.UUID,
+    import_id: uuid.UUID,
+) -> int:
+    """Remove dependent rows before rebuilding Document Tree on force reparse."""
+    outline_ids = [
+        row[0]
+        for row in db.query(BidOutline.bid_outline_id)
+        .filter(BidOutline.kb_id == kb_id, BidOutline.source_doc_id == document_id)
+        .all()
+    ]
+    preserve_outline_nodes = False
+    if outline_ids:
+        preserve_outline_nodes = (
+            db.query(BidOutline.bid_outline_id)
+            .filter(
+                BidOutline.bid_outline_id.in_(outline_ids),
+                BidOutline.structure_locked_at.isnot(None),
+            )
+            .first()
+            is not None
+        )
+    if outline_ids:
+        outline_node_query = db.query(BidOutlineNode).filter(BidOutlineNode.bid_outline_id.in_(outline_ids))
+        if preserve_outline_nodes:
+            outline_node_query.update({BidOutlineNode.source_node_id: None}, synchronize_session=False)
+        else:
+            outline_node_query.delete(synchronize_session=False)
+
+    db.query(CandidateKnowledge).filter(
+        CandidateKnowledge.kb_id == kb_id,
+        CandidateKnowledge.import_id == import_id,
+        CandidateKnowledge.source_doc_id == document_id,
+    ).delete(synchronize_session=False)
+
+    db.query(DocumentTreeNode).filter(DocumentTreeNode.document_id == document_id).update(
+        {DocumentTreeNode.parent_id: None},
+        synchronize_session=False,
+    )
+    deleted = db.query(DocumentTreeNode).filter(DocumentTreeNode.document_id == document_id).delete(
+        synchronize_session=False
+    )
+    db.flush()
+    return deleted
+
+
 def _persist_document_tree(
     db: Session,
     *,
@@ -285,10 +371,12 @@ def _persist_document_tree(
         document.product_category_ids = file_import.product_category_ids or []
 
     with _timed_step(task, db, "document_tree.delete_old_nodes", document_id=str(document.document_id)):
-        deleted = db.query(DocumentTreeNode).filter(
-            DocumentTreeNode.document_id == document.document_id
-        ).delete(synchronize_session=False)
-        db.flush()
+        deleted = _clear_document_tree_for_reparse(
+            db,
+            kb_id=file_import.kb_id,
+            document_id=document.document_id,
+            import_id=file_import.import_id,
+        )
         logger.info(
             "actual_bid_parse task=%s document_tree.delete_old_nodes deleted=%d",
             task.parse_task_id,
@@ -413,6 +501,8 @@ def _persist_parse_suggestion(
     walked,
     toc_result,
     generated_candidate_count: int,
+    outline_quality: dict | None = None,
+    filter_decisions: list | None = None,
 ) -> None:
     suggestion = (
         db.query(DocumentParseSuggestion)
@@ -427,6 +517,15 @@ def _persist_parse_suggestion(
         )
         db.add(suggestion)
     suggestion.document_id = document.document_id
+    hierarchy_inference = None
+    infer_result = getattr(walked, "infer_result", None)
+    if infer_result is not None:
+        hierarchy_inference = {
+            "heading_count": len(infer_result.headings),
+            "patterns_used": infer_result.patterns_used,
+            "used_flat_fallback": infer_result.used_flat_fallback,
+            "medium_confidence_count": infer_result.medium_confidence_count,
+        }
     suggestion.payload = {
         "outline_extract_strategy": toc_result.strategy.value,
         "walk_result": {
@@ -434,6 +533,7 @@ def _persist_parse_suggestion(
             "used_flat_fallback": walked.used_flat_fallback,
             "needs_manual_review": walked.needs_manual_review,
         },
+        "hierarchy_inference": hierarchy_inference,
         "chunk_classification": {
             "mode": "skipped",
             "suggestion_source": "rule",
@@ -441,6 +541,11 @@ def _persist_parse_suggestion(
         },
         "candidate_count": generated_candidate_count,
     }
+    if outline_quality is not None:
+        suggestion.payload["outline_quality"] = outline_quality
+        suggestion.payload["filtered_total"] = outline_quality.get("filter_stats", {}).get("excluded", 0)
+    if filter_decisions is not None:
+        suggestion.payload["filter_decisions_sample"] = sample_excluded_decisions(filter_decisions)
 
 
 def enqueue_actual_bid_parse(
@@ -577,6 +682,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
         initial_progress = _init_progress(file_size_bytes=file_size_bytes)
         _persist_task_progress(
             task.parse_task_id,
+            db=db,
             status=ActualBidParseTaskStatus.running,
             task_phase=ActualBidParseTaskPhase.document_parse,
             message=f"开始解析 {file_import.file_name}（{file_size_bytes / (1024 * 1024):.1f} MB）",
@@ -668,11 +774,32 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
             message="提取目录结构",
         )
         with _timed_step(task, db, "extract_toc_entries", user_visible=True, path=str(docx_path)):
-            toc_result = extract_toc_entries(docx_path)
+            raw_toc = extract_toc_entries(docx_path, infer_snapshot=walked)
+            filter_result = filter_outline_entries(
+                raw_toc.entries,
+                blocks=walked.collected.blocks if walked.collected else [],
+                strategy=raw_toc.strategy,
+            )
+            outline_quality = summarize_outline_quality(
+                filter_result.kept,
+                strategy=raw_toc.strategy,
+                filter_stats=filter_result.stats,
+                raw_count=len(raw_toc.entries),
+                embedded_regions=(
+                    walked.infer_result.embedded_regions if walked.infer_result else None
+                ),
+                embedded_heading_count=(
+                    walked.infer_result.embedded_heading_count if walked.infer_result else 0
+                ),
+            )
+            toc_result = TocExtractResult(entries=filter_result.kept, strategy=raw_toc.strategy)
+            filter_decisions = filter_result.decisions
         logger.info(
-            "actual_bid_parse task=%s extract_toc_entries result entries=%d strategy=%s",
+            "actual_bid_parse task=%s extract_toc_entries result entries=%d raw=%d excluded=%d strategy=%s",
             task.parse_task_id,
             len(toc_result.entries),
+            len(raw_toc.entries),
+            filter_result.stats.excluded,
             toc_result.strategy.value,
         )
         db.commit()
@@ -774,12 +901,14 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
                 walked=walked,
                 toc_result=toc_result,
                 generated_candidate_count=len(created_candidates),
+                outline_quality=outline_quality,
+                filter_decisions=filter_decisions,
             )
 
         task.status = ActualBidParseTaskStatus.ready
         task.task_phase = ActualBidParseTaskPhase.full_pipeline
         task.finished_at = _now()
-        total_elapsed_ms = int((task.finished_at - task.started_at).total_seconds() * 1000) if task.started_at else 0
+        total_elapsed_ms = _elapsed_ms(task.started_at, task.finished_at)
         _append_parse_log(
             task,
             db,
@@ -813,20 +942,47 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
             task.downstream_entry_ids = [str(item.entry_id) for item in downstream_entries]
             for item in downstream_entries:
                 item.status = DownstreamTaskStatus.completed
+            task.llm_progress = _load_progress(task.parse_task_id, db)
             db.commit()
         logger.info("actual_bid_parse task=%s _run_entry SUCCESS", task.parse_task_id)
     except Exception as exc:
+        task_id = task.parse_task_id
+        entry_id = entry.entry_id
+        logger.exception("actual_bid_parse task=%s failed", task_id)
         db.rollback()
-        task.status = ActualBidParseTaskStatus.failed
-        task.error_message = str(exc)
-        task.finished_at = _now()
-        entry.status = DownstreamTaskStatus.failed
-        logger.exception("actual_bid_parse task=%s failed", task.parse_task_id)
+        task = db.get(ActualBidParseTask, task_id)
+        entry = db.get(DownstreamTaskEntry, entry_id)
+        if task is not None:
+            task.status = ActualBidParseTaskStatus.failed
+            task.error_message = str(exc)
+            task.finished_at = _now()
+            progress = _load_progress(task.parse_task_id, db)
+            logs = list(progress.get("logs") or [])
+            logs.append(
+                {
+                    "ts": _now().isoformat(),
+                    "level": "error",
+                    "message": f"解析失败: {exc}",
+                }
+            )
+            progress["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
+            task.llm_progress = progress
+        if entry is not None:
+            entry.status = DownstreamTaskStatus.failed
         try:
-            _append_parse_log(task, db, f"解析失败: {exc}", level="error")
+            db.commit()
         except Exception:
-            logger.warning("actual_bid_parse task=%s could not persist failure log", task.parse_task_id)
-        db.commit()
+            db.rollback()
+            logger.warning(
+                "actual_bid_parse task=%s could not persist failure state in main session",
+                task_id,
+            )
+            _persist_task_progress(
+                task_id,
+                status=ActualBidParseTaskStatus.failed,
+                message=f"解析失败: {exc}",
+                level="error",
+            )
 
 
 def run_actual_bid_parse_once(db: Session) -> bool:

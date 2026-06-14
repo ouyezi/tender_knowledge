@@ -88,3 +88,110 @@ def test_persist_outline_maps_source_node_id(db_session, seeded_kb):
     assert outline.extract_strategy == BidOutlineExtractStrategy.heading_heuristic
     assert len(outline_nodes) == 1
     assert outline_nodes[0].source_node_id == heading_node.node_id
+
+
+def test_persist_outline_links_parent_ids(db_session, seeded_kb):
+    file_import = FileImport(
+        kb_id=seeded_kb.kb_id,
+        file_name="投标文件.docx",
+        file_type=FileType.docx,
+        file_size=123,
+        hash_status=HashStatus.computed,
+        file_hash="abc124",
+        storage_path="imports/demo-parent.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.confirmed,
+        created_by="tester",
+    )
+    db_session.add(file_import)
+    db_session.flush()
+
+    document = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=file_import.import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="投标文件.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="tester",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    result = persist_outline(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=file_import.import_id,
+        document_id=document.document_id,
+        outline_name="投标目录",
+        toc_entries=[
+            _TocEntry("h1", None, "第一章 总则", 1, 0),
+            _TocEntry("h2", "h1", "一、背景", 2, 1),
+            _TocEntry("h3", "h2", "（一）项目概况", 3, 2),
+        ],
+        created_by="tester",
+        extract_strategy=BidOutlineExtractStrategy.content_heuristic.value,
+    )
+    db_session.commit()
+
+    nodes = (
+        db_session.query(BidOutlineNode)
+        .filter(BidOutlineNode.bid_outline_id == result.bid_outline.bid_outline_id)
+        .order_by(BidOutlineNode.sort_order.asc())
+        .all()
+    )
+    by_title = {node.title: node for node in nodes}
+    assert by_title["第一章 总则"].parent_id is None
+    assert by_title["一、背景"].parent_id == by_title["第一章 总则"].outline_node_id
+    assert by_title["（一）项目概况"].parent_id == by_title["一、背景"].outline_node_id
+
+
+def test_persist_outline_falls_back_parent_when_temp_id_missing(db_session, seeded_kb):
+    file_import = FileImport(
+        kb_id=seeded_kb.kb_id,
+        file_name="投标文件.docx",
+        file_type=FileType.docx,
+        file_size=123,
+        hash_status=HashStatus.computed,
+        file_hash="abc125",
+        storage_path="imports/demo-orphan.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.confirmed,
+        created_by="tester",
+    )
+    db_session.add(file_import)
+    db_session.flush()
+
+    document = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=file_import.import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="投标文件.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="tester",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    result = persist_outline(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=file_import.import_id,
+        document_id=document.document_id,
+        outline_name="投标目录",
+        toc_entries=[
+            _TocEntry("h2", "missing-parent", "一、建设背景", 2, 0),
+            _TocEntry("h3", "missing-parent", "（一）政策背景", 3, 1),
+        ],
+        created_by="tester",
+        extract_strategy=BidOutlineExtractStrategy.content_heuristic.value,
+    )
+    db_session.commit()
+
+    nodes = (
+        db_session.query(BidOutlineNode)
+        .filter(BidOutlineNode.bid_outline_id == result.bid_outline.bid_outline_id)
+        .order_by(BidOutlineNode.sort_order.asc())
+        .all()
+    )
+    assert nodes[0].parent_id is None
+    assert nodes[1].parent_id == nodes[0].outline_node_id

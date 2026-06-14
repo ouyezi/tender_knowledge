@@ -133,3 +133,32 @@ def test_list_file_imports_maps_actual_bid_parse_status(client, db_session, seed
     }
     for import_id, expected_status in import_ids_by_status.items():
         assert parse_status_by_import[str(import_id)] == expected_status
+
+
+def test_ready_task_list_excludes_failed_with_error(client, db_session, seeded_kb, sample_docx_path):
+    record = _seed_confirmed_actual_bid_import(db_session, seeded_kb, sample_docx_path)
+    failed_task = ActualBidParseTask(
+        kb_id=seeded_kb.kb_id,
+        import_id=record.import_id,
+        status=ActualBidParseTaskStatus.failed,
+        error_message="simulated parse failure",
+        created_by="admin",
+    )
+    db_session.add(failed_task)
+    db_session.commit()
+
+    ready_resp = client.get(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/actual-bid-parse/tasks",
+        headers={"X-Operator-Id": "admin"},
+        params={"status": "ready"},
+    )
+    assert ready_resp.status_code == 200
+    ready_ids = {item["parse_task_id"] for item in ready_resp.json()["data"]["items"]}
+    assert str(failed_task.parse_task_id) not in ready_ids
+
+    all_resp = client.get(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/actual-bid-parse/tasks",
+        headers={"X-Operator-Id": "admin"},
+    )
+    all_ids = {item["parse_task_id"] for item in all_resp.json()["data"]["items"]}
+    assert str(failed_task.parse_task_id) in all_ids

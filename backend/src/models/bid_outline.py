@@ -24,6 +24,7 @@ class BidOutlineStatus(str, enum.Enum):
 class BidOutlineExtractStrategy(str, enum.Enum):
     toc = "toc"
     heading_heuristic = "heading_heuristic"
+    content_heuristic = "content_heuristic"
     flat_fallback = "flat_fallback"
 
 

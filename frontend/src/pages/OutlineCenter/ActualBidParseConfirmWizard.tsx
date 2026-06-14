@@ -2,6 +2,7 @@ import {
   Alert,
   Button,
   Card,
+  Collapse,
   Form,
   Input,
   InputNumber,
@@ -30,6 +31,14 @@ import {
 } from "../../services/actualBidParse";
 import { getNodes, type BidOutlineNode } from "../../services/bidOutlines";
 import { getProductCategoryTree } from "../../services/productCategoryApi";
+
+const OUTLINE_WARNING_LABELS: Record<string, string> = {
+  embedded_document_detected: "内嵌附件",
+  high_l1_ratio: "L1占比偏高",
+  flat_fallback: "扁平回退",
+  empty_outline: "空目录",
+  high_review_ratio: "待复核偏多",
+};
 
 type ProductCategoryOption = { label: string; value: string };
 
@@ -152,9 +161,13 @@ export default function ActualBidParseConfirmWizard() {
       title: "标题",
       dataIndex: "title",
       key: "title",
+      width: 320,
+      fixed: "left",
+      ellipsis: true,
       render: (value: string, record) => (
         <Input
-          value={value}
+          value={value ?? ""}
+          style={{ minWidth: 280 }}
           onChange={(event) => updateOutlineNode(record.outline_node_id, { title: event.target.value })}
         />
       ),
@@ -325,7 +338,7 @@ export default function ActualBidParseConfirmWizard() {
         </Space>
       }
       style={{ minHeight: "calc(100vh - 120px)" }}
-      bodyStyle={{ display: "flex", flexDirection: "column", gap: 16 }}
+      styles={{ body: { display: "flex", flexDirection: "column", gap: 16 } }}
     >
       <Steps
         current={currentStep}
@@ -350,6 +363,70 @@ export default function ActualBidParseConfirmWizard() {
 
         {currentStep === 1 ? (
           <>
+            {taskDetail?.outline_quality?.warnings?.includes("embedded_document_detected") ? (
+              <Alert
+                type="info"
+                showIcon
+                message="检测到内嵌附件文档"
+                description={
+                  <Space direction="vertical" size={4}>
+                    <span>
+                      正文内嵌入了完整附件（如应急预案手册），已自动跳过约{" "}
+                      {taskDetail.outline_quality?.embedded_heading_count ?? 0} 条附件内标题，主目录在附件结束后恢复衔接。
+                    </span>
+                    {(taskDetail.outline_quality?.embedded_regions_sample ?? []).map((region, index) => (
+                      <span key={`${region.trigger_title}-${index}`}>
+                        附件 {index + 1}：自「{region.trigger_title}」起，至「{region.resume_title || "—"}」恢复主目录（跳过{" "}
+                        {region.skipped_heading_count} 条）
+                      </span>
+                    ))}
+                  </Space>
+                }
+                style={{ marginBottom: 12 }}
+              />
+            ) : null}
+            {taskDetail?.outline_quality?.warnings?.length ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="目录质量提示"
+                description={`策略 ${taskDetail.outline_quality.extract_strategy}；L1 占比 ${Math.round(
+                  taskDetail.outline_quality.l1_ratio * 100,
+                )}%${
+                  taskDetail.outline_quality.warnings.length
+                    ? `；提示：${taskDetail.outline_quality.warnings
+                        .filter((w) => w !== "embedded_document_detected")
+                        .map((w) => OUTLINE_WARNING_LABELS[w] ?? w)
+                        .join("、")}`
+                    : ""
+                }`}
+                style={{ marginBottom: 12 }}
+              />
+            ) : null}
+            {(taskDetail?.filtered_total ?? 0) > 0 ? (
+              <Collapse
+                style={{ marginBottom: 12 }}
+                items={[
+                  {
+                    key: "filtered",
+                    label: `已自动过滤 ${taskDetail?.filtered_total} 条非章节内容（只读）`,
+                    children: (
+                      <Table
+                        size="small"
+                        pagination={false}
+                        dataSource={taskDetail?.filtered_nodes_sample ?? []}
+                        columns={[
+                          { title: "标题", dataIndex: "title", ellipsis: true },
+                          { title: "原因", dataIndex: "reason_code", width: 140 },
+                          { title: "层级", dataIndex: "level", width: 60 },
+                        ]}
+                        rowKey={(row, index) => `${row.title}-${index}`}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            ) : null}
             <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
               已从文档抽取 {outlineNodes.length} 条目录
               {documentNodeCount > 0 ? `（文档共 ${documentNodeCount} 个内容块）` : ""}
@@ -357,6 +434,7 @@ export default function ActualBidParseConfirmWizard() {
             </Typography.Text>
             <Table
               rowKey="outline_node_id"
+              scroll={{ x: 1400 }}
               pagination={{ pageSize: 50, showSizeChanger: true, pageSizeOptions: ["20", "50", "100"] }}
               columns={treeColumns}
               dataSource={outlineNodes}
