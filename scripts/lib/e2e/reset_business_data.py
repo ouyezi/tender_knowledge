@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+import os
+import shutil
+from pathlib import Path
+from urllib.parse import urlparse
+
+from sqlalchemy import text
+
+from src.config import Settings
+from src.db.session import engine
+
+BUSINESS_TABLES: tuple[str, ...] = (
+    "retrieval_feedbacks",
+    "retrieval_traces",
+    "retrieval_index_entries",
+    "retrieval_eval_cases",
+    "retrieval_eval_runs",
+    "retrieval_eval_sets",
+    "candidate_confirm_audit_logs",
+    "candidate_knowledge_stubs",
+    "candidate_knowledges",
+    "knowledge_units",
+    "wikis",
+    "manual_assets",
+    "document_media_assets",
+    "document_parse_suggestions",
+    "document_tree_nodes",
+    "documents",
+    "actual_bid_audit_logs",
+    "bid_outline_structure_diffs",
+    "bid_outline_nodes",
+    "bid_outlines",
+    "actual_bid_parse_tasks",
+    "import_audit_logs",
+    "import_tasks",
+    "file_purpose_suggestions",
+    "file_imports",
+    "template_audit_logs",
+    "template_structure_diffs",
+    "template_publish_snapshots",
+    "template_parse_suggestions",
+    "template_parse_tasks",
+    "template_materials",
+    "template_variables",
+    "template_rules",
+    "template_chapters",
+    "templates",
+    "template_libraries",
+    "generation_snapshots",
+    "generation_tasks",
+    "chapter_drafts",
+    "module_assembly_suggestions",
+    "downstream_task_entries",
+    "tender_requirement_contexts",
+    "chapter_pattern_mining_tasks",
+    "chapter_patterns",
+    "classification_audit_logs",
+    "kb_clone_logs",
+)
+
+
+def assert_database_url_is_safe(database_url: str | None = None) -> None:
+    url = database_url or os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://tender:tender@127.0.0.1:5433/tender_knowledge",
+    )
+    if url.startswith("sqlite"):
+        return
+    parsed = urlparse(url.replace("+psycopg", "").replace("+psycopg2", ""))
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    if host not in {"127.0.0.1", "localhost"} or port not in {5433, None}:
+        raise RuntimeError(f"refusing to reset non-local database: {host}:{port}")
+
+
+def clear_storage_root(storage_root: Path | None = None) -> int:
+    root = Path(storage_root or Settings().storage_root)
+    if not root.exists():
+        root.mkdir(parents=True, exist_ok=True)
+        return 0
+    removed = 0
+    for child in root.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+        removed += 1
+    return removed
+
+
+def reset_business_data(*, storage_root: Path | None = None) -> dict[str, int]:
+    assert_database_url_is_safe()
+    truncated = 0
+    tables_sql = ", ".join(BUSINESS_TABLES)
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE TABLE {tables_sql} RESTART IDENTITY CASCADE"))
+        truncated = len(BUSINESS_TABLES)
+    files_removed = clear_storage_root(storage_root)
+    return {"tables_truncated": truncated, "storage_entries_removed": files_removed}

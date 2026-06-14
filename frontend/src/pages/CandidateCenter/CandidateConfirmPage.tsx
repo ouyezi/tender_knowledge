@@ -136,6 +136,9 @@ export default function CandidateConfirmPage() {
     publishForm.setFieldsValue({
       confirm_as: "ku",
       searchable: true,
+      knowledge_type: candidate.suggested_knowledge_type ?? "solution",
+      chapter_taxonomy_id: candidate.suggested_chapter_taxonomy_id ?? undefined,
+      product_category_ids_text: (candidate.suggested_product_category_ids ?? []).join(", "),
     });
   }, [candidate, editForm, publishForm]);
 

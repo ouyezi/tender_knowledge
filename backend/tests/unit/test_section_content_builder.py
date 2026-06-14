@@ -110,3 +110,35 @@ def test_build_section_content_nested_heading_candidate(db_session):
     doc = parse_content(content)
     assert len(doc.blocks) == 1
     assert doc.blocks[0]["text"] == "段落二"
+
+
+def test_build_section_content_uses_parent_id_tree_when_sort_order_splits(db_session):
+    """Large docs materialize headings before body; parent_id holds the real section tree."""
+    document_id = uuid4()
+    h1 = _node(
+        document_id=document_id,
+        sort_order=0,
+        node_type=DocumentTreeNodeType.heading,
+        title="十、应急处理",
+        level=8,
+        content_preview="十、应急处理",
+    )
+    p1 = _node(
+        document_id=document_id,
+        sort_order=500,
+        node_type=DocumentTreeNodeType.paragraph,
+        content_preview="应急正文段落",
+    )
+    p1.parent_id = h1.node_id
+    db_session.add_all([h1, p1])
+    db_session.commit()
+
+    content = build_section_content(
+        db_session,
+        document_id=document_id,
+        heading_node_id=h1.node_id,
+    )
+    from src.services.content_blocks import parse_content
+
+    doc = parse_content(content)
+    assert [b.get("text") for b in doc.blocks if b.get("type") == "paragraph"] == ["应急正文段落"]

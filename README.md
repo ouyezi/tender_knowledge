@@ -97,3 +97,21 @@ Epic 0 分类底座
 日志输出：`logs/e2e-<run_id>.jsonl`（或 `logs/e2e-integration-<run_id>.jsonl`）。
 
 设计文档：`docs/superpowers/specs/2026-06-14-e2e-import-retrieval-pipeline-design.md`
+
+### 铁建标书全链路验收
+
+```bash
+# 完整验收（重置 DB + 铁建 1GB 文件 + 工作台 + 检索 + integration 回归）
+.venv/bin/python scripts/run_zhongtie_acceptance.py --keep-services
+
+# 续跑（跳过 reset，从已有 import 继续）
+.venv/bin/python scripts/run_zhongtie_acceptance.py \
+  --skip-reset --kb-id <KB_UUID> --import-id <IMPORT_UUID> --keep-services
+
+# 仅 integration 回归
+.venv/bin/python scripts/run_zhongtie_acceptance.py --skip-reset --skip-workbench --file backend/tests/fixtures/sample-actual-bid.docx
+```
+
+日志：`logs/zhongtie-<run_id>.jsonl`；Integration 回归：`logs/zhongtie-<run_id>-integration.jsonl`。
+
+**注意**：铁建 docx 约 1GB，默认 `--poll-max 7200`（2 小时）；需本地 Postgres + LLM 可用。

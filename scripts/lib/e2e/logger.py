@@ -25,7 +25,13 @@ class JsonlRunLogger:
     def update_context(self, patch: dict[str, Any]) -> None:
         self._context.update({k: v for k, v in patch.items() if v is not None})
 
-    def log_step(self, result: StepResult, *, context: RunContext | None = None) -> None:
+    def log_step(
+        self,
+        result: StepResult,
+        *,
+        context: RunContext | None = None,
+        phase: str | None = None,
+    ) -> None:
         if context is not None:
             self.update_context(context.to_dict())
         if result.context_patch:
@@ -41,6 +47,8 @@ class JsonlRunLogger:
             "mode": self.mode,
             "context": dict(self._context),
         }
+        if phase:
+            event["phase"] = phase
         if result.http:
             event["http"] = result.http
         if result.assertion:

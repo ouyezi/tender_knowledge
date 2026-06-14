@@ -231,6 +231,8 @@ def test_get_candidate_detail_supports_prefixed_id(client, db_session, seeded_kb
     assert doc_data["candidate_id"] == f"doc_{doc_candidate.candidate_id}"
     assert doc_data["source_channel"] == "document"
     assert doc_data["content"] == "完整正文内容"
+    assert doc_data["candidate_type"] == doc_candidate.candidate_type.value
+    assert doc_data["suggested_knowledge_type"] == doc_candidate.suggested_knowledge_type
     assert doc_data["source_trace"]["import_id"] == str(doc_import.import_id)
     assert doc_data["source_trace"]["source_doc_id"] == str(document.document_id)
     assert doc_data["source_trace"]["source_node_id"] == str(node.node_id)

@@ -38,9 +38,18 @@ def http_meta(method: str, path: str, resp: ApiResponse) -> dict[str, Any]:
 
 
 class LiveClient:
-    def __init__(self, *, base_url: str, operator_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        operator_id: str,
+        default_timeout: int = 120,
+        upload_timeout: int = 1800,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.operator_id = operator_id
+        self.default_timeout = default_timeout
+        self.upload_timeout = upload_timeout
 
     def request(
         self,
@@ -69,8 +78,9 @@ class LiveClient:
             headers["Content-Type"] = "application/json"
 
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        timeout = self.upload_timeout if files is not None else self.default_timeout
         try:
-            with urllib.request.urlopen(request, timeout=120) as resp:
+            with urllib.request.urlopen(request, timeout=timeout) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
                 try:
                     payload = json.loads(raw) if raw else {}

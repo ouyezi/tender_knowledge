@@ -60,26 +60,40 @@ def _nested_zone_end(
     return zone_end
 
 
-def build_section_content(
-    db: Session,
-    *,
-    document_id: UUID,
-    heading_node_id: UUID,
-) -> str:
-    nodes = (
-        db.query(DocumentTreeNode)
-        .filter(DocumentTreeNode.document_id == document_id)
-        .order_by(DocumentTreeNode.sort_order.asc())
-        .all()
-    )
-    heading = next((n for n in nodes if n.node_id == heading_node_id), None)
-    if heading is None or heading.node_type != DocumentTreeNodeType.heading:
-        return blocks_v1([])
+def _children_by_parent(nodes: list[DocumentTreeNode]) -> dict[UUID | None, list[DocumentTreeNode]]:
+    by_parent: dict[UUID | None, list[DocumentTreeNode]] = {}
+    for node in nodes:
+        by_parent.setdefault(node.parent_id, []).append(node)
+    for children in by_parent.values():
+        children.sort(key=lambda item: item.sort_order)
+    return by_parent
 
-    start_idx = next(i for i, n in enumerate(nodes) if n.node_id == heading_node_id)
-    heading_level = heading.level or 1
+
+def _collect_body_blocks_from_parent_tree(
+    by_parent: dict[UUID | None, list[DocumentTreeNode]],
+    heading_node_id: UUID,
+) -> list[dict]:
     body_blocks: list[dict] = []
 
+    def walk(parent_id: UUID) -> None:
+        for child in by_parent.get(parent_id, []):
+            if child.node_type == DocumentTreeNodeType.heading:
+                walk(child.node_id)
+                continue
+            _append_body_block(body_blocks, child)
+
+    walk(heading_node_id)
+    return body_blocks
+
+
+def _collect_body_blocks_linear(
+    nodes: list[DocumentTreeNode],
+    *,
+    heading_node_id: UUID,
+    heading_level: int,
+) -> list[dict]:
+    start_idx = next(i for i, n in enumerate(nodes) if n.node_id == heading_node_id)
+    body_blocks: list[dict] = []
     idx = start_idx + 1
     while idx < len(nodes):
         node = nodes[idx]
@@ -96,5 +110,33 @@ def build_section_content(
             continue
         _append_body_block(body_blocks, node)
         idx += 1
+    return body_blocks
+
+
+def build_section_content(
+    db: Session,
+    *,
+    document_id: UUID,
+    heading_node_id: UUID,
+) -> str:
+    nodes = (
+        db.query(DocumentTreeNode)
+        .filter(DocumentTreeNode.document_id == document_id)
+        .order_by(DocumentTreeNode.sort_order.asc())
+        .all()
+    )
+    heading = next((n for n in nodes if n.node_id == heading_node_id), None)
+    if heading is None or heading.node_type != DocumentTreeNodeType.heading:
+        return blocks_v1([])
+
+    heading_level = heading.level or 1
+    by_parent = _children_by_parent(nodes)
+    body_blocks = _collect_body_blocks_from_parent_tree(by_parent, heading_node_id)
+    if not body_blocks:
+        body_blocks = _collect_body_blocks_linear(
+            nodes,
+            heading_node_id=heading_node_id,
+            heading_level=heading_level,
+        )
 
     return blocks_v1(body_blocks)

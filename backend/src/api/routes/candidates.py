@@ -383,6 +383,15 @@ def get_candidate_detail(
                 "content": candidate.content,
                 "summary": candidate.summary,
                 "status": "pending" if candidate.status.value == "pending" else candidate.status.value,
+                "candidate_type": candidate.candidate_type.value,
+                "suggested_knowledge_type": candidate.suggested_knowledge_type,
+                "suggested_chapter_taxonomy_id": (
+                    str(candidate.suggested_chapter_taxonomy_id)
+                    if candidate.suggested_chapter_taxonomy_id
+                    else None
+                ),
+                "suggested_product_category_ids": candidate.suggested_product_category_ids or [],
+                "confidence_score": candidate.confidence_score,
                 "source_trace": {
                     "import_id": str(candidate.import_id),
                     "source_doc_id": str(candidate.source_doc_id),
@@ -420,6 +429,13 @@ def get_candidate_detail(
                 "content": stub.content_preview,
                 "summary": stub.summary,
                 "status": "pending" if stub.status.value == "pending_confirm" else stub.status.value,
+                "candidate_type": stub.candidate_type.value,
+                "suggested_knowledge_type": stub.suggested_knowledge_type,
+                "suggested_chapter_taxonomy_id": (
+                    str(stub.chapter_taxonomy_id) if stub.chapter_taxonomy_id else None
+                ),
+                "suggested_product_category_ids": stub.product_category_ids or [],
+                "confidence_score": stub.classification_confidence,
                 "source_trace": {
                     "import_id": str(stub.import_id),
                     "template_id": str(stub.template_id),
