@@ -39,6 +39,7 @@ from src.models import (  # noqa: F401
     chapter_taxonomy,
     classification_reference,
     document,
+    document_media_asset,
     document_parse_suggestion,
     document_tree_node,
     downstream_task_entry,
