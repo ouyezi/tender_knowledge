@@ -16,6 +16,7 @@ from src.api.routes.generation import router as generation_router
 from src.api.routes.knowledge_bases import router as kb_router
 from src.api.routes.knowledge_units import router as knowledge_units_router
 from src.api.routes.manual_assets import router as manual_assets_router
+from src.api.routes.media import router as media_router
 from src.api.routes.module_suggestions import router as module_suggestions_router
 from src.api.routes.product_categories import router as product_category_router
 from src.api.routes.retrieval import router as retrieval_router
@@ -66,6 +67,7 @@ app.include_router(candidate_audit_logs_router)
 app.include_router(knowledge_units_router)
 app.include_router(wikis_router)
 app.include_router(manual_assets_router)
+app.include_router(media_router)
 app.include_router(chapter_patterns_router)
 app.include_router(retrieval_router)
 app.include_router(module_suggestions_router)
