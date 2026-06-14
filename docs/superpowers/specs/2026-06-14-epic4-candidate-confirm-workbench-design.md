@@ -1,7 +1,7 @@
 # Design: Epic 4 候选知识确认工作台
 
 **Date**: 2026-06-14  
-**Status**: Draft (brainstorming — pending user review)  
+**Status**: Approved  
 **Feature spec**: `specs/006-candidate-confirm-workbench/spec.md`  
 **Implementation plan (Spec Kit)**: `specs/006-candidate-confirm-workbench/plan.md`  
 **Epic source**: `docs/epics/epic4-候选知识确认工作台.md`

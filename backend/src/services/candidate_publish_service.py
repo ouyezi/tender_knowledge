@@ -88,15 +88,14 @@ def publish(
             }
         raise PublishConflictError("candidate already published with different confirm_as")
 
-    validate_publish(
-        db=db,
-        kb_id=kb_id,
-        confirm_as=confirm_as,
-        payload=payload,
-        view=view,
-    )
-
     try:
+        validate_publish(
+            db=db,
+            kb_id=kb_id,
+            confirm_as=confirm_as,
+            payload=payload,
+            view=view,
+        )
         result = PUBLISHERS[confirm_as](
             db,
             kb_id=kb_id,
@@ -149,7 +148,7 @@ def publish(
             action=CandidateConfirmAuditAction.publish_failed,
             operator_id=operator_id,
             trace_id=trace_id,
-            detail={"confirm_as": confirm_as, "error": str(exc)},
+            detail={"confirm_as": confirm_as, "error": str(exc), "error_code": getattr(exc, "code", "PUBLISH_VALIDATION_FAILED")},
         )
         db.commit()
         raise

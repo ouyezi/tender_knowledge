@@ -179,12 +179,12 @@ curl -s "http://127.0.0.1:8000/api/v1/kbs/${KB_ID}/knowledge-units?status=publis
 
 ## UI 验收清单
 
-- [ ] `/candidates` 列表筛选（批次、分类、章节、类型、状态）
-- [ ] 详情抽屉编辑并保存
-- [ ] 发布面板选择 confirm_as 并成功发布
-- [ ] 合并/拆分 Modal
-- [ ] 多选批量确认/驳回 + 结果汇总
-- [ ] 操作日志 Tab 可按 candidate_id 过滤
+- [x] `/candidates` 列表筛选（批次、分类、章节、类型、状态）
+- [x] 详情抽屉编辑并保存
+- [x] 发布面板选择 confirm_as 并成功发布
+- [x] 合并/拆分 Modal
+- [x] 多选批量确认/驳回 + 结果汇总
+- [x] 操作日志 Tab 可按 candidate_id 过滤
 
 ## 相关契约
 
