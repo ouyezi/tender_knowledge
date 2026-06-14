@@ -3,21 +3,19 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, JSON, String, Text, Uuid
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.session import Base
-
-
-class CandidateKnowledgeType(str, enum.Enum):
-    ku = "ku"
-    wiki = "wiki"
+from src.models.candidate_knowledge import CandidateKnowledgeType
 
 
 class CandidateKnowledgeStubStatus(str, enum.Enum):
     pending_confirm = "pending_confirm"
     confirmed = "confirmed"
     rejected = "rejected"
+    merged = "merged"
+    published = "published"
 
 
 class CandidateKnowledgeStub(Base):
@@ -61,6 +59,17 @@ class CandidateKnowledgeStub(Base):
         default=CandidateKnowledgeStubStatus.pending_confirm,
     )
     epic4_batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    confirmed_object_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confirmed_object_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    searchable: Mapped[bool | None] = mapped_column(nullable=True)
+    usage_hint: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    merged_into_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    split_from_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    lineage: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_publish_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    publish_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

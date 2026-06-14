@@ -20,6 +20,7 @@ from src.models import (  # noqa: F401
     bid_outline,
     bid_outline_node,
     bid_outline_structure_diff,
+    candidate_confirm_audit_log,
     candidate_knowledge,
     candidate_knowledge_stub,
     chapter_pattern,
@@ -36,6 +37,8 @@ from src.models import (  # noqa: F401
     import_task,
     kb_clone_log,
     knowledge_base,
+    knowledge_unit,
+    manual_asset,
     product_category,
     template,
     template_audit_log,
@@ -48,6 +51,7 @@ from src.models import (  # noqa: F401
     template_rule,
     template_structure_diff,
     template_variable,
+    wiki,
 )
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite://")
