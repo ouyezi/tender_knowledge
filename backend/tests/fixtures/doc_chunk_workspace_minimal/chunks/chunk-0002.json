@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "chunk_id": "chunk-0002",
+  "title": "实施计划",
+  "section_path": ["实施计划"],
+  "heading_level": 1,
+  "markdown": "## 实施计划\n\n分阶段交付。",
+  "blocks": [
+    {"type": "paragraph", "text": "分阶段交付。"}
+  ],
+  "source_file": "minimal.docx",
+  "source_ranges": [],
+  "token_estimate": 15,
+  "image_refs": [],
+  "previous_chunk_id": "chunk-0001",
+  "next_chunk_id": null,
+  "outline_source": "original",
+  "original_node_ids": ["n2"],
+  "status": "success",
+  "metadata": {
+    "suggested_candidate_type": "ku",
+    "classification_source": "rule"
+  }
+}

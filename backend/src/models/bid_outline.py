@@ -26,6 +26,7 @@ class BidOutlineExtractStrategy(str, enum.Enum):
     heading_heuristic = "heading_heuristic"
     content_heuristic = "content_heuristic"
     flat_fallback = "flat_fallback"
+    doc_chunk = "doc_chunk"
 
 
 class BidOutline(Base):

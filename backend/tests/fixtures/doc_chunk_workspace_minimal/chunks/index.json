@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "outline_source": "original",
+  "chunks": [
+    {
+      "chunk_id": "chunk-0001",
+      "title": "技术方案",
+      "section_path": ["技术方案"],
+      "heading_level": 1,
+      "token_estimate": 20,
+      "original_node_ids": ["n1"],
+      "primary_outline_node_id": "n1",
+      "document_tree_node_id": "t0001",
+      "path": "chunk-0001.json"
+    },
+    {
+      "chunk_id": "chunk-0002",
+      "title": "实施计划",
+      "section_path": ["实施计划"],
+      "heading_level": 1,
+      "token_estimate": 15,
+      "original_node_ids": ["n2"],
+      "primary_outline_node_id": "n2",
+      "document_tree_node_id": "t0003",
+      "path": "chunk-0002.json"
+    }
+  ]
+}

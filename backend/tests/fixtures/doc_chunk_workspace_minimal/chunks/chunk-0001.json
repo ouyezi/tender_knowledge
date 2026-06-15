@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "chunk_id": "chunk-0001",
+  "title": "技术方案",
+  "section_path": ["技术方案"],
+  "heading_level": 1,
+  "markdown": "## 技术方案\n\n本章描述技术实现方案。",
+  "blocks": [
+    {"type": "paragraph", "text": "本章描述技术实现方案。"}
+  ],
+  "source_file": "minimal.docx",
+  "source_ranges": [],
+  "token_estimate": 20,
+  "image_refs": [],
+  "previous_chunk_id": null,
+  "next_chunk_id": "chunk-0002",
+  "outline_source": "original",
+  "original_node_ids": ["n1"],
+  "status": "success",
+  "metadata": {
+    "suggested_candidate_type": "ku",
+    "suggested_knowledge_type": "technical",
+    "classification_source": "rule"
+  }
+}
