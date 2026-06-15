@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "status": "success",
+  "source": {
+    "path": "/tmp/minimal.docx",
+    "file_name": "minimal.docx",
+    "file_type": "docx"
+  },
+  "stages": {
+    "extract": {"status": "success"},
+    "outline": {"status": "success"},
+    "tree": {"status": "success"},
+    "chunk": {"status": "success"}
+  },
+  "outputs": {
+    "document_tree": "document_tree.json",
+    "outline": "outline.json",
+    "linkage": "linkage.json",
+    "chunks": "chunks/index.json"
+  },
+  "warnings": [],
+  "errors": []
+}

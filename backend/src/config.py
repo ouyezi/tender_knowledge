@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     max_file_size_xlsx_mb: int = 20
     max_file_size_image_mb: int = 10
 
+    use_doc_chunk_parse: bool = True
+    doc_chunk_skip_enrich: bool = False
+    doc_chunk_workspace_retention_on_success: bool = False
+    doc_chunk_workspace_retention_hours: int = 24
+    doc_chunk_classification_config: str | None = None
+
     model_config = SettingsConfigDict(env_file=_discover_env_files(), extra="ignore")
 
     @property

@@ -34,6 +34,15 @@ from src.models.file_import import FileImport, FileImportStatus, FilePurpose, Fi
 from src.services import bid_outline_diff_service, bid_outline_extract_service, candidate_generate_service
 from src.services.document_tree_classification_service import classify_heading_nodes_for_document
 from src.services.docm_converter import ensure_docx_for_parse
+from src.services.doc_chunk.import_service import import_workspace
+from src.services.doc_chunk.mappers.bid_outline import build_toc_entries
+from src.services.doc_chunk.pipeline_runner import run_doc_chunk_pipeline
+from src.services.doc_chunk.workspace_loader import load_workspace
+from src.services.doc_chunk.workspace_manager import (
+    cleanup_workspace,
+    ensure_workspace,
+    workspace_path_for_task,
+)
 from src.services.docx_document_walker import walk_document
 from src.services.docx_image_extractor import extract_docx_images
 from src.services.docx_toc_extractor import TocExtractResult, extract_toc_entries
@@ -47,6 +56,14 @@ _PROGRESS_LOG_LIMIT = 200
 _WALK_PROGRESS_INTERVAL = 200
 _PERSIST_PROGRESS_INTERVAL = 500
 _MAX_WALK_NODES = 500_000
+_DOC_CHUNK_STAGE_PHASE = {
+    "extract": ActualBidParseTaskPhase.document_parse,
+    "tree": ActualBidParseTaskPhase.document_parse,
+    "outline": ActualBidParseTaskPhase.bid_outline_extract,
+    "outline_refine": ActualBidParseTaskPhase.bid_outline_extract,
+    "chunk": ActualBidParseTaskPhase.candidate_generate,
+    "enrich": ActualBidParseTaskPhase.candidate_generate,
+}
 
 
 class ActualBidParseServiceError(Exception):
@@ -690,6 +707,187 @@ def enqueue_actual_bid_parse(
     return task
 
 
+def _map_doc_chunk_progress(
+    task: ActualBidParseTask,
+    db: Session,
+    stage: str,
+    payload: dict,
+) -> None:
+    phase = _DOC_CHUNK_STAGE_PHASE.get(stage, ActualBidParseTaskPhase.document_parse)
+    progress = _load_progress(task.parse_task_id, db)
+    stages = dict(progress.get("doc_chunk_stages") or {})
+    stages[stage] = payload.get("status") or "running"
+    progress["parse_engine"] = "doc_chunk"
+    progress["doc_chunk_stages"] = stages
+    message = payload.get("message") or stage
+    _persist_task_progress(
+        task.parse_task_id,
+        db=db,
+        task_phase=phase,
+        message=message,
+        llm_progress=progress,
+    )
+
+
+def _run_entry_doc_chunk(
+    db: Session,
+    entry: DownstreamTaskEntry,
+    *,
+    file_import: FileImport,
+    task: ActualBidParseTask,
+    force_reparse: bool,
+) -> None:
+    from src.services.doc_chunk.types import ImportContext
+
+    source_path = Path(Settings().storage_root) / file_import.storage_path
+    docx_path = _resolve_docx_path(file_import)
+    file_size_bytes = docx_path.stat().st_size
+    storage_root = Path(Settings().storage_root)
+    workspace = workspace_path_for_task(
+        storage_root=storage_root,
+        kb_id=file_import.kb_id,
+        import_id=file_import.import_id,
+        parse_task_id=task.parse_task_id,
+    )
+    ensure_workspace(workspace, overwrite=True)
+
+    existing_outline = None
+    existing_document = (
+        db.query(Document)
+        .filter(Document.kb_id == file_import.kb_id, Document.import_id == file_import.import_id)
+        .order_by(Document.created_at.desc())
+        .first()
+    )
+    if existing_document is not None:
+        existing_outline = (
+            db.query(BidOutline)
+            .filter(BidOutline.kb_id == file_import.kb_id, BidOutline.source_doc_id == existing_document.document_id)
+            .order_by(BidOutline.created_at.desc())
+            .first()
+        )
+
+    outline_locked = bool(
+        force_reparse and existing_outline is not None and existing_outline.structure_locked_at
+    )
+    if outline_locked:
+        task.bid_outline_id = existing_outline.bid_outline_id
+
+    def _on_pipeline_progress(stage: str, payload: dict) -> None:
+        _map_doc_chunk_progress(task, db, stage, payload)
+
+    pipeline_started = time.perf_counter()
+    with _timed_step(task, db, "doc_chunk.run_pipeline", user_visible=True, path=str(docx_path)):
+        run_doc_chunk_pipeline(docx_path, workspace, on_progress=_on_pipeline_progress)
+    _record_phase_timing(task, db, "doc_chunk_pipeline", int((time.perf_counter() - pipeline_started) * 1000))
+    db.commit()
+    db.refresh(task)
+
+    if existing_document is not None:
+        with _timed_step(task, db, "document_tree.clear_for_reparse", document_id=str(existing_document.document_id)):
+            _clear_document_tree_for_reparse(
+                db,
+                kb_id=file_import.kb_id,
+                document_id=existing_document.document_id,
+                import_id=file_import.import_id,
+            )
+        db.commit()
+
+    import_started = time.perf_counter()
+    with _timed_step(task, db, "doc_chunk.import_workspace", user_visible=True):
+        import_result = import_workspace(
+            db,
+            kb_id=file_import.kb_id,
+            import_id=file_import.import_id,
+            document_id=existing_document.document_id if existing_document else None,
+            parse_task_id=task.parse_task_id,
+            workspace=workspace,
+            file_import=file_import,
+            task=task,
+            persist_outline=not outline_locked,
+        )
+    _record_phase_timing(task, db, "doc_chunk_import", int((time.perf_counter() - import_started) * 1000))
+
+    if outline_locked and existing_outline is not None:
+        loaded = load_workspace(workspace)
+        ctx = ImportContext(workspace_path=loaded.root, tree_id_map=import_result.tree_id_map)
+        toc_entries, source_node_by_temp_id = build_toc_entries(
+            outline_payload=loaded.outline,
+            linkage_payload=loaded.linkage,
+            ctx=ctx,
+        )
+        with _timed_step(
+            task,
+            db,
+            "bid_outline.generate_structure_diff",
+            user_visible=True,
+            bid_outline_id=str(existing_outline.bid_outline_id),
+        ):
+            bid_outline_diff_service.generate_structure_diff(
+                db,
+                kb_id=file_import.kb_id,
+                bid_outline_id=existing_outline.bid_outline_id,
+                parse_task_id=task.parse_task_id,
+                document_id=import_result.document_id,
+                toc_entries=toc_entries,
+                source_node_by_temp_id=source_node_by_temp_id,
+            )
+        task.bid_outline_id = existing_outline.bid_outline_id
+
+    document = db.get(Document, import_result.document_id)
+    progress = _load_progress(task.parse_task_id, db)
+    progress.update(
+        {
+            "parse_engine": "doc_chunk",
+            "workspace_path": str(workspace),
+            "outline_node_count": import_result.outline_node_count,
+            "chunk_count": len(load_workspace(workspace).chunks_index.get("chunks") or []),
+            "tree_node_count": import_result.tree_node_count,
+            "candidate_count": import_result.candidate_count,
+            "file_size_bytes": file_size_bytes,
+        }
+    )
+    _persist_task_progress(task.parse_task_id, db=db, llm_progress=progress, candidate_count=import_result.candidate_count)
+    _commit_parse_checkpoint(db, task=task, entry=entry, file_import=file_import, document=document)
+
+    task.status = ActualBidParseTaskStatus.ready
+    task.task_phase = ActualBidParseTaskPhase.full_pipeline
+    task.finished_at = _now()
+    _append_parse_log(
+        task,
+        db,
+        (
+            f"doc_chunk 解析完成：tree={import_result.tree_node_count} "
+            f"outline={import_result.outline_node_count} candidates={import_result.candidate_count}"
+        ),
+        phase=ActualBidParseTaskPhase.full_pipeline.value,
+        candidate_count=import_result.candidate_count,
+    )
+
+    with _timed_step(task, db, "finalize.commit_downstream"):
+        downstream_entries = (
+            db.query(DownstreamTaskEntry)
+            .filter(
+                DownstreamTaskEntry.kb_id == file_import.kb_id,
+                DownstreamTaskEntry.import_id == file_import.import_id,
+                DownstreamTaskEntry.task_type.in_(
+                    [
+                        DownstreamTaskType.document_parse,
+                        DownstreamTaskType.bid_outline_extract,
+                        DownstreamTaskType.candidate_knowledge_generate,
+                    ]
+                ),
+            )
+            .all()
+        )
+        task.downstream_entry_ids = [str(item.entry_id) for item in downstream_entries]
+        for item in downstream_entries:
+            item.status = DownstreamTaskStatus.completed
+        db.commit()
+
+    cleanup_workspace(workspace, on_success=True)
+    logger.info("actual_bid_parse task=%s _run_entry_doc_chunk SUCCESS", task.parse_task_id)
+
+
 def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
     logger.info(
         "actual_bid_parse _run_entry START entry_id=%s import_id=%s task_type=%s",
@@ -738,6 +936,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
 
         file_size_bytes = docx_path.stat().st_size
         initial_progress = _init_progress(file_size_bytes=file_size_bytes)
+        initial_progress["parse_engine"] = "doc_chunk" if Settings().use_doc_chunk_parse else "legacy"
         _persist_task_progress(
             task.parse_task_id,
             db=db,
@@ -750,6 +949,11 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
         db.refresh(task)
         db.refresh(entry)
         db.refresh(file_import)
+
+        if Settings().use_doc_chunk_parse:
+            _run_entry_doc_chunk(db, entry, file_import=file_import, task=task, force_reparse=force_reparse)
+            logger.info("actual_bid_parse task=%s _run_entry SUCCESS", task.parse_task_id)
+            return
 
         # Phase 1: walk_document -> persist document + tree nodes
         def _on_walk_progress(block_count: int) -> None:
@@ -987,6 +1191,9 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
 
         with _timed_step(task, db, "finalize.parse_suggestion"):
             document.parse_status = DocumentParseStatus.ready
+            progress = _load_progress(task.parse_task_id, db)
+            progress["parse_engine"] = "legacy"
+            _persist_task_progress(task.parse_task_id, db=db, llm_progress=progress)
             _persist_parse_suggestion(
                 db,
                 task=task,

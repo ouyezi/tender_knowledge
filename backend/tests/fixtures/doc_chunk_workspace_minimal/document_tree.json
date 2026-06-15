@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "nodes": [
+    {
+      "node_id": "t0001",
+      "parent_id": null,
+      "outline_node_id": "n1",
+      "node_type": "heading",
+      "title": "技术方案",
+      "level": 1,
+      "sort_order": 0,
+      "source_block_index": 0,
+      "text": "技术方案",
+      "needs_review": false
+    },
+    {
+      "node_id": "t0002",
+      "parent_id": "t0001",
+      "outline_node_id": null,
+      "node_type": "paragraph",
+      "title": null,
+      "level": null,
+      "sort_order": 1,
+      "source_block_index": 1,
+      "text": "本章描述技术实现方案。",
+      "needs_review": false
+    },
+    {
+      "node_id": "t0003",
+      "parent_id": null,
+      "outline_node_id": "n2",
+      "node_type": "heading",
+      "title": "实施计划",
+      "level": 1,
+      "sort_order": 2,
+      "source_block_index": 2,
+      "text": "实施计划",
+      "needs_review": false
+    }
+  ]
+}

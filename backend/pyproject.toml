@@ -3,6 +3,7 @@ name = "tender-knowledge-backend"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+  "doc-chunk @ file:../../tender_skills",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
   "sqlalchemy>=2.0.36",
