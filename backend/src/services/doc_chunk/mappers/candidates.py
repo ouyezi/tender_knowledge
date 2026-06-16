@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 
 from src.models.candidate_knowledge import CandidateKnowledge, CandidateKnowledgeStatus, CandidateKnowledgeType
 from src.models.chapter_taxonomy import ChapterTaxonomy
+from src.models.document_tree_node import DocumentTreeNode
 from src.services.chapter_candidate_rules import resolve_candidate_type
+from src.services.classification_rule_index import ClassificationRuleIndex, load_classification_index, match_chapter_taxonomy
 from src.services.doc_chunk.blocks_v1 import chunk_blocks_to_content
+from src.services.doc_chunk.linkage_validation import chunk_matches_outline_entry, titles_compatible
 from src.services.doc_chunk.types import DocChunkImportError, ImportContext
 from src.services.doc_chunk.workspace_loader import load_chunk_file
 
@@ -50,6 +53,49 @@ def _resolve_taxonomy_id(
     return row[0] if row else None
 
 
+def _candidate_type_from_taxonomy_code(taxonomy_code: str | None) -> CandidateKnowledgeType:
+    resolution = resolve_candidate_type(taxonomy_code=taxonomy_code)
+    try:
+        return CandidateKnowledgeType(resolution.candidate_type)
+    except ValueError:
+        return CandidateKnowledgeType.ignore
+
+
+def _resolve_candidate_resolution(
+    db: Session,
+    *,
+    kb_id: UUID,
+    metadata: dict[str, Any] | None,
+    source_node_id: UUID,
+    title: str,
+    index: ClassificationRuleIndex | None = None,
+) -> tuple[CandidateKnowledgeType, UUID | None]:
+    metadata = metadata or {}
+    candidate_type = _resolve_candidate_type_from_metadata(metadata)
+    taxonomy_id = _resolve_taxonomy_id(db, kb_id=kb_id, metadata=metadata)
+    if candidate_type != CandidateKnowledgeType.ignore:
+        return candidate_type, taxonomy_id
+
+    node = db.get(DocumentTreeNode, source_node_id)
+    if node and node.chapter_taxonomy_id:
+        tax = db.get(ChapterTaxonomy, node.chapter_taxonomy_id)
+        if tax:
+            candidate_type = _candidate_type_from_taxonomy_code(tax.taxonomy_code)
+            if candidate_type != CandidateKnowledgeType.ignore:
+                return candidate_type, tax.taxonomy_id
+
+    rule_index = index or load_classification_index(db, kb_id=kb_id)
+    hit = match_chapter_taxonomy(title, index=rule_index)
+    if hit:
+        tax = db.get(ChapterTaxonomy, hit.taxonomy_id)
+        if tax:
+            candidate_type = _candidate_type_from_taxonomy_code(tax.taxonomy_code)
+            if candidate_type != CandidateKnowledgeType.ignore:
+                return candidate_type, tax.taxonomy_id
+
+    return CandidateKnowledgeType.ignore, None
+
+
 def import_candidates(
     db: Session,
     *,
@@ -68,6 +114,7 @@ def import_candidates(
         if item.get("chunk_id") and item.get("path")
     }
     created: list[CandidateKnowledge] = []
+    rule_index = load_classification_index(db, kb_id=kb_id)
 
     for entry in linkage_payload.get("entries") or []:
         chunk_ids = [str(item) for item in (entry.get("chunk_ids") or [])]
@@ -104,14 +151,36 @@ def import_candidates(
         if not chunk_payload.get("original_node_ids"):
             continue
 
+        heading = db.get(DocumentTreeNode, source_node_id)
+        outline_node_id = str(entry.get("outline_node_id") or "")
+        if not chunk_matches_outline_entry(
+            outline_node_id=outline_node_id or None,
+            chunk_payload=chunk_payload,
+        ):
+            warnings.append(
+                f"candidate_chunk_outline_mismatch:{primary_chunk_id}:{outline_node_id}"
+            )
+            continue
+        if heading and not titles_compatible(heading.title, title):
+            warnings.append(
+                f"candidate_chunk_title_mismatch:{primary_chunk_id}:{heading.title}:{title}"
+            )
+            continue
+
         metadata = chunk_payload.get("metadata") or {}
-        candidate_type = _resolve_candidate_type_from_metadata(metadata)
+        candidate_type, taxonomy_id = _resolve_candidate_resolution(
+            db,
+            kb_id=kb_id,
+            metadata=metadata,
+            source_node_id=source_node_id,
+            title=title,
+            index=rule_index,
+        )
         if candidate_type == CandidateKnowledgeType.ignore:
             continue
 
         blocks = chunk_payload.get("blocks") or []
         content = chunk_blocks_to_content(blocks, image_ref_map=ctx.image_ref_map)
-        taxonomy_id = _resolve_taxonomy_id(db, kb_id=kb_id, metadata=metadata)
         suggestion_source = str(metadata.get("classification_source") or "rule")
 
         candidate = CandidateKnowledge(

@@ -8,7 +8,7 @@ from src.models.candidate_knowledge import CandidateKnowledge, CandidateKnowledg
 from src.models.chapter_taxonomy import ChapterTaxonomy
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.services.chapter_candidate_rules import resolve_candidate_type
-from src.services.section_content_builder import build_section_content
+from src.services.section_content_builder import build_section_direct_content
 
 
 def generate_for_document(
@@ -73,7 +73,7 @@ def generate_for_document(
             source_node_id=node.node_id,
             candidate_type=candidate_type,
             title=(node.title or "未命名章节").strip(),
-            content=build_section_content(
+            content=build_section_direct_content(
                 db,
                 document_id=document_id,
                 heading_node_id=node.node_id,

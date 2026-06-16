@@ -97,3 +97,33 @@ def test_import_candidates_blocks_v1_content(db_session, seeded_kb):
     )
     assert len(created) == 2
     assert "blocks_v1" in (created[0].content or "")
+
+
+def test_import_candidates_skips_title_mismatch(db_session, seeded_kb):
+    loaded, document, ctx = _prepare_ctx(db_session, seeded_kb)
+    linkage = dict(loaded.linkage)
+    linkage["entries"] = [
+        {
+            "outline_node_id": "n1",
+            "document_tree_node_ids": ["t0001"],
+            "chunk_ids": ["chunk-0002"],
+            "primary_chunk_id": "chunk-0002",
+        }
+    ]
+    warnings: list[str] = []
+    created = import_candidates(
+        db_session,
+        ctx=ctx,
+        kb_id=seeded_kb.kb_id,
+        import_id=document.import_id,
+        document_id=document.document_id,
+        parse_task_id=uuid4(),
+        linkage_payload=linkage,
+        chunks_index=loaded.chunks_index,
+        warnings=warnings,
+    )
+    assert created == []
+    assert any(
+        "candidate_chunk_title_mismatch" in item or "candidate_chunk_outline_mismatch" in item
+        for item in warnings
+    )

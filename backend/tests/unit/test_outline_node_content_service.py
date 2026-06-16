@@ -5,6 +5,7 @@ import pytest
 
 from src.models.bid_outline import BidOutline
 from src.models.bid_outline_node import BidOutlineNode
+from src.models.candidate_knowledge import CandidateKnowledge, CandidateKnowledgeStatus, CandidateKnowledgeType
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
@@ -171,6 +172,89 @@ def test_build_outline_subtree_content_leaf_only_self(db_session, seeded_kb):
 
     assert len(result["sections"]) == 1
     assert result["sections"][0]["title"] == "子目录"
+
+
+def test_build_outline_subtree_content_rejects_mismatched_candidate_fallback(db_session, seeded_kb):
+    outline, document, parent, _, _ = _seed_outline_tree(db_session, seeded_kb.kb_id)
+    empty_heading = DocumentTreeNode(
+        kb_id=seeded_kb.kb_id,
+        document_id=document.document_id,
+        parent_id=None,
+        node_type=DocumentTreeNodeType.heading,
+        title="空节",
+        level=1,
+        sort_order=10,
+        tree_version=1,
+    )
+    db_session.add(empty_heading)
+    db_session.flush()
+    parent.source_node_id = empty_heading.node_id
+    db_session.add(
+        CandidateKnowledge(
+            kb_id=seeded_kb.kb_id,
+            import_id=outline.import_id,
+            source_doc_id=document.document_id,
+            source_node_id=empty_heading.node_id,
+            candidate_type=CandidateKnowledgeType.ku,
+            title="完全不同的标题",
+            content='{"format":"blocks_v1","blocks":[{"type":"paragraph","text":"不应展示"}]}',
+            status=CandidateKnowledgeStatus.pending,
+        )
+    )
+    db_session.commit()
+
+    result = build_outline_subtree_content(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        bid_outline_id=outline.bid_outline_id,
+        outline_node_id=parent.outline_node_id,
+    )
+
+    section = result["sections"][0]
+    assert section["has_content"] is False
+    assert section["empty_reason"] == "empty_body"
+
+
+def test_build_outline_subtree_content_falls_back_to_candidate_content(db_session, seeded_kb):
+    outline, document, parent, _, _ = _seed_outline_tree(db_session, seeded_kb.kb_id)
+    empty_heading = DocumentTreeNode(
+        kb_id=seeded_kb.kb_id,
+        document_id=document.document_id,
+        parent_id=None,
+        node_type=DocumentTreeNodeType.heading,
+        title="空节",
+        level=1,
+        sort_order=10,
+        tree_version=1,
+    )
+    db_session.add(empty_heading)
+    db_session.flush()
+    parent.source_node_id = empty_heading.node_id
+    db_session.add(
+        CandidateKnowledge(
+            kb_id=seeded_kb.kb_id,
+            import_id=outline.import_id,
+            source_doc_id=document.document_id,
+            source_node_id=empty_heading.node_id,
+            candidate_type=CandidateKnowledgeType.ku,
+            title="空节",
+            content='{"format":"blocks_v1","blocks":[{"type":"paragraph","text":"候选正文"}]}',
+            status=CandidateKnowledgeStatus.pending,
+        )
+    )
+    db_session.commit()
+
+    result = build_outline_subtree_content(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        bid_outline_id=outline.bid_outline_id,
+        outline_node_id=parent.outline_node_id,
+    )
+
+    section = result["sections"][0]
+    assert section["has_content"] is True
+    assert section["empty_reason"] is None
+    assert "候选正文" in section["content"]
 
 
 def test_build_outline_subtree_content_empty_body(db_session, seeded_kb):

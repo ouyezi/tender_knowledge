@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 
 from src.models.bid_outline import BidOutline
 from src.models.bid_outline_node import BidOutlineNode
+from src.models.candidate_knowledge import CandidateKnowledge
+from src.models.document_tree_node import DocumentTreeNode
+from src.services.doc_chunk.linkage_validation import titles_compatible
 from src.services.content_blocks import blocks_v1, parse_content
-from src.services.section_content_builder import build_section_content
+from src.services.section_content_builder import build_section_direct_content
 
 
 class OutlineNotFoundError(Exception):
@@ -35,7 +38,41 @@ def _collect_subtree_ids(
     return ordered
 
 
-def _serialize_section(node: BidOutlineNode, *, document_id: UUID, db: Session) -> dict[str, Any]:
+def _load_candidate_content(
+    db: Session,
+    *,
+    kb_id: UUID,
+    document_id: UUID,
+    source_node_id: UUID,
+) -> str | None:
+    row = (
+        db.query(CandidateKnowledge)
+        .filter(
+            CandidateKnowledge.kb_id == kb_id,
+            CandidateKnowledge.source_doc_id == document_id,
+            CandidateKnowledge.source_node_id == source_node_id,
+        )
+        .order_by(CandidateKnowledge.created_at.desc())
+        .first()
+    )
+    if row is None or not row.content:
+        return None
+    heading = db.get(DocumentTreeNode, source_node_id)
+    if heading and not titles_compatible(heading.title, row.title):
+        return None
+    parsed = parse_content(row.content)
+    if parsed.blocks or (parsed.plain_text or "").strip():
+        return row.content
+    return None
+
+
+def _serialize_section(
+    node: BidOutlineNode,
+    *,
+    kb_id: UUID,
+    document_id: UUID,
+    db: Session,
+) -> dict[str, Any]:
     if node.source_node_id is None:
         content = blocks_v1([])
         return {
@@ -49,13 +86,27 @@ def _serialize_section(node: BidOutlineNode, *, document_id: UUID, db: Session) 
             "empty_reason": "no_source_node",
         }
 
-    content = build_section_content(
+    content = build_section_direct_content(
         db,
         document_id=document_id,
         heading_node_id=node.source_node_id,
     )
     parsed = parse_content(content)
-    has_content = len(parsed.blocks) > 0
+    has_content = len(parsed.blocks) > 0 or bool((parsed.plain_text or "").strip())
+    empty_reason = None
+    if not has_content:
+        fallback = _load_candidate_content(
+            db,
+            kb_id=kb_id,
+            document_id=document_id,
+            source_node_id=node.source_node_id,
+        )
+        if fallback:
+            content = fallback
+            parsed = parse_content(content)
+            has_content = len(parsed.blocks) > 0 or bool((parsed.plain_text or "").strip())
+        if not has_content:
+            empty_reason = "empty_body"
     return {
         "outline_node_id": str(node.outline_node_id),
         "title": node.title,
@@ -64,7 +115,7 @@ def _serialize_section(node: BidOutlineNode, *, document_id: UUID, db: Session) 
         "source_node_id": str(node.source_node_id),
         "content": content,
         "has_content": has_content,
-        "empty_reason": None if has_content else "empty_body",
+        "empty_reason": empty_reason,
     }
 
 
@@ -109,7 +160,12 @@ def build_outline_subtree_content(
     subtree_ids = _collect_subtree_ids(nodes_by_id, children_by_parent, outline_node_id)
     root = nodes_by_id[outline_node_id]
     sections = [
-        _serialize_section(nodes_by_id[node_id], document_id=outline.source_doc_id, db=db)
+        _serialize_section(
+            nodes_by_id[node_id],
+            kb_id=kb_id,
+            document_id=outline.source_doc_id,
+            db=db,
+        )
         for node_id in subtree_ids
     ]
 

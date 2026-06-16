@@ -113,6 +113,64 @@ def _collect_body_blocks_linear(
     return body_blocks
 
 
+def _collect_direct_body_blocks_from_parent(
+    by_parent: dict[UUID | None, list[DocumentTreeNode]],
+    heading_node_id: UUID,
+) -> list[dict]:
+    body_blocks: list[dict] = []
+    for child in by_parent.get(heading_node_id, []):
+        if child.node_type == DocumentTreeNodeType.heading:
+            continue
+        _append_body_block(body_blocks, child)
+    return body_blocks
+
+
+def _collect_body_blocks_until_next_heading(
+    nodes: list[DocumentTreeNode],
+    *,
+    heading_node_id: UUID,
+) -> list[dict]:
+    """Collect non-heading nodes immediately after heading until the next heading row."""
+    start_idx = next(i for i, n in enumerate(nodes) if n.node_id == heading_node_id)
+    body_blocks: list[dict] = []
+    idx = start_idx + 1
+    while idx < len(nodes):
+        node = nodes[idx]
+        if node.node_type == DocumentTreeNodeType.heading:
+            break
+        _append_body_block(body_blocks, node)
+        idx += 1
+    return body_blocks
+
+
+def build_section_direct_content(
+    db: Session,
+    *,
+    document_id: UUID,
+    heading_node_id: UUID,
+) -> str:
+    """Return only direct section body for a heading (no nested sub-heading bodies)."""
+    nodes = (
+        db.query(DocumentTreeNode)
+        .filter(DocumentTreeNode.document_id == document_id)
+        .order_by(DocumentTreeNode.sort_order.asc())
+        .all()
+    )
+    heading = next((n for n in nodes if n.node_id == heading_node_id), None)
+    if heading is None or heading.node_type != DocumentTreeNodeType.heading:
+        return blocks_v1([])
+
+    by_parent = _children_by_parent(nodes)
+    body_blocks = _collect_direct_body_blocks_from_parent(by_parent, heading_node_id)
+    if not body_blocks:
+        body_blocks = _collect_body_blocks_until_next_heading(
+            nodes,
+            heading_node_id=heading_node_id,
+        )
+
+    return blocks_v1(body_blocks)
+
+
 def build_section_content(
     db: Session,
     *,

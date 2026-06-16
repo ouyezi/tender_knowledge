@@ -13,6 +13,7 @@ from src.services.document_tree_classification_service import classify_heading_n
 from src.services.doc_chunk.mappers.bid_outline import import_bid_outline, map_outline_strategy
 from src.services.doc_chunk.mappers.candidates import import_candidates
 from src.services.doc_chunk.mappers.document_tree import import_document_tree
+from src.services.doc_chunk.mappers.enrich_document_tree import enrich_document_tree_from_chunks
 from src.services.doc_chunk.mappers.media_assets import import_media_assets
 from src.services.doc_chunk.types import DocChunkImportError, ImportContext, ImportResult
 from src.services.doc_chunk.workspace_loader import load_workspace
@@ -72,6 +73,17 @@ def import_workspace(
         kb_id=kb_id,
         tree_payload=loaded.document_tree,
     )
+    enriched_tree_nodes = enrich_document_tree_from_chunks(
+        db,
+        ctx=ctx,
+        document=document,
+        kb_id=kb_id,
+        linkage_payload=loaded.linkage,
+        chunks_index=loaded.chunks_index,
+        warnings=warnings,
+    )
+    if enriched_tree_nodes:
+        warnings.append(f"enriched_tree_nodes:{enriched_tree_nodes}")
     outline_result = None
     outline_node_count = 0
     if persist_outline:
@@ -138,7 +150,7 @@ def import_workspace(
             "tree_node_count": len(loaded.document_tree.get("nodes") or []),
             "chunk_count": len(loaded.chunks_index.get("chunks") or []),
         },
-        "chunk_classification": classification_summary.to_payload(),
+        "chunk_classification": classification_summary.to_payload(use_llm=False),
         "candidate_count": len(created_candidates),
     }
 
@@ -150,7 +162,7 @@ def import_workspace(
     return ImportResult(
         document_id=document.document_id,
         bid_outline_id=bid_outline_id,
-        tree_node_count=len(tree_id_map),
+        tree_node_count=len(tree_id_map) + enriched_tree_nodes,
         outline_node_count=outline_node_count,
         candidate_count=len(created_candidates),
         parse_engine="doc_chunk",
