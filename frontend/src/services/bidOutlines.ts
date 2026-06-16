@@ -51,6 +51,25 @@ export interface BidOutlineNodesResult {
   nodes: BidOutlineNode[];
 }
 
+export interface OutlineNodeContentSection {
+  outline_node_id: string;
+  title: string;
+  level: number;
+  sort_order: number;
+  source_node_id: string | null;
+  content: string;
+  has_content: boolean;
+  empty_reason: "no_source_node" | "empty_body" | null;
+}
+
+export interface OutlineNodeContentResult {
+  outline_node_id: string;
+  title: string;
+  bid_outline_id: string;
+  source_doc_id: string;
+  sections: OutlineNodeContentSection[];
+}
+
 export interface BatchOperation {
   op: "delete" | "merge" | "reorder";
   outline_node_id?: string;
@@ -193,4 +212,14 @@ export async function rejectDiff(
     method: "POST",
     body: {},
   });
+}
+
+export async function getOutlineNodeContent(
+  kbId: string,
+  bidOutlineId: string,
+  outlineNodeId: string,
+): Promise<OutlineNodeContentResult> {
+  return apiRequest<OutlineNodeContentResult>(
+    `/api/v1/kbs/${kbId}/bid-outlines/${bidOutlineId}/nodes/${outlineNodeId}/content`,
+  );
 }
