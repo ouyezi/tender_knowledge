@@ -23,6 +23,11 @@ from src.services.bid_outline_diff_service import (
     apply_diff,
     reject_diff,
 )
+from src.services.outline_node_content_service import (
+    OutlineNodeNotFoundError,
+    OutlineNotFoundError,
+    build_outline_subtree_content,
+)
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/bid-outlines",
@@ -327,6 +332,38 @@ def get_bid_outline_nodes(
         },
         trace_id=get_trace_id(),
     )
+
+
+@router.get("/{bid_outline_id}/nodes/{outline_node_id}/content")
+def get_bid_outline_node_content(
+    kb_id: UUID,
+    bid_outline_id: UUID,
+    outline_node_id: UUID,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    try:
+        payload = build_outline_subtree_content(
+            db,
+            kb_id=kb_id,
+            bid_outline_id=bid_outline_id,
+            outline_node_id=outline_node_id,
+        )
+    except OutlineNotFoundError:
+        return JSONResponse(
+            status_code=404,
+            content=error("OUTLINE_NOT_FOUND", "Bid outline not found", trace_id=get_trace_id()),
+        )
+    except OutlineNodeNotFoundError:
+        return JSONResponse(
+            status_code=404,
+            content=error(
+                "OUTLINE_NODE_NOT_FOUND",
+                "Bid outline node not found",
+                trace_id=get_trace_id(),
+            ),
+        )
+    return success(payload, trace_id=get_trace_id())
 
 
 @router.patch("/{bid_outline_id}/nodes/{outline_node_id}")
