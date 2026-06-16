@@ -31,6 +31,7 @@ import {
 } from "../../services/bidOutlines";
 import OutlineDiffDrawer from "./OutlineDiffDrawer";
 import ModuleSuggestionWizard from "./ModuleSuggestionWizard";
+import OutlineNodeContentDrawer from "./OutlineNodeContentDrawer";
 import OutlineSimilarityDrawer from "./OutlineSimilarityDrawer";
 import OutlineTreeEditor, { type OutlineTreeNode } from "./OutlineTreeEditor";
 
@@ -158,6 +159,7 @@ export default function OutlineDetailPage() {
   const [diffDrawerOpen, setDiffDrawerOpen] = useState(false);
   const [similarityDrawerOpen, setSimilarityDrawerOpen] = useState(false);
   const [suggestionWizardOpen, setSuggestionWizardOpen] = useState(false);
+  const [contentDrawerNodeId, setContentDrawerNodeId] = useState<string | null>(null);
 
   const treeRoots = useMemo(() => buildTree(flatNodes), [flatNodes]);
   const selectedNode = useMemo(
@@ -325,6 +327,7 @@ export default function OutlineDetailPage() {
               selectedId={selectedNodeId}
               onSelect={setSelectedNodeId}
               onDropNode={handleDropNode}
+              onViewContent={setContentDrawerNodeId}
             />
             <Space style={{ marginTop: 12 }}>
               <Button loading={saving} disabled={readOnly} onClick={() => void handleSaveTree()}>
@@ -412,6 +415,13 @@ export default function OutlineDetailPage() {
         outlineNodes={outlinePayload}
         productCategoryIds={categoryIds}
         onClose={() => setSuggestionWizardOpen(false)}
+      />
+      <OutlineNodeContentDrawer
+        open={contentDrawerNodeId != null}
+        kbId={selectedKbId}
+        bidOutlineId={bidOutlineId}
+        outlineNodeId={contentDrawerNodeId}
+        onClose={() => setContentDrawerNodeId(null)}
       />
     </>
   );
