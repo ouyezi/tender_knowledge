@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -18,9 +19,9 @@ class DocumentTreeClassificationSummary:
     product_category_assigned_count: int
     degraded_to_rule_count: int
 
-    def to_payload(self) -> dict:
+    def to_payload(self, *, use_llm: bool) -> dict:
         return {
-            "mode": "rule_or_hybrid",
+            "mode": "rule_or_hybrid" if use_llm else "rule_only",
             "heading_count": self.heading_count,
             "taxonomy_assigned_count": self.taxonomy_assigned_count,
             "product_category_assigned_count": self.product_category_assigned_count,
@@ -33,6 +34,9 @@ def classify_heading_nodes_for_document(
     *,
     kb_id: UUID,
     document_id: UUID,
+    use_llm: bool = False,
+    commit_batch_size: int = 100,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> DocumentTreeClassificationSummary:
     headings = (
         db.query(DocumentTreeNode)
@@ -57,7 +61,8 @@ def classify_heading_nodes_for_document(
     product_assigned = 0
     degraded_count = 0
 
-    for node in headings:
+    total = len(headings)
+    for idx, node in enumerate(headings, start=1):
         title = (node.title or "未命名章节").strip()
         preview = (node.content_preview or title).strip()[:8000]
 
@@ -67,7 +72,13 @@ def classify_heading_nodes_for_document(
             title=title,
             content_preview=preview,
         )
-        result, degraded = classify_chunk(db, kb_id=kb_id, chunk=chunk, index=index)
+        result, degraded = classify_chunk(
+            db,
+            kb_id=kb_id,
+            chunk=chunk,
+            index=index,
+            use_llm=use_llm,
+        )
         if degraded:
             degraded_count += 1
 
@@ -77,6 +88,11 @@ def classify_heading_nodes_for_document(
         if result.suggested_product_category_ids:
             node.product_category_ids = [str(item) for item in result.suggested_product_category_ids]
             product_assigned += 1
+
+        if commit_batch_size > 0 and idx % commit_batch_size == 0:
+            db.commit()
+        if on_progress is not None:
+            on_progress(idx, total)
 
     db.flush()
     return DocumentTreeClassificationSummary(

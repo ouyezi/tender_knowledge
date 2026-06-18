@@ -91,13 +91,27 @@ pytest tests/contract/test_actual_bid_parse*.py -v
 
 Fixture：`tests/fixtures/doc_chunk_workspace_minimal/`（从 tender_skills 导出）。
 
+如需刷新该 fixture（tender_skills 更新后建议重导），可在 `backend/` 下执行：
+
+```bash
+OUT="/tmp/tk-ws-minimal-$$"
+rm -rf "$OUT"
+python -m doc_chunk.cli.main run tests/fixtures/sample-actual-bid.docx "$OUT" \
+  --overwrite --skip-refine --skip-enrich
+
+rm -rf tests/fixtures/doc_chunk_workspace_minimal
+mkdir -p tests/fixtures/doc_chunk_workspace_minimal
+cp -R "$OUT"/* tests/fixtures/doc_chunk_workspace_minimal/
+```
+
 ---
 
 ## 场景 6：大型标书（可选，本地）
 
 ```bash
 export DOC_CHUNK_CANBU_FIXTURE="/path/to/餐补标书.docx"
-pytest tests/integration/test_doc_chunk_canbu_parse.py -v
+export DOC_CHUNK_DINGXIN_FIXTURE="/path/to/鼎信标书.docx" # 可选
+pytest tests/integration/test_doc_chunk_canbu_import.py -v
 ```
 
 **验证**：端到端 < 基线 150%；进度日志持续更新。

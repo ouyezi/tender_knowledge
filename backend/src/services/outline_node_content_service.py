@@ -9,9 +9,12 @@ from src.models.bid_outline import BidOutline
 from src.models.bid_outline_node import BidOutlineNode
 from src.models.candidate_knowledge import CandidateKnowledge
 from src.models.document_tree_node import DocumentTreeNode
+from src.services.doc_chunk.blocks_v1 import chunk_blocks_to_content
+from src.services.doc_chunk.content_md_store import load_content_md, load_image_ref_map
 from src.services.doc_chunk.linkage_validation import titles_compatible
+from src.services.doc_chunk.section_content import section_blocks_for_bid_outline_node
 from src.services.content_blocks import blocks_v1, parse_content
-from src.services.section_content_builder import build_section_direct_content
+from src.services.section_content_builder import build_section_content, build_section_direct_content
 
 
 class OutlineNotFoundError(Exception):
@@ -66,12 +69,33 @@ def _load_candidate_content(
     return None
 
 
+def _content_from_markdown_slice(
+    *,
+    document_id: UUID,
+    bid_outline_nodes: list[BidOutlineNode],
+    outline_node: BidOutlineNode,
+) -> str | None:
+    content_md = load_content_md(document_id=document_id)
+    if not content_md:
+        return None
+    image_ref_map = load_image_ref_map(document_id=document_id)
+    blocks = section_blocks_for_bid_outline_node(
+        content_md,
+        bid_outline_nodes,
+        str(outline_node.outline_node_id),
+    )
+    if not blocks:
+        return None
+    return chunk_blocks_to_content(blocks, image_ref_map=image_ref_map)
+
+
 def _serialize_section(
     node: BidOutlineNode,
     *,
     kb_id: UUID,
     document_id: UUID,
     db: Session,
+    bid_outline_nodes: list[BidOutlineNode] | None = None,
 ) -> dict[str, Any]:
     if node.source_node_id is None:
         content = blocks_v1([])
@@ -86,13 +110,29 @@ def _serialize_section(
             "empty_reason": "no_source_node",
         }
 
-    content = build_section_direct_content(
-        db,
-        document_id=document_id,
-        heading_node_id=node.source_node_id,
-    )
+    content: str | None = None
+    if bid_outline_nodes:
+        content = _content_from_markdown_slice(
+            document_id=document_id,
+            bid_outline_nodes=bid_outline_nodes,
+            outline_node=node,
+        )
+    if content is None:
+        content = build_section_direct_content(
+            db,
+            document_id=document_id,
+            heading_node_id=node.source_node_id,
+        )
     parsed = parse_content(content)
     has_content = len(parsed.blocks) > 0 or bool((parsed.plain_text or "").strip())
+    if not has_content:
+        content = build_section_content(
+            db,
+            document_id=document_id,
+            heading_node_id=node.source_node_id,
+        )
+        parsed = parse_content(content)
+        has_content = len(parsed.blocks) > 0 or bool((parsed.plain_text or "").strip())
     empty_reason = None
     if not has_content:
         fallback = _load_candidate_content(
@@ -165,6 +205,7 @@ def build_outline_subtree_content(
             kb_id=kb_id,
             document_id=outline.source_doc_id,
             db=db,
+            bid_outline_nodes=nodes,
         )
         for node_id in subtree_ids
     ]

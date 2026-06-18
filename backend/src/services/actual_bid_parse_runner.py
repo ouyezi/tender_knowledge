@@ -646,7 +646,7 @@ def enqueue_actual_bid_parse(
             status_code=422,
         )
 
-    running = (
+    active_tasks = (
         db.query(ActualBidParseTask)
         .filter(
             ActualBidParseTask.kb_id == kb_id,
@@ -655,14 +655,38 @@ def enqueue_actual_bid_parse(
                 [ActualBidParseTaskStatus.pending, ActualBidParseTaskStatus.running]
             ),
         )
-        .first()
+        .all()
     )
-    if running and not force_reparse:
+    if active_tasks and not force_reparse:
         raise ActualBidParseServiceError(
             "Parse task is already in progress",
             code="PARSE_IN_PROGRESS",
             status_code=409,
         )
+    if force_reparse and active_tasks:
+        superseded_at = _now()
+        for stale_task in active_tasks:
+            stale_task.status = ActualBidParseTaskStatus.failed
+            stale_task.error_message = stale_task.error_message or "Superseded by force reparse"
+            stale_task.finished_at = superseded_at
+
+        stuck_entries = (
+            db.query(DownstreamTaskEntry)
+            .filter(
+                DownstreamTaskEntry.kb_id == kb_id,
+                DownstreamTaskEntry.import_id == import_id,
+                DownstreamTaskEntry.task_type == DownstreamTaskType.document_parse,
+                DownstreamTaskEntry.status.in_(
+                    [DownstreamTaskStatus.claimed, DownstreamTaskStatus.failed]
+                ),
+            )
+            .all()
+        )
+        for stuck_entry in stuck_entries:
+            stuck_entry.status = DownstreamTaskStatus.pending
+            stuck_entry.claimed_by = None
+            stuck_entry.claimed_at = None
+        db.flush()
 
     task = ActualBidParseTask(
         kb_id=kb_id,
@@ -1142,10 +1166,17 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
             user_visible=True,
             document_id=str(document.document_id),
         ):
+            def _classify_progress(processed: int, total: int) -> None:
+                if processed % 100 != 0 and processed != total:
+                    return
+                _append_parse_log(task, db, f"章节分类进度 {processed}/{total}")
+
             classification_summary = classify_heading_nodes_for_document(
                 db,
                 kb_id=file_import.kb_id,
                 document_id=document.document_id,
+                use_llm=False,
+                on_progress=_classify_progress,
             )
         _append_parse_log(
             task,
@@ -1203,7 +1234,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
                 generated_candidate_count=len(created_candidates),
                 outline_quality=outline_quality,
                 filter_decisions=filter_decisions,
-                classification_summary=classification_summary.to_payload(),
+                classification_summary=classification_summary.to_payload(use_llm=False),
             )
 
         task.status = ActualBidParseTaskStatus.ready
