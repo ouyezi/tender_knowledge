@@ -57,6 +57,7 @@ function ParseStatusCell({
   };
   const isActualBid = filePurpose === "actual_bid";
   const isFailed = parseStatus === "failed" || parseStatus === "parse_failed";
+  const canRetryParse = isActualBid && (isFailed || parseStatus === "parsing");
 
   return (
     <Space size="small">
@@ -68,9 +69,9 @@ function ParseStatusCell({
           <Link to={`/template-libraries?highlight=${parseTaskId}`}>前往确认</Link>
         )
       ) : null}
-      {isFailed ? (
+      {canRetryParse ? (
         <Button type="link" size="small" loading={retrying} onClick={onRetry}>
-          重试
+          重试解析
         </Button>
       ) : null}
     </Space>

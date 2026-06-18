@@ -29,7 +29,11 @@ from src.services.confirm_service import (
     create_downstream_entries,
     ignore_import,
 )
-from src.services.actual_bid_parse_runner import run_actual_bid_parse_in_new_session
+from src.services.actual_bid_parse_runner import (
+    ActualBidParseServiceError,
+    enqueue_actual_bid_parse,
+    run_actual_bid_parse_in_new_session,
+)
 from src.services.file_import_service import FileImportServiceError, upload_file_and_enqueue
 from src.services.file_import_purge_service import (
     FileImportPurgeServiceError,
@@ -543,17 +547,35 @@ def retry_import(
 
     tasks_enqueued: list[str] = []
     if body.scope in {"all", "route"} and record.status.value == "confirmed":
-        created = create_downstream_entries(
-            db,
-            record=record,
-            operator_id=operator_id,
-            trace_id=get_trace_id(),
-        )
-        if created:
-            db.commit()
-            if any(item["task_type"] == "template_file_parse" for item in created):
-                background_tasks.add_task(run_template_parse_in_new_session)
-        tasks_enqueued.extend([item["task_type"] for item in created])
+        if record.file_purpose == FilePurpose.actual_bid:
+            try:
+                enqueue_actual_bid_parse(
+                    db,
+                    kb_id=kb_id,
+                    import_id=import_id,
+                    operator_id=operator_id,
+                    trace_id=get_trace_id(),
+                    force_reparse=True,
+                )
+                tasks_enqueued.append("document_parse")
+                background_tasks.add_task(run_actual_bid_parse_in_new_session)
+            except ActualBidParseServiceError as exc:
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content=error(exc.code, str(exc), trace_id=get_trace_id()),
+                )
+        else:
+            created = create_downstream_entries(
+                db,
+                record=record,
+                operator_id=operator_id,
+                trace_id=get_trace_id(),
+            )
+            if created:
+                db.commit()
+                if any(item["task_type"] == "template_file_parse" for item in created):
+                    background_tasks.add_task(run_template_parse_in_new_session)
+            tasks_enqueued.extend([item["task_type"] for item in created])
 
     retry_data = retry_import_tasks(
         db,

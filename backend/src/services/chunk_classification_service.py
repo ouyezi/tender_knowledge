@@ -169,11 +169,12 @@ def classify_chunk(
     kb_id: UUID,
     chunk: KnowledgeChunk,
     index: ClassificationRuleIndex | None = None,
+    use_llm: bool = True,
 ) -> tuple[ChunkClassificationResult, bool]:
     """Classify one knowledge chunk. Returns (result, degraded_to_rule)."""
     rule_index = index or load_classification_index(db, kb_id=kb_id)
     rule_result = _rule_classify(chunk, index=rule_index)
-    if not is_llm_available():
+    if not use_llm or not is_llm_available():
         return rule_result, True
     llm_result = _llm_classify(chunk, index=rule_index)
     if llm_result is None:
