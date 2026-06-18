@@ -15,6 +15,7 @@ import ActualBidParseConfirmWizard from "./pages/OutlineCenter/ActualBidParseCon
 import OutlineDetailPage from "./pages/OutlineCenter/OutlineDetailPage";
 import RetrievalOptimizationCenterPage from "./pages/RetrievalOptimizationCenter";
 import TemplateLibraryCenterPage from "./pages/TemplateLibraryCenter";
+import KnowledgeEntryPage from "./pages/KnowledgeV2/KnowledgeEntryPage";
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
         />
         <Route path="/candidates" element={<CandidateCenterPage />} />
         <Route path="/knowledge" element={<KnowledgeCenterPage />} />
+        <Route path="/knowledge-v2/entry" element={<KnowledgeEntryPage />} />
         <Route path="/candidates/audit" element={<CandidateAuditPanel />} />
         <Route path="/candidates/confirm/:candidateId" element={<CandidateConfirmPage />} />
         <Route
