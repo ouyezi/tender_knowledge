@@ -8,8 +8,11 @@ from src.models.bid_outline_structure_diff import BidOutlineStructureDiff
 from src.models.candidate_confirm_audit_log import CandidateConfirmAuditLog
 from src.models.candidate_knowledge import CandidateKnowledge
 from src.models.candidate_knowledge_stub import CandidateKnowledgeStub
+from src.models.chunk_asset import ChunkAsset
+from src.models.chunk_embedding import ChunkEmbedding
 from src.models.chapter_pattern import ChapterPattern
 from src.models.chapter_pattern_mining_task import ChapterPatternMiningTask
+from src.models.knowledge_chunk import KnowledgeChunk
 from src.models.document import Document
 from src.models.document_media_asset import DocumentMediaAsset
 from src.models.document_parse_suggestion import DocumentParseSuggestion
@@ -56,8 +59,11 @@ __all__ = [
     "CandidateConfirmAuditLog",
     "CandidateKnowledge",
     "CandidateKnowledgeStub",
+    "ChunkAsset",
+    "ChunkEmbedding",
     "ChapterPattern",
     "ChapterPatternMiningTask",
+    "KnowledgeChunk",
     "Document",
     "DocumentMediaAsset",
     "DocumentParseSuggestion",
