@@ -2,21 +2,46 @@
   "schema_version": "1.0",
   "status": "success",
   "source": {
-    "path": "/tmp/minimal.docx",
-    "file_name": "minimal.docx",
-    "file_type": "docx"
+    "path": "tests/fixtures/sample-actual-bid.docx",
+    "file_name": "sample-actual-bid.docx",
+    "file_type": "docx",
+    "title": "sample-actual-bid"
   },
   "stages": {
-    "extract": {"status": "success"},
-    "outline": {"status": "success"},
-    "tree": {"status": "success"},
-    "chunk": {"status": "success"}
+    "extract": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    },
+    "outline": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    },
+    "tree": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    },
+    "chunk": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    }
   },
   "outputs": {
-    "document_tree": "document_tree.json",
+    "content": "content.md",
+    "images": "images",
+    "content_blocks": "content.blocks.json",
+    "images_manifest": "images/manifest.json",
     "outline": "outline.json",
+    "document_tree": "document_tree.json",
     "linkage": "linkage.json",
-    "chunks": "chunks/index.json"
+    "chunks": "chunks"
   },
   "warnings": [],
   "errors": []

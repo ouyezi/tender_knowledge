@@ -26,3 +26,14 @@ def test_chunk_blocks_to_content_mapped_image():
         image_ref_map={"images/x.png": asset_id},
     )
     assert str(asset_id) in content
+
+
+def test_resolve_image_asset_id_accepts_bare_ref_name():
+    from src.services.doc_chunk.blocks_v1 import resolve_image_asset_id
+
+    asset_id = uuid4()
+    resolved = resolve_image_asset_id(
+        "docx-img-1",
+        {"images/docx-img-1.png": asset_id},
+    )
+    assert resolved == asset_id

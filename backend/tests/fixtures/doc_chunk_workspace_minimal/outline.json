@@ -1,22 +1,42 @@
 {
   "schema_version": "1.0",
-  "strategy": "toc",
+  "strategy": "heading_heuristic",
   "nodes": [
     {
       "node_id": "n1",
-      "title": "技术方案",
+      "title": "1 项目概述",
       "level": 1,
       "parent_id": null,
       "sort_order": 0,
-      "needs_review": false
+      "anchor": {
+        "block_index": 0,
+        "page": null,
+        "char_start": 0,
+        "char_end": 10,
+        "block_start": 0,
+        "block_end": null
+      },
+      "needs_review": false,
+      "source_refs": []
     },
     {
       "node_id": "n2",
-      "title": "实施计划",
-      "level": 1,
-      "parent_id": null,
+      "title": "1.1 实施范围",
+      "level": 2,
+      "parent_id": "n1",
       "sort_order": 1,
-      "needs_review": false
+      "anchor": {
+        "block_index": 1,
+        "page": null,
+        "char_start": 10,
+        "char_end": 18,
+        "block_start": 1,
+        "block_end": null
+      },
+      "needs_review": false,
+      "source_refs": []
     }
-  ]
+  ],
+  "derived_from": null,
+  "accepted_at": null
 }

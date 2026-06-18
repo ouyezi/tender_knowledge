@@ -44,6 +44,7 @@ def test_import_workspace_orchestration(db_session, seeded_kb):
         task=task,
     )
     assert result.parse_engine == "doc_chunk"
-    assert result.tree_node_count == 4
+    # 4 tree nodes from fixture + 4 enriched body nodes under t0001 heading (markdown slice)
+    assert result.tree_node_count == 8
     assert result.outline_node_count == 2
     assert result.candidate_count == 2

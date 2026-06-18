@@ -32,8 +32,8 @@ def test_import_document_tree_unique_uuids_and_parents(db_session, seeded_kb):
         kb_id=seeded_kb.kb_id,
         tree_payload=loaded.document_tree,
     )
-    assert len(tree_id_map) == 3
-    assert len(set(tree_id_map.values())) == 3
+    assert len(tree_id_map) == 4
+    assert len(set(tree_id_map.values())) == 4
 
     nodes = (
         db_session.query(DocumentTreeNode)

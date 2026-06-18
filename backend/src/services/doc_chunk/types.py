@@ -15,6 +15,7 @@ class ImportContext:
     chunk_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     parse_strategy: str = "doc_chunk"
     outline_node_id_to_tree_id: dict[str, UUID] = field(default_factory=dict)
+    content_md: str | None = None
 
 
 @dataclass
