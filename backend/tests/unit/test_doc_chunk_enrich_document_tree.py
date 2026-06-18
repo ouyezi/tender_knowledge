@@ -28,6 +28,9 @@ def _prepare_document(db_session, seeded_kb):
     db_session.add(document)
     db_session.flush()
     ctx = ImportContext(workspace_path=FIXTURE_ROOT)
+    content_md_path = FIXTURE_ROOT / "content.md"
+    if content_md_path.is_file():
+        ctx.content_md = content_md_path.read_text(encoding="utf-8")
     import_media_assets(db_session, ctx=ctx, document=document, kb_id=seeded_kb.kb_id)
     return loaded, document, ctx
 
@@ -43,10 +46,10 @@ def test_enrich_document_tree_materializes_chunk_blocks_when_heading_has_no_body
                 "parent_id": None,
                 "outline_node_id": "n1",
                 "node_type": "heading",
-                "title": "技术方案",
+                "title": "1 项目概述",
                 "level": 1,
                 "sort_order": 0,
-                "text": "技术方案",
+                "text": None,
             }
         ],
     }
@@ -64,11 +67,12 @@ def test_enrich_document_tree_materializes_chunk_blocks_when_heading_has_no_body
         ctx=ctx,
         document=document,
         kb_id=seeded_kb.kb_id,
+        outline_payload=loaded.outline,
         linkage_payload=loaded.linkage,
         chunks_index=loaded.chunks_index,
         warnings=warnings,
     )
-    assert created == 1
+    assert created == 4
 
     heading_id = ctx.tree_id_map["t0001"]
     content = build_section_direct_content(
@@ -77,17 +81,9 @@ def test_enrich_document_tree_materializes_chunk_blocks_when_heading_has_no_body
         heading_node_id=heading_id,
     )
     doc = parse_content(content)
-    assert [b.get("text") for b in doc.blocks if b.get("type") == "paragraph"] == ["本章描述技术实现方案。"]
-
-    body_children = (
-        db_session.query(DocumentTreeNode)
-        .filter(
-            DocumentTreeNode.parent_id == heading_id,
-            DocumentTreeNode.node_type != DocumentTreeNodeType.heading,
-        )
-        .count()
-    )
-    assert body_children == 1
+    texts = [b.get("text") for b in doc.blocks if b.get("type") == "paragraph"]
+    assert texts[0] == "# 1 项目概述"
+    assert "## 1.1 实施范围" in texts
 
 
 def test_enrich_document_tree_skips_when_body_already_present(db_session, seeded_kb):
@@ -99,7 +95,7 @@ def test_enrich_document_tree_skips_when_body_already_present(db_session, seeded
         kb_id=seeded_kb.kb_id,
         tree_payload=loaded.document_tree,
     )
-    heading_with_body = ctx.tree_id_map["t0001"]
+    heading_with_body = ctx.tree_id_map["t0002"]
     before = (
         db_session.query(DocumentTreeNode)
         .filter(
@@ -113,6 +109,7 @@ def test_enrich_document_tree_skips_when_body_already_present(db_session, seeded
         ctx=ctx,
         document=document,
         kb_id=seeded_kb.kb_id,
+        outline_payload=loaded.outline,
         linkage_payload=loaded.linkage,
         chunks_index=loaded.chunks_index,
         warnings=[],
@@ -125,6 +122,43 @@ def test_enrich_document_tree_skips_when_body_already_present(db_session, seeded
         )
         .count()
     )
-    assert before == 1
-    assert after == 1
-    assert created == 1
+    assert before == 2
+    assert after == 2
+    assert created == 4
+
+
+def test_enrich_document_tree_materializes_when_chunk_title_has_number_prefix(db_session, seeded_kb):
+    loaded, document, ctx = _prepare_document(db_session, seeded_kb)
+    tree_payload = {
+        "schema_version": "1.0",
+        "nodes": [
+            {
+                "node_id": "t0001",
+                "parent_id": None,
+                "outline_node_id": "n1",
+                "node_type": "heading",
+                "title": "项目概述",
+                "level": 1,
+                "sort_order": 0,
+                "text": None,
+            }
+        ],
+    }
+    import_document_tree(
+        db_session,
+        ctx=ctx,
+        document=document,
+        kb_id=seeded_kb.kb_id,
+        tree_payload=tree_payload,
+    )
+    created = enrich_document_tree_from_chunks(
+        db_session,
+        ctx=ctx,
+        document=document,
+        kb_id=seeded_kb.kb_id,
+        outline_payload=loaded.outline,
+        linkage_payload=loaded.linkage,
+        chunks_index=loaded.chunks_index,
+        warnings=[],
+    )
+    assert created == 4

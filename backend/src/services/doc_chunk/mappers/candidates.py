@@ -12,6 +12,7 @@ from src.services.chapter_candidate_rules import resolve_candidate_type
 from src.services.classification_rule_index import ClassificationRuleIndex, load_classification_index, match_chapter_taxonomy
 from src.services.doc_chunk.blocks_v1 import chunk_blocks_to_content
 from src.services.doc_chunk.linkage_validation import chunk_matches_outline_entry, titles_compatible
+from src.services.doc_chunk.section_content import section_blocks_for_outline_node
 from src.services.doc_chunk.types import DocChunkImportError, ImportContext
 from src.services.doc_chunk.workspace_loader import load_chunk_file
 
@@ -96,6 +97,17 @@ def _resolve_candidate_resolution(
     return CandidateKnowledgeType.ignore, None
 
 
+def _chunk_has_body_blocks(blocks: list[dict[str, Any]]) -> bool:
+    for block in blocks:
+        block_type = str(block.get("type") or "")
+        if block_type in {"paragraph", "table"}:
+            if str(block.get("text") or "").strip():
+                return True
+        if block_type == "image":
+            return True
+    return False
+
+
 def import_candidates(
     db: Session,
     *,
@@ -104,6 +116,7 @@ def import_candidates(
     import_id: UUID,
     document_id: UUID,
     parse_task_id: UUID,
+    outline_payload: dict[str, Any],
     linkage_payload: dict[str, Any],
     chunks_index: dict[str, Any],
     warnings: list[str],
@@ -139,35 +152,61 @@ def import_candidates(
                 code="DOC_CHUNK_LINKAGE_INCOMPLETE",
             )
 
-        rel_path = chunk_path_by_id.get(str(primary_chunk_id))
-        if not rel_path:
-            warnings.append(f"missing_chunk:{primary_chunk_id}")
-            continue
-
-        chunk_payload = load_chunk_file(ctx.workspace_path, f"chunks/{rel_path}")
-        title = str(chunk_payload.get("title") or "").strip() or "未命名章节"
-        if title == "Preface":
-            continue
-        if not chunk_payload.get("original_node_ids"):
-            continue
-
         heading = db.get(DocumentTreeNode, source_node_id)
         outline_node_id = str(entry.get("outline_node_id") or "")
-        if not chunk_matches_outline_entry(
-            outline_node_id=outline_node_id or None,
-            chunk_payload=chunk_payload,
-        ):
-            warnings.append(
-                f"candidate_chunk_outline_mismatch:{primary_chunk_id}:{outline_node_id}"
-            )
-            continue
-        if heading and not titles_compatible(heading.title, title):
-            warnings.append(
-                f"candidate_chunk_title_mismatch:{primary_chunk_id}:{heading.title}:{title}"
-            )
-            continue
 
-        metadata = chunk_payload.get("metadata") or {}
+        blocks: list[dict[str, Any]] = []
+        title = ""
+        metadata: dict[str, Any] = {}
+        if ctx.content_md and outline_node_id:
+            blocks = section_blocks_for_outline_node(
+                ctx.content_md,
+                outline_payload,
+                outline_node_id,
+            )
+            if blocks:
+                outline_nodes = {
+                    str(item.get("node_id")): item
+                    for item in (outline_payload.get("nodes") or [])
+                }
+                outline_node = outline_nodes.get(outline_node_id) or {}
+                title = str(
+                    outline_node.get("title") or (heading.title if heading else "") or ""
+                ).strip() or "未命名章节"
+                metadata = {}
+            else:
+                blocks = []
+
+        if not blocks:
+            rel_path = chunk_path_by_id.get(str(primary_chunk_id))
+            if not rel_path:
+                warnings.append(f"missing_chunk:{primary_chunk_id}")
+                continue
+
+            chunk_payload = load_chunk_file(ctx.workspace_path, f"chunks/{rel_path}")
+            title = str(chunk_payload.get("title") or "").strip() or "未命名章节"
+            if title == "Preface":
+                continue
+            if not chunk_payload.get("original_node_ids"):
+                continue
+
+            if not chunk_matches_outline_entry(
+                outline_node_id=outline_node_id or None,
+                chunk_payload=chunk_payload,
+            ):
+                warnings.append(
+                    f"candidate_chunk_outline_mismatch:{primary_chunk_id}:{outline_node_id}"
+                )
+                continue
+            if heading and not titles_compatible(heading.title, title):
+                warnings.append(
+                    f"candidate_chunk_title_mismatch:{primary_chunk_id}:{heading.title}:{title}"
+                )
+                continue
+            metadata = chunk_payload.get("metadata") or {}
+            blocks = chunk_payload.get("blocks") or []
+        elif title == "Preface":
+            continue
         candidate_type, taxonomy_id = _resolve_candidate_resolution(
             db,
             kb_id=kb_id,
@@ -176,10 +215,11 @@ def import_candidates(
             title=title,
             index=rule_index,
         )
+        if candidate_type == CandidateKnowledgeType.ignore and _chunk_has_body_blocks(blocks):
+            candidate_type = CandidateKnowledgeType.ku
         if candidate_type == CandidateKnowledgeType.ignore:
             continue
 
-        blocks = chunk_payload.get("blocks") or []
         content = chunk_blocks_to_content(blocks, image_ref_map=ctx.image_ref_map)
         suggestion_source = str(metadata.get("classification_source") or "rule")
 

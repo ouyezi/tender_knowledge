@@ -4,14 +4,22 @@
   "entries": [
     {
       "outline_node_id": "n1",
-      "document_tree_node_ids": ["t0001"],
-      "chunk_ids": ["chunk-0001"],
+      "document_tree_node_ids": [
+        "t0001"
+      ],
+      "chunk_ids": [
+        "chunk-0001"
+      ],
       "primary_chunk_id": "chunk-0001"
     },
     {
       "outline_node_id": "n2",
-      "document_tree_node_ids": ["t0003"],
-      "chunk_ids": ["chunk-0002"],
+      "document_tree_node_ids": [
+        "t0002"
+      ],
+      "chunk_ids": [
+        "chunk-0002"
+      ],
       "primary_chunk_id": "chunk-0002"
     }
   ]

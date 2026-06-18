@@ -1,24 +1,58 @@
 {
   "schema_version": "1.0",
   "chunk_id": "chunk-0002",
-  "title": "实施计划",
-  "section_path": ["实施计划"],
-  "heading_level": 1,
-  "markdown": "## 实施计划\n\n分阶段交付。",
-  "blocks": [
-    {"type": "paragraph", "text": "分阶段交付。"}
+  "title": "1.1 实施范围",
+  "section_path": [
+    "1 项目概述",
+    "1.1 实施范围"
   ],
-  "source_file": "minimal.docx",
-  "source_ranges": [],
-  "token_estimate": 15,
+  "heading_level": 2,
+  "markdown": "这是正文段落\n\n## 1.1 实施范围\n\n这是二级章节正文\n",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "text": "这是正文段落",
+      "image_ref": null
+    },
+    {
+      "type": "paragraph",
+      "text": "## 1.1 实施范围",
+      "image_ref": null
+    },
+    {
+      "type": "paragraph",
+      "text": "这是二级章节正文",
+      "image_ref": null
+    }
+  ],
+  "source_file": "content.md",
+  "source_ranges": [
+    {
+      "char_start": 10,
+      "char_end": 40
+    }
+  ],
+  "token_estimate": 7,
   "image_refs": [],
   "previous_chunk_id": "chunk-0001",
   "next_chunk_id": null,
   "outline_source": "original",
-  "original_node_ids": ["n2"],
+  "refined_node_id": null,
+  "original_node_ids": [
+    "n2"
+  ],
   "status": "success",
   "metadata": {
-    "suggested_candidate_type": "ku",
-    "classification_source": "rule"
+    "description": null,
+    "knowledge_type": null,
+    "chapter_type": null,
+    "product_category_hints": [],
+    "chapter_taxonomy_hints": [],
+    "classification_confidence": null,
+    "classification_source": null,
+    "classification_rationale": null,
+    "suggested_candidate_type": null,
+    "suggested_knowledge_type": null,
+    "generated_at": null
   }
 }

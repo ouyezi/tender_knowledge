@@ -80,4 +80,4 @@ def test_import_bid_outline_persists_nodes(db_session, seeded_kb):
         linkage_payload=loaded.linkage,
     )
     assert result.node_count == 2
-    assert result.bid_outline.extract_strategy == BidOutlineExtractStrategy.toc
+    assert result.bid_outline.extract_strategy == BidOutlineExtractStrategy.heading_heuristic

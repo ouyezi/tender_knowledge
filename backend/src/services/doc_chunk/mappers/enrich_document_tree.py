@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from src.models.document import Document
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
+from src.services.doc_chunk.blocks_v1 import resolve_image_asset_id
 from src.services.doc_chunk.linkage_validation import chunk_matches_outline_entry, titles_compatible
+from src.services.doc_chunk.section_content import section_blocks_for_outline_node
 from src.services.doc_chunk.types import ImportContext
 from src.services.doc_chunk.workspace_loader import load_chunk_file
 
@@ -56,7 +58,7 @@ def _materialize_chunk_blocks(
         elif block_type == "image":
             node_type = DocumentTreeNodeType.image
             image_ref = str(block.get("image_ref") or "").strip()
-            asset_id = image_ref_map.get(image_ref)
+            asset_id = resolve_image_asset_id(image_ref, image_ref_map)
             if asset_id is not None:
                 content_ref = str(asset_id)
             elif image_ref:
@@ -97,6 +99,7 @@ def enrich_document_tree_from_chunks(
     ctx: ImportContext,
     document: Document,
     kb_id: UUID,
+    outline_payload: dict[str, Any],
     linkage_payload: dict[str, Any],
     chunks_index: dict[str, Any],
     warnings: list[str],
@@ -128,13 +131,31 @@ def enrich_document_tree_from_chunks(
         if _heading_has_body_children(db, heading_node_id=heading.node_id):
             continue
 
+        outline_node_id = str(entry.get("outline_node_id") or "")
+        blocks: list[dict[str, Any]] = []
+        if ctx.content_md and outline_node_id:
+            blocks = section_blocks_for_outline_node(
+                ctx.content_md,
+                outline_payload,
+                outline_node_id,
+            )
+            if blocks:
+                enriched += _materialize_chunk_blocks(
+                    db,
+                    document=document,
+                    kb_id=kb_id,
+                    heading=heading,
+                    blocks=blocks,
+                    image_ref_map=ctx.image_ref_map,
+                )
+                continue
+
         rel_path = chunk_path_by_id.get(str(primary_chunk_id))
         if not rel_path:
             warnings.append(f"enrich_missing_chunk:{primary_chunk_id}")
             continue
 
         chunk_payload = load_chunk_file(ctx.workspace_path, f"chunks/{rel_path}")
-        outline_node_id = str(entry.get("outline_node_id") or "")
         if not chunk_matches_outline_entry(
             outline_node_id=outline_node_id or None,
             chunk_payload=chunk_payload,

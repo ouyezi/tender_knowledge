@@ -59,5 +59,5 @@ def test_load_minimal_workspace_fixture():
     loaded = load_workspace(FIXTURE_ROOT)
     assert loaded.manifest["status"] == "success"
     assert len(loaded.outline.get("nodes") or []) == 2
-    assert len(loaded.document_tree.get("nodes") or []) == 3
+    assert len(loaded.document_tree.get("nodes") or []) == 4
     assert len(loaded.linkage.get("entries") or []) == 2
