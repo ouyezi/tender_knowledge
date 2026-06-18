@@ -10,6 +10,8 @@ from src.models.document import Document, DocumentParseStatus, DocumentSourceTyp
 from src.models.document_parse_suggestion import DocumentParseSuggestion
 from src.models.file_import import FileImport, FilePurpose
 from src.services.document_tree_classification_service import classify_heading_nodes_for_document
+from src.config import Settings
+from src.services.doc_chunk.content_md_store import persist_content_md, persist_image_ref_map
 from src.services.doc_chunk.mappers.bid_outline import import_bid_outline, map_outline_strategy
 from src.services.doc_chunk.mappers.candidates import import_candidates
 from src.services.doc_chunk.mappers.document_tree import import_document_tree
@@ -17,6 +19,7 @@ from src.services.doc_chunk.mappers.enrich_document_tree import enrich_document_
 from src.services.doc_chunk.mappers.media_assets import import_media_assets
 from src.services.doc_chunk.types import DocChunkImportError, ImportContext, ImportResult
 from src.services.doc_chunk.workspace_loader import load_workspace
+from src.services.knowledge_v2.asset_seed_service import seed_chunk_assets_from_workspace
 
 
 def import_workspace(
@@ -37,6 +40,9 @@ def import_workspace(
     loaded = load_workspace(workspace)
     ctx = ImportContext(workspace_path=loaded.root)
     warnings = list(loaded.manifest.get("warnings") or [])
+    workspace_content_md = loaded.root / "content.md"
+    if workspace_content_md.is_file():
+        ctx.content_md = workspace_content_md.read_text(encoding="utf-8")
 
     document = None
     if document_id is not None:
@@ -65,7 +71,27 @@ def import_workspace(
     document.parse_status = DocumentParseStatus.parsing
     document.product_category_ids = file_import.product_category_ids or []
 
+    if ctx.content_md:
+        persist_content_md(
+            document_id=document.document_id,
+            source_path=workspace_content_md,
+            storage_root=Path(Settings().storage_root),
+        )
+
     import_media_assets(db, ctx=ctx, document=document, kb_id=kb_id)
+    seed_chunk_assets_from_workspace(
+        db,
+        kb_id=kb_id,
+        doc_id=document.document_id,
+        workspace_path=loaded.root,
+        image_ref_map=ctx.image_ref_map,
+    )
+    if ctx.image_ref_map:
+        persist_image_ref_map(
+            document_id=document.document_id,
+            image_ref_map=ctx.image_ref_map,
+            storage_root=Path(Settings().storage_root),
+        )
     tree_id_map = import_document_tree(
         db,
         ctx=ctx,
@@ -78,6 +104,7 @@ def import_workspace(
         ctx=ctx,
         document=document,
         kb_id=kb_id,
+        outline_payload=loaded.outline,
         linkage_payload=loaded.linkage,
         chunks_index=loaded.chunks_index,
         warnings=warnings,
@@ -117,6 +144,7 @@ def import_workspace(
         import_id=import_id,
         document_id=document.document_id,
         parse_task_id=parse_task_id,
+        outline_payload=loaded.outline,
         linkage_payload=loaded.linkage,
         chunks_index=loaded.chunks_index,
         warnings=warnings,
