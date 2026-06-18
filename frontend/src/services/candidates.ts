@@ -43,6 +43,9 @@ export interface CandidateDetail {
   title: string;
   content?: string;
   summary?: string;
+  suggested_knowledge_type?: string | null;
+  suggested_chapter_taxonomy_id?: string | null;
+  suggested_product_category_ids?: string[];
   status: string;
   candidate_type?: string;
   source_trace?: CandidateSourceTrace;
