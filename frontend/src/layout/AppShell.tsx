@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { key: "/candidates", label: <Link to="/candidates">候选</Link> },
   { key: "/knowledge", label: <Link to="/knowledge">正式知识</Link> },
   { key: "/knowledge-v2/entry", label: <Link to="/knowledge-v2/entry">知识录入 V2</Link> },
+  { key: "/knowledge-v2/browse", label: <Link to="/knowledge-v2/browse">知识浏览 V2</Link> },
 ];
 
 export default function AppShell() {

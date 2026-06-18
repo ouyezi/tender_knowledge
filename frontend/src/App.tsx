@@ -16,6 +16,7 @@ import OutlineDetailPage from "./pages/OutlineCenter/OutlineDetailPage";
 import RetrievalOptimizationCenterPage from "./pages/RetrievalOptimizationCenter";
 import TemplateLibraryCenterPage from "./pages/TemplateLibraryCenter";
 import KnowledgeEntryPage from "./pages/KnowledgeV2/KnowledgeEntryPage";
+import KnowledgeBrowsePage from "./pages/KnowledgeV2/KnowledgeBrowsePage";
 
 export default function App() {
   return (
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/candidates" element={<CandidateCenterPage />} />
         <Route path="/knowledge" element={<KnowledgeCenterPage />} />
         <Route path="/knowledge-v2/entry" element={<KnowledgeEntryPage />} />
+        <Route path="/knowledge-v2/browse" element={<KnowledgeBrowsePage />} />
         <Route path="/candidates/audit" element={<CandidateAuditPanel />} />
         <Route path="/candidates/confirm/:candidateId" element={<CandidateConfirmPage />} />
         <Route
