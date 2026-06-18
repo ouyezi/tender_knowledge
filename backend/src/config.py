@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     doc_chunk_workspace_retention_hours: int = 24
     doc_chunk_classification_config: str | None = None
 
+    knowledge_prefill_model: str = "qwen3-max"
+    knowledge_prefill_timeout_sec: int = 10
+    embedding_model: str = "text-embedding-v2"
+
     model_config = SettingsConfigDict(env_file=_discover_env_files(), extra="ignore")
 
     @property
