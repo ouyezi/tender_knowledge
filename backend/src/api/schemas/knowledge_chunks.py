@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+from datetime import date
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+
+class PrefillRequest(BaseModel):
+    doc_id: UUID
+    primary_node_id: UUID
+    content: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CreateKnowledgeChunkRequest(BaseModel):
+    doc_id: UUID
+    primary_node_id: UUID
+    title: str
+    content: str
+    summary: str | None = None
+    knowledge_type: str = "fact"
+    content_type: str = "text"
+    source_type: str = "bid"
+    file_name: str | None = None
+    project_name: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    catalog_path: list[dict[str, Any]] = Field(default_factory=list)
+    parent_id: int | None = None
+    need_parent_context: bool = False
+    quote_mode: str = "full"
+    category: str = "technical"
+    tags: list[str] = Field(default_factory=list)
+    products: list[str] = Field(default_factory=list)
+    industries: list[str] = Field(default_factory=list)
+    customer_types: list[str] = Field(default_factory=list)
+    regions: list[str] = Field(default_factory=list)
+    issue_date: date | None = None
+    expire_date: date | None = None
+    status: str = "draft"
+    is_template: bool = False
+    template_type: str | None = None
+    variables: list[dict[str, Any]] = Field(default_factory=list)
+    is_immutable: bool = False
+    exclusion_rules: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_weight: float = 1.0
+    security_level: str = "internal"
+    owner: str | None = None
+    review_status: str = "approved"
+    winning_flag: bool = False
+    edit_distance_avg: float | None = None
+    force: bool = False
+
+
+class KnowledgeChunkListFilters(BaseModel):
+    category: str | None = None
+    knowledge_type: str | None = None
+    source_type: str | None = None
+    status: str | None = None
+    products: list[str] | None = None
+    industries: list[str] | None = None
+    regions: list[str] | None = None
+    tags: list[str] | None = None
+    security_level: str | None = None
+    is_template: bool | None = None
+    winning_flag: bool | None = None
+    review_status: str | None = None
+    issue_date_from: date | None = None
+    issue_date_to: date | None = None
+    expire_date_from: date | None = None
+    expire_date_to: date | None = None
+    keyword: str | None = None
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=200)
+

@@ -14,6 +14,7 @@ from src.api.routes.chapter_taxonomies import router as chapter_taxonomy_router
 from src.api.routes.file_imports import router as file_imports_router
 from src.api.routes.generation import router as generation_router
 from src.api.routes.knowledge_bases import router as kb_router
+from src.api.routes.knowledge_chunks import router as knowledge_chunks_router
 from src.api.routes.knowledge_units import router as knowledge_units_router
 from src.api.routes.manual_assets import router as manual_assets_router
 from src.api.routes.media import router as media_router
@@ -65,6 +66,7 @@ app.include_router(candidate_batch_router)
 app.include_router(candidates_router)
 app.include_router(candidate_audit_logs_router)
 app.include_router(knowledge_units_router)
+app.include_router(knowledge_chunks_router)
 app.include_router(wikis_router)
 app.include_router(manual_assets_router)
 app.include_router(media_router)
