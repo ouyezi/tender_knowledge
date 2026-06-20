@@ -2,12 +2,10 @@ import {
   Alert,
   Button,
   Card,
-  Col,
   Form,
   Input,
   InputNumber,
   Modal,
-  Row,
   Select,
   Space,
   Spin,
@@ -19,6 +17,9 @@ import {
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import KnowledgeContentViewer from "../../components/KnowledgeV2/KnowledgeContentViewer";
+import ResizableWorkspace from "../../components/KnowledgeV2/ResizableWorkspace";
+import { getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKBContext } from "../../layout/KBContext";
 import { ApiError } from "../../services/apiClient";
 import {
@@ -108,88 +109,6 @@ function parseJsonArray<T>(raw?: string): T[] | undefined {
     throw new Error("JSON 必须是数组");
   }
   return parsed as T[];
-}
-
-function parseMarkdownTable(raw?: string | null): { headers: string[]; rows: string[][] } | null {
-  if (!raw) {
-    return null;
-  }
-  const lines = raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (lines.length < 2) {
-    return null;
-  }
-  const separator = lines[1].replace(/\|/g, "").replace(/[-:\s]/g, "");
-  if (separator.length > 0) {
-    return null;
-  }
-
-  const parseLine = (line: string) =>
-    line
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((cell) => cell.trim());
-
-  const headers = parseLine(lines[0]);
-  if (headers.length === 0) {
-    return null;
-  }
-  const rows = lines.slice(2).map(parseLine).filter((row) => row.length > 0);
-  return { headers, rows };
-}
-
-function renderAsset(asset: NodePreview["assets"][number]) {
-  if (asset.asset_type === "image" && asset.image_storage_url) {
-    return (
-      <img
-        src={asset.image_storage_url}
-        alt={asset.asset_code ?? `image-${asset.id}`}
-        style={{ maxWidth: "100%", border: "1px solid #f0f0f0", borderRadius: 6 }}
-      />
-    );
-  }
-  if (asset.asset_type === "table") {
-    const table = parseMarkdownTable(asset.raw_markdown);
-    if (table) {
-      return (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                {table.headers.map((header) => (
-                  <th
-                    key={header}
-                    style={{ border: "1px solid #f0f0f0", textAlign: "left", padding: 8, background: "#fafafa" }}
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {table.rows.map((row, index) => (
-                <tr key={`r-${index}`}>
-                  {row.map((cell, cellIndex) => (
-                    <td key={`c-${index}-${cellIndex}`} style={{ border: "1px solid #f0f0f0", padding: 8 }}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-  }
-  return (
-    <pre style={{ whiteSpace: "pre-wrap", margin: 0, background: "#fafafa", padding: 12, borderRadius: 6 }}>
-      {asset.raw_markdown || "(无预览数据)"}
-    </pre>
-  );
 }
 
 export default function KnowledgeEntryPage() {
@@ -471,9 +390,10 @@ export default function KnowledgeEntryPage() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Card title="选择来源文档">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <span>来源文档：</span>
         <Select
-          style={{ width: 420, maxWidth: "100%" }}
+          style={{ width: 420, maxWidth: "100%", flex: 1 }}
           loading={loadingDocuments}
           placeholder="请选择文档"
           value={selectedDocId}
@@ -483,10 +403,10 @@ export default function KnowledgeEntryPage() {
           }))}
           onChange={(value) => setSelectedDocId(value)}
         />
-      </Card>
+      </div>
 
-      <Row gutter={16} style={{ width: "100%", minHeight: "calc(100vh - 280px)" }}>
-        <Col xs={24} lg={6}>
+      <ResizableWorkspace
+        treePanel={
           <Card title="目录树" bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
             {loadingTree ? (
               <Spin />
@@ -498,9 +418,8 @@ export default function KnowledgeEntryPage() {
               />
             )}
           </Card>
-        </Col>
-
-        <Col xs={24} lg={12}>
+        }
+        previewPanel={
           <Card
             title="章节预览"
             extra={
@@ -513,34 +432,15 @@ export default function KnowledgeEntryPage() {
             {loadingPreview ? <Spin /> : null}
             {!loadingPreview && !preview ? <Text type="secondary">请选择目录节点查看内容</Text> : null}
             {preview ? (
-              <Space direction="vertical" size={16} style={{ width: "100%" }}>
-                <pre
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    margin: 0,
-                    background: "#fafafa",
-                    padding: 12,
-                    borderRadius: 6,
-                  }}
-                >
-                  {preview.content_md}
-                </pre>
-                {preview.assets.map((asset) => (
-                  <Card
-                    key={asset.id}
-                    size="small"
-                    title={`${asset.asset_type} #${asset.id}`}
-                    bodyStyle={{ overflow: "auto" }}
-                  >
-                    {renderAsset(asset)}
-                  </Card>
-                ))}
-              </Space>
+              <KnowledgeContentViewer
+                contentMd={preview.content_md}
+                assets={preview.assets}
+                sectionCharStart={preview.char_start}
+              />
             ) : null}
           </Card>
-        </Col>
-
-        <Col xs={24} lg={6}>
+        }
+        entryPanel={
           <Card title="知识录入" bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
             {!rightExpanded ? (
               <Space direction="vertical">
@@ -557,112 +457,120 @@ export default function KnowledgeEntryPage() {
             ) : null}
             {rightExpanded && !prefilling ? (
               <Form<EntryFormValues> form={form} layout="vertical" initialValues={{ content: preview?.content_md }}>
-                <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}>
+                <Form.Item
+                  name="title"
+                  label={getFieldLabel("title")}
+                  rules={[{ required: true, message: "请输入标题" }]}
+                >
                   <Input />
                 </Form.Item>
-                <Form.Item name="content" label="内容（只读）">
+                <Form.Item name="content" label={`${getFieldLabel("content")}（只读）`}>
                   <Input.TextArea rows={6} readOnly />
                 </Form.Item>
-                <Form.Item name="summary" label="摘要">
+                <Form.Item name="summary" label={getFieldLabel("summary")}>
                   <Input.TextArea rows={3} />
                 </Form.Item>
-                <Form.Item name="knowledge_type" label="knowledge_type">
+                <Form.Item name="knowledge_type" label={getFieldLabel("knowledge_type")}>
+                  <Select allowClear options={getEnumOptions("knowledge_type")} />
+                </Form.Item>
+                <Form.Item name="content_type" label={getFieldLabel("content_type")}>
+                  <Select allowClear options={getEnumOptions("content_type")} />
+                </Form.Item>
+                <Form.Item name="source_type" label={getFieldLabel("source_type")}>
+                  <Select allowClear options={getEnumOptions("source_type")} />
+                </Form.Item>
+                <Form.Item name="file_name" label={getFieldLabel("file_name")}>
                   <Input />
                 </Form.Item>
-                <Form.Item name="content_type" label="content_type">
+                <Form.Item name="project_name" label={getFieldLabel("project_name")}>
                   <Input />
                 </Form.Item>
-                <Form.Item name="source_type" label="source_type">
+                <Form.Item name="category" label={getFieldLabel("category")}>
+                  <Select allowClear options={getEnumOptions("category")} />
+                </Form.Item>
+                <Form.Item name="status" label={getFieldLabel("status")}>
+                  <Select allowClear options={getEnumOptions("status")} />
+                </Form.Item>
+                <Form.Item name="quote_mode" label={getFieldLabel("quote_mode")}>
+                  <Select allowClear options={getEnumOptions("quote_mode")} />
+                </Form.Item>
+                <Form.Item name="template_type" label={getFieldLabel("template_type")}>
+                  <Select allowClear options={getEnumOptions("template_type")} />
+                </Form.Item>
+                <Form.Item name="security_level" label={getFieldLabel("security_level")}>
+                  <Select allowClear options={getEnumOptions("security_level")} />
+                </Form.Item>
+                <Form.Item name="review_status" label={getFieldLabel("review_status")}>
+                  <Select allowClear options={getEnumOptions("review_status")} />
+                </Form.Item>
+                <Form.Item name="owner" label={getFieldLabel("owner")}>
                   <Input />
                 </Form.Item>
-                <Form.Item name="file_name" label="file_name">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="project_name" label="project_name">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="category" label="category">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="status" label="status">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="quote_mode" label="quote_mode">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="template_type" label="template_type">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="security_level" label="security_level">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="review_status" label="review_status">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="owner" label="owner">
-                  <Input />
-                </Form.Item>
-                <Form.Item name="issue_date" label="issue_date">
+                <Form.Item name="issue_date" label={getFieldLabel("issue_date")}>
                   <Input placeholder="YYYY-MM-DD" />
                 </Form.Item>
-                <Form.Item name="expire_date" label="expire_date">
+                <Form.Item name="expire_date" label={getFieldLabel("expire_date")}>
                   <Input placeholder="YYYY-MM-DD" />
                 </Form.Item>
-                <Form.Item name="tags" label="tags">
+                <Form.Item name="tags" label={getFieldLabel("tags")}>
                   <Select mode="tags" />
                 </Form.Item>
-                <Form.Item name="products" label="products">
+                <Form.Item name="products" label={getFieldLabel("products")}>
                   <Select mode="tags" />
                 </Form.Item>
-                <Form.Item name="industries" label="industries">
+                <Form.Item name="industries" label={getFieldLabel("industries")}>
                   <Select mode="tags" />
                 </Form.Item>
-                <Form.Item name="customer_types" label="customer_types">
+                <Form.Item name="customer_types" label={getFieldLabel("customer_types")}>
                   <Select mode="tags" />
                 </Form.Item>
-                <Form.Item name="regions" label="regions">
+                <Form.Item name="regions" label={getFieldLabel("regions")}>
                   <Select mode="tags" />
                 </Form.Item>
-                <Form.Item name="page_start" label="page_start">
+                <Form.Item name="page_start" label={getFieldLabel("page_start")}>
                   <InputNumber style={{ width: "100%" }} />
                 </Form.Item>
-                <Form.Item name="page_end" label="page_end">
+                <Form.Item name="page_end" label={getFieldLabel("page_end")}>
                   <InputNumber style={{ width: "100%" }} />
                 </Form.Item>
-                <Form.Item name="char_start" label="char_start">
+                <Form.Item name="char_start" label={getFieldLabel("char_start")}>
                   <InputNumber style={{ width: "100%" }} />
                 </Form.Item>
-                <Form.Item name="char_end" label="char_end">
+                <Form.Item name="char_end" label={getFieldLabel("char_end")}>
                   <InputNumber style={{ width: "100%" }} />
                 </Form.Item>
-                <Form.Item name="parent_id" label="parent_id">
+                <Form.Item name="parent_id" label={getFieldLabel("parent_id")}>
                   <InputNumber style={{ width: "100%" }} />
                 </Form.Item>
-                <Form.Item name="retrieval_weight" label="retrieval_weight">
+                <Form.Item name="retrieval_weight" label={getFieldLabel("retrieval_weight")}>
                   <InputNumber style={{ width: "100%" }} />
                 </Form.Item>
-                <Form.Item name="edit_distance_avg" label="edit_distance_avg">
+                <Form.Item name="edit_distance_avg" label={getFieldLabel("edit_distance_avg")}>
                   <InputNumber style={{ width: "100%" }} />
                 </Form.Item>
-                <Form.Item name="catalog_path_json" label="catalog_path(JSON array)">
+                <Form.Item name="catalog_path_json" label={`${getFieldLabel("catalog_path")}(JSON 数组)`}>
                   <Input.TextArea rows={4} />
                 </Form.Item>
-                <Form.Item name="variables_json" label="variables(JSON array)">
+                <Form.Item name="variables_json" label={`${getFieldLabel("variables")}(JSON 数组)`}>
                   <Input.TextArea rows={4} />
                 </Form.Item>
-                <Form.Item name="exclusion_rules_json" label="exclusion_rules(JSON array)">
+                <Form.Item name="exclusion_rules_json" label={`${getFieldLabel("exclusion_rules")}(JSON 数组)`}>
                   <Input.TextArea rows={4} />
                 </Form.Item>
-                <Form.Item name="need_parent_context" label="need_parent_context" valuePropName="checked">
+                <Form.Item
+                  name="need_parent_context"
+                  label={getFieldLabel("need_parent_context")}
+                  valuePropName="checked"
+                >
                   <Switch />
                 </Form.Item>
-                <Form.Item name="is_template" label="is_template" valuePropName="checked">
+                <Form.Item name="is_template" label={getFieldLabel("is_template")} valuePropName="checked">
                   <Switch />
                 </Form.Item>
-                <Form.Item name="is_immutable" label="is_immutable" valuePropName="checked">
+                <Form.Item name="is_immutable" label={getFieldLabel("is_immutable")} valuePropName="checked">
                   <Switch />
                 </Form.Item>
-                <Form.Item name="winning_flag" label="winning_flag" valuePropName="checked">
+                <Form.Item name="winning_flag" label={getFieldLabel("winning_flag")} valuePropName="checked">
                   <Switch />
                 </Form.Item>
                 <Button type="primary" disabled={readOnly} loading={creating} onClick={() => void handleCreate()}>
@@ -671,8 +579,8 @@ export default function KnowledgeEntryPage() {
               </Form>
             ) : null}
           </Card>
-        </Col>
-      </Row>
+        }
+      />
     </Space>
   );
 }
