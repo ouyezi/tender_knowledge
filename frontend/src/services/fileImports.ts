@@ -31,6 +31,7 @@ export interface FileImportListItem {
   status: FileImportStatus;
   parse_status?: ParseStatus;
   latest_parse_task_id?: string | null;
+  document_id?: string | null;
   version_no: number;
   created_at: string;
   updated_at: string;
@@ -87,10 +88,7 @@ export interface FileImportDetail {
 export interface ConfirmFileImportPayload {
   expected_version: number;
   file_purpose: string;
-  product_category_ids: string[];
-  chapter_taxonomy_id?: string | null;
   enter_parsing?: boolean;
-  target_object_type?: string | null;
 }
 
 export interface ConfirmFileImportResult {
@@ -147,6 +145,10 @@ export interface RetryImportResult {
   import_id: string;
   status: string;
   tasks_enqueued: string[];
+}
+
+export interface RetryDocumentParseResult {
+  parse_task_id: string;
 }
 
 export async function listFileImports(
@@ -281,40 +283,14 @@ export async function retryImport(
   });
 }
 
-export interface RetryTemplateParseResult {
-  parse_task_id: string;
-  import_id: string;
-  template_id: string | null;
-  status: string;
-  trace_id: string;
-}
-
-export async function retryTemplateParse(
+export async function retryDocumentParse(
   kbId: string,
   importId: string,
-): Promise<RetryTemplateParseResult> {
-  return apiRequest<RetryTemplateParseResult>(`/api/v1/kbs/${kbId}/template-parse/trigger`, {
-    method: "POST",
-    body: { import_id: importId, force_reparse: true },
-  });
-}
-
-export interface RetryActualBidParseResult {
-  parse_task_id: string;
-  import_id: string;
-  document_id: string | null;
-  status: string;
-  trace_id: string | null;
-}
-
-export async function retryActualBidParse(
-  kbId: string,
-  importId: string,
-): Promise<RetryActualBidParseResult> {
-  return apiRequest<RetryActualBidParseResult>(`/api/v1/kbs/${kbId}/actual-bid-parse/trigger`, {
-    method: "POST",
-    body: { import_id: importId, force_reparse: true },
-  });
+): Promise<RetryDocumentParseResult> {
+  return apiRequest<RetryDocumentParseResult>(
+    `/api/v1/kbs/${kbId}/file-imports/${importId}/retry-parse`,
+    { method: "POST", body: {} },
+  );
 }
 
 export interface ImportAuditLogItem {

@@ -13,9 +13,8 @@ import {
   deleteFileImport,
   getFileImportPurgeImpact,
   purgeAllFileImports,
-  retryActualBidParse,
+  retryDocumentParse,
   retryImport,
-  retryTemplateParse,
   getFileImport,
   listFileImports,
   type FileImportListItem,
@@ -35,39 +34,42 @@ const PARSE_STATUS_TAG: Record<string, { color: string; label: string }> = {
 };
 
 function ParseStatusCell({
-  filePurpose,
   parseStatus,
-  parseTaskId,
+  documentId,
+  importStatus,
   retrying,
   onRetry,
 }: {
-  filePurpose?: string | null;
   parseStatus?: ParseStatus;
-  parseTaskId?: string | null;
+  documentId?: string | null;
+  importStatus?: string;
   retrying: boolean;
   onRetry: () => void;
 }) {
-  if (!parseStatus) {
+  if (!parseStatus && importStatus !== "completed" && importStatus !== "failed") {
     return <>—</>;
   }
 
-  const tagMeta = PARSE_STATUS_TAG[parseStatus] ?? {
+  const effectiveStatus =
+    parseStatus ??
+    (importStatus === "completed" ? "parse_confirmed" : importStatus === "failed" ? "failed" : null);
+
+  if (!effectiveStatus) {
+    return <>—</>;
+  }
+
+  const tagMeta = PARSE_STATUS_TAG[effectiveStatus] ?? {
     color: "default",
-    label: parseStatus,
+    label: effectiveStatus,
   };
-  const isActualBid = filePurpose === "actual_bid";
-  const isFailed = parseStatus === "failed" || parseStatus === "parse_failed";
-  const canRetryParse = isActualBid && (isFailed || parseStatus === "parsing");
+  const isFailed = effectiveStatus === "failed" || effectiveStatus === "parse_failed";
+  const canRetryParse = isFailed || effectiveStatus === "parsing" || effectiveStatus === "running";
 
   return (
     <Space size="small">
       <Tag color={tagMeta.color}>{tagMeta.label}</Tag>
-      {parseStatus === "parse_ready" && parseTaskId ? (
-        isActualBid ? (
-          <Link to={`/outlines/parse-confirm/${parseTaskId}`}>前往确认</Link>
-        ) : (
-          <Link to={`/template-libraries?highlight=${parseTaskId}`}>前往确认</Link>
-        )
+      {importStatus === "completed" && documentId ? (
+        <Link to={`/knowledge-v2/entry?docId=${documentId}`}>前往知识录入</Link>
       ) : null}
       {canRetryParse ? (
         <Button type="link" size="small" loading={retrying} onClick={onRetry}>
@@ -122,16 +124,13 @@ export default function FileImportCenterPage() {
   }, [page, pageSize, selectedKbId]);
 
   const handleRetryParse = useCallback(
-    async (importId: string, filePurpose?: string | null) => {
+    async (importId: string) => {
       if (!selectedKbId) {
         return;
       }
       setRetryingParseImportIds((prev) => new Set(prev).add(importId));
       try {
-        const result =
-          filePurpose === "actual_bid"
-            ? await retryActualBidParse(selectedKbId, importId)
-            : await retryTemplateParse(selectedKbId, importId);
+        const result = await retryDocumentParse(selectedKbId, importId);
         message.success(`已触发解析重试：${result.parse_task_id}`);
         void loadData();
       } catch (error) {
@@ -243,12 +242,12 @@ export default function FileImportCenterPage() {
         key: "parse_status",
         render: (value: ParseStatus | undefined, record) => (
           <ParseStatusCell
-            filePurpose={record.file_purpose}
             parseStatus={value ?? null}
-            parseTaskId={record.latest_parse_task_id}
+            documentId={record.document_id}
+            importStatus={record.status}
             retrying={retryingParseImportIds.has(record.import_id)}
             onRetry={() => {
-              void handleRetryParse(record.import_id, record.file_purpose);
+              void handleRetryParse(record.import_id);
             }}
           />
         ),

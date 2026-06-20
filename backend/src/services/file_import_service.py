@@ -10,6 +10,7 @@ from src.models.file_import import (
     DuplicateResolution,
     FileImport,
     FileImportStatus,
+    FilePurpose,
     FileType,
     HashStatus,
 )

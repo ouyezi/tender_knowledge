@@ -45,7 +45,7 @@ def test_resolve_image_ref_to_media_url():
 
 
 def test_load_image_ref_map_payload_empty(tmp_path, monkeypatch):
-    from src.config import Settings
+    from src.config import settings
 
-    monkeypatch.setattr(Settings, "storage_root", str(tmp_path))
+    monkeypatch.setattr(settings, "storage_root", str(tmp_path))
     assert load_image_ref_map_payload(document_id=uuid4()) == {}

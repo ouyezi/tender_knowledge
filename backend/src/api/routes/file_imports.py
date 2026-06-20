@@ -20,6 +20,7 @@ from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.downstream_task_entry import DownstreamTaskEntry
 from src.models.import_task import ImportTask
 from src.models.knowledge_base import KnowledgeBase
+from src.models.actual_bid_parse_task import ActualBidParseTask, ActualBidParseTaskStatus
 from src.services.confirm_service import (
     ConfirmServiceError,
     confirm_import,
@@ -34,6 +35,11 @@ from src.services.file_import_purge_service import (
     purge_file_import,
 )
 from src.services.import_task_runner import retry_import_tasks
+from src.services.document_parse_runner import (
+    DocumentParseServiceError,
+    enqueue_document_parse,
+    run_document_parse_in_new_session,
+)
 from src.models.import_audit_log import ImportAuditLog
 
 router = APIRouter(
@@ -81,6 +87,39 @@ def list_file_imports(
         .limit(page_size)
         .all()
     )
+    parse_tasks_by_import: dict[str, ActualBidParseTask] = {}
+    if rows:
+        import_ids = [row.import_id for row in rows]
+        parse_tasks = (
+            db.query(ActualBidParseTask)
+            .filter(ActualBidParseTask.import_id.in_(import_ids))
+            .order_by(ActualBidParseTask.import_id.asc(), ActualBidParseTask.created_at.desc())
+            .all()
+        )
+        for task in parse_tasks:
+            key = str(task.import_id)
+            if key not in parse_tasks_by_import:
+                parse_tasks_by_import[key] = task
+
+    def _parse_status(task: ActualBidParseTask | None, import_status: FileImportStatus) -> str | None:
+        if task is None:
+            if import_status == FileImportStatus.completed:
+                return "parse_confirmed"
+            if import_status == FileImportStatus.failed:
+                return "failed"
+            if import_status in {FileImportStatus.confirmed, FileImportStatus.processing}:
+                return "parsing"
+            return None
+        if task.status == ActualBidParseTaskStatus.running:
+            return "parsing"
+        if task.status == ActualBidParseTaskStatus.completed:
+            return "parse_confirmed"
+        if task.status == ActualBidParseTaskStatus.failed:
+            return "failed"
+        if task.status == ActualBidParseTaskStatus.pending:
+            return "parsing"
+        return None
+
     items = [
         {
             "import_id": str(row.import_id),
@@ -90,8 +129,14 @@ def list_file_imports(
             "file_hash": row.file_hash,
             "file_purpose": row.file_purpose.value if row.file_purpose else None,
             "status": row.status.value,
-            "parse_status": None,
-            "latest_parse_task_id": None,
+            "parse_status": _parse_status(parse_tasks_by_import.get(str(row.import_id)), row.status),
+            "latest_parse_task_id": str(parse_tasks_by_import[str(row.import_id)].parse_task_id)
+            if str(row.import_id) in parse_tasks_by_import
+            else None,
+            "document_id": str(parse_tasks_by_import[str(row.import_id)].document_id)
+            if str(row.import_id) in parse_tasks_by_import
+            and parse_tasks_by_import[str(row.import_id)].document_id
+            else None,
             "version_no": row.version_no,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -339,6 +384,8 @@ def confirm_file_import(
             status_code=exc.status_code,
             content=error(exc.code, str(exc), trace_id=get_trace_id()),
         )
+    if body.enter_parsing:
+        background_tasks.add_task(run_document_parse_in_new_session)
     return success(data, trace_id=get_trace_id())
 
 
@@ -472,6 +519,35 @@ def retry_import(
     )
     retry_data["tasks_enqueued"] = list(dict.fromkeys(tasks_enqueued + retry_data["tasks_enqueued"]))
     return success(retry_data, trace_id=get_trace_id())
+
+
+@router.post("/{import_id}/retry-parse")
+def retry_document_parse(
+    kb_id: UUID,
+    import_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(kb_write_guard),
+    operator_id: str = Depends(get_operator_id),
+):
+    try:
+        task = enqueue_document_parse(
+            db,
+            kb_id=kb_id,
+            import_id=import_id,
+            operator_id=operator_id,
+            trace_id=get_trace_id(),
+            force_reparse=True,
+        )
+        db.commit()
+    except DocumentParseServiceError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error(exc.code, str(exc), trace_id=get_trace_id()),
+        )
+    background_tasks.add_task(run_document_parse_in_new_session)
+    return success({"parse_task_id": str(task.parse_task_id)}, trace_id=get_trace_id())
 
 
 @router.get("/{import_id}/purge-impact")
