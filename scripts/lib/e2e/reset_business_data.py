@@ -11,6 +11,9 @@ from src.config import Settings
 from src.db.session import engine
 
 BUSINESS_TABLES: tuple[str, ...] = (
+    "chunk_embeddings",
+    "chunk_assets",
+    "knowledge_chunks",
     "retrieval_feedbacks",
     "retrieval_traces",
     "retrieval_index_entries",

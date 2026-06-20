@@ -132,3 +132,50 @@ def test_get_document_tree_marks_ingested_from_latest_chunk(db_session, seeded_k
     assert len(tree[0]["children"]) == 1
     assert tree[0]["children"][0]["node_id"] == str(child.node_id)
     assert tree[0]["children"][0]["ingested"] is True
+
+
+def test_list_entry_documents_includes_template_file(db_session, seeded_kb):
+    from src.services.knowledge_v2.entry_content_service import list_entry_documents
+
+    file_import = FileImport(
+        kb_id=seeded_kb.kb_id,
+        file_name="template.docx",
+        file_type=FileType.docx,
+        file_size=1024,
+        storage_path="/tmp/template.docx",
+        file_purpose=FilePurpose.template_file,
+        status=FileImportStatus.completed,
+        hash_status=HashStatus.unavailable,
+        created_by="tester",
+    )
+    db_session.add(file_import)
+    db_session.flush()
+    document = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=file_import.import_id,
+        source_type=DocumentSourceType.template_file,
+        source_usage=DocumentSourceUsage.knowledge_extract,
+        document_name="template.docx",
+        parse_status=DocumentParseStatus.ready,
+        tree_version=1,
+        created_by="tester",
+    )
+    db_session.add(document)
+    db_session.flush()
+    db_session.add(
+        DocumentTreeNode(
+            node_id=uuid4(),
+            kb_id=seeded_kb.kb_id,
+            document_id=document.document_id,
+            parent_id=None,
+            node_type=DocumentTreeNodeType.heading,
+            title="模板章节",
+            level=1,
+            sort_order=1,
+            tree_version=1,
+        )
+    )
+    db_session.commit()
+
+    rows = list_entry_documents(db_session, seeded_kb.kb_id)
+    assert any(row.document_id == document.document_id for row in rows)

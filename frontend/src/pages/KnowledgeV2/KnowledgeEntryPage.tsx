@@ -344,7 +344,7 @@ export default function KnowledgeEntryPage() {
         primary_node_id: selectedNodeId,
         content: preview.content_md,
         metadata: {
-          source_type: "bid",
+          source_type: selectedDocument?.source_type ?? "bid",
           file_name: selectedDocument?.document_name,
         },
       });
@@ -477,7 +477,10 @@ export default function KnowledgeEntryPage() {
           loading={loadingDocuments}
           placeholder="请选择文档"
           value={selectedDocId}
-          options={documents.map((doc) => ({ label: doc.document_name, value: doc.doc_id }))}
+          options={documents.map((doc) => ({
+            label: doc.source_type === "template" ? `${doc.document_name}（模板）` : doc.document_name,
+            value: doc.doc_id,
+          }))}
           onChange={(value) => setSelectedDocId(value)}
         />
       </Card>

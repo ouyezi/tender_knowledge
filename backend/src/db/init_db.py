@@ -19,6 +19,7 @@ from src.models.retrieval_index_entry import (
     RetrievalObjectType,
 )
 from src.models.chapter_draft import DraftOutcomeStatus
+from src.models.document import DocumentSourceType
 from src.models.file_import import FileImportStatus
 from src.models.generation_task import GenerationTaskStatus
 from src.models.module_assembly_suggestion import ModuleAssemblySuggestionStatus
@@ -365,6 +366,11 @@ def init_db() -> None:
             conn,
             "fileimportstatus",
             [member.value for member in FileImportStatus],
+        )
+        _sync_postgres_enum(
+            conn,
+            "documentsourcetype",
+            [member.value for member in DocumentSourceType],
         )
         _sync_missing_columns(conn)
         _sync_epic4_columns(conn)
