@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { KnowledgeAssetLike } from "./buildContentBlocks";
+import { toAbsoluteMediaUrl } from "./resolveKnowledgeImageUrl";
 
 export function parseMarkdownTable(raw?: string | null): { headers: string[]; rows: string[][] } | null {
   if (!raw) return null;
@@ -28,7 +29,7 @@ export function renderKnowledgeAsset(asset: KnowledgeAssetLike): ReactNode {
   if (asset.asset_type === "image" && asset.image_storage_url) {
     return (
       <img
-        src={asset.image_storage_url}
+        src={toAbsoluteMediaUrl(asset.image_storage_url)}
         alt={asset.asset_code ?? `image-${asset.id}`}
         style={{ maxWidth: "100%", border: "1px solid #f0f0f0", borderRadius: 6 }}
       />

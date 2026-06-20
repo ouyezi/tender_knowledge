@@ -1,6 +1,6 @@
 import { Splitter } from "antd";
 import type { ReactNode } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 const STORAGE_KEY = "knowledge-v2-entry-layout";
 const DEFAULT_OUTER: [number, number] = [20, 80];
@@ -28,6 +28,16 @@ function readStoredLayout(): StoredLayout {
   }
 }
 
+function toPercentPair(sizes: number[]): [number, number] | null {
+  const first = Number(sizes[0]);
+  const second = Number(sizes[1]);
+  const total = first + second;
+  if (!Number.isFinite(first) || !Number.isFinite(second) || total <= 0) {
+    return null;
+  }
+  return [(first / total) * 100, (second / total) * 100];
+}
+
 interface ResizableWorkspaceProps {
   treePanel: ReactNode;
   previewPanel: ReactNode;
@@ -36,8 +46,6 @@ interface ResizableWorkspaceProps {
 
 export default function ResizableWorkspace({ treePanel, previewPanel, entryPanel }: ResizableWorkspaceProps) {
   const initial = useMemo(() => readStoredLayout(), []);
-  const [outerSizes, setOuterSizes] = useState<[number, number]>(initial.outer);
-  const [innerSizes, setInnerSizes] = useState<[number, number]>(initial.inner);
 
   const persistLayout = useCallback((outer: [number, number], inner: [number, number]) => {
     try {
@@ -51,26 +59,27 @@ export default function ResizableWorkspace({ treePanel, previewPanel, entryPanel
     <Splitter
       style={{ width: "100%", minHeight: "calc(100vh - 280px)" }}
       onResizeEnd={(sizes) => {
-        const next: [number, number] = [Number(sizes[0]), Number(sizes[1])];
-        setOuterSizes(next);
-        persistLayout(next, innerSizes);
+        const outer = toPercentPair(sizes);
+        if (!outer) return;
+        persistLayout(outer, readStoredLayout().inner);
       }}
     >
-      <Splitter.Panel size={`${outerSizes[0]}%`} min="200px">
+      <Splitter.Panel defaultSize={`${initial.outer[0]}%`} min="200px">
         {treePanel}
       </Splitter.Panel>
-      <Splitter.Panel size={`${outerSizes[1]}%`} min="200px">
+      <Splitter.Panel defaultSize={`${initial.outer[1]}%`} min="200px">
         <Splitter
+          style={{ height: "100%" }}
           onResizeEnd={(sizes) => {
-            const next: [number, number] = [Number(sizes[0]), Number(sizes[1])];
-            setInnerSizes(next);
-            persistLayout(outerSizes, next);
+            const inner = toPercentPair(sizes);
+            if (!inner) return;
+            persistLayout(readStoredLayout().outer, inner);
           }}
         >
-          <Splitter.Panel size={`${innerSizes[0]}%`} min="200px">
+          <Splitter.Panel defaultSize={`${initial.inner[0]}%`} min="200px">
             {previewPanel}
           </Splitter.Panel>
-          <Splitter.Panel size={`${innerSizes[1]}%`} min="200px">
+          <Splitter.Panel defaultSize={`${initial.inner[1]}%`} min="200px">
             {entryPanel}
           </Splitter.Panel>
         </Splitter>

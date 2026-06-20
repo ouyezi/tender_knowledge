@@ -436,6 +436,8 @@ export default function KnowledgeEntryPage() {
                 contentMd={preview.content_md}
                 assets={preview.assets}
                 sectionCharStart={preview.char_start}
+                kbId={selectedKbId}
+                imageRefMap={preview.image_ref_map}
               />
             ) : null}
           </Card>

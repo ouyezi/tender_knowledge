@@ -210,6 +210,8 @@ export default function KnowledgeChunkDetailDrawer({
               contentMd={detail.content || ""}
               assets={detail.assets}
               sectionCharStart={detail.char_start}
+              kbId={kbId}
+              imageRefMap={detail.image_ref_map}
             />
           </Card>
 

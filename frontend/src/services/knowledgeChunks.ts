@@ -46,6 +46,7 @@ export interface NodePreview {
   page_end: number | null;
   catalog_path: CatalogPathItem[];
   assets: PreviewAsset[];
+  image_ref_map?: Record<string, string>;
 }
 
 export interface PrefillRequest {
@@ -195,6 +196,7 @@ export interface KnowledgeChunkDetail {
   embedding_status: string;
   previous_version: PreviousVersionSummary | null;
   assets: ChunkAssetDetail[];
+  image_ref_map?: Record<string, string>;
 }
 
 export interface CreateKnowledgeChunkResult {

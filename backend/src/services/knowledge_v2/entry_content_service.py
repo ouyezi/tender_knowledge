@@ -15,6 +15,10 @@ from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import load_content_md
 from src.services.doc_chunk.section_slice import outline_nodes_from_tree_nodes, slice_section_markdown
 from src.services.knowledge_v2.asset_link_service import assets_in_range
+from src.services.knowledge_v2.media_url_service import (
+    load_image_ref_map_payload,
+    resolve_storage_path_to_media_url,
+)
 
 
 class DocumentNotFoundError(Exception):
@@ -130,7 +134,8 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> d
         "page_start": page_start,
         "page_end": page_end,
         "catalog_path": build_catalog_path(nodes_by_id, node_id),
-        "assets": [_serialize_asset(item) for item in matched_assets],
+        "assets": [_serialize_asset(item, db, kb_id=kb_id) for item in matched_assets],
+        "image_ref_map": load_image_ref_map_payload(document_id=doc_id),
     }
 
 
@@ -264,7 +269,14 @@ def _page_range(
     return (None, None)
 
 
-def _serialize_asset(asset: ChunkAsset) -> dict[str, Any]:
+def _serialize_asset(asset: ChunkAsset, db: Session, *, kb_id: UUID) -> dict[str, Any]:
+    image_storage_url = asset.image_storage_url
+    if asset.asset_type == "image":
+        image_storage_url = resolve_storage_path_to_media_url(
+            db,
+            kb_id=kb_id,
+            storage_path=asset.image_storage_url,
+        )
     return {
         "id": asset.id,
         "asset_type": asset.asset_type,
@@ -274,5 +286,5 @@ def _serialize_asset(asset: ChunkAsset) -> dict[str, Any]:
         "page_start": asset.page_start,
         "page_end": asset.page_end,
         "raw_markdown": asset.raw_markdown,
-        "image_storage_url": asset.image_storage_url,
+        "image_storage_url": image_storage_url,
     }

@@ -17,7 +17,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BOOLEAN_OPTIONS, getEnumLabel, getFieldLabel } from "../../constants/knowledgeChunkMeta";
+import { BOOLEAN_OPTIONS, getEnumLabel, getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKBContext } from "../../layout/KBContext";
 import {
   listKnowledgeChunks,
@@ -337,17 +337,17 @@ export default function KnowledgeBrowsePage() {
           <Row gutter={12} align="middle">
             <Col flex="1 1 160px">
               <Form.Item name="category" label={getFieldLabel("category")}>
-                <Input allowClear />
+                <Select allowClear options={getEnumOptions("category")} />
               </Form.Item>
             </Col>
             <Col flex="1 1 160px">
               <Form.Item name="knowledge_type" label={getFieldLabel("knowledge_type")}>
-                <Input allowClear />
+                <Select allowClear options={getEnumOptions("knowledge_type")} />
               </Form.Item>
             </Col>
             <Col flex="1 1 160px">
               <Form.Item name="status" label={getFieldLabel("status")}>
-                <Input allowClear />
+                <Select allowClear options={getEnumOptions("status")} />
               </Form.Item>
             </Col>
             <Col flex="2 1 220px">
@@ -373,7 +373,7 @@ export default function KnowledgeBrowsePage() {
               <Row gutter={12}>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Form.Item name="source_type" label={getFieldLabel("source_type")}>
-                    <Input allowClear />
+                    <Select allowClear options={getEnumOptions("source_type")} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
@@ -398,7 +398,7 @@ export default function KnowledgeBrowsePage() {
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Form.Item name="security_level" label={getFieldLabel("security_level")}>
-                    <Input allowClear />
+                    <Select allowClear options={getEnumOptions("security_level")} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
@@ -413,7 +413,7 @@ export default function KnowledgeBrowsePage() {
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Form.Item name="review_status" label={getFieldLabel("review_status")}>
-                    <Input allowClear />
+                    <Select allowClear options={getEnumOptions("review_status")} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>

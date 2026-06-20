@@ -31,6 +31,10 @@ from src.services.knowledge_v2.entry_content_service import (
     knowledge_source_type_for_document,
     list_entry_documents,
 )
+from src.services.knowledge_v2.media_url_service import (
+    load_image_ref_map_payload,
+    resolve_storage_path_to_media_url,
+)
 from src.services.knowledge_v2.prefill_service import prefill_knowledge_attributes
 
 router = APIRouter(
@@ -47,7 +51,14 @@ def _embed_chunk_in_background(chunk_id: int) -> None:
         db.close()
 
 
-def _serialize_asset(asset: ChunkAsset) -> dict:
+def _serialize_asset(asset: ChunkAsset, db: Session, *, kb_id: UUID) -> dict:
+    image_storage_url = asset.image_storage_url
+    if asset.asset_type == "image":
+        image_storage_url = resolve_storage_path_to_media_url(
+            db,
+            kb_id=kb_id,
+            storage_path=asset.image_storage_url,
+        )
     return {
         "id": asset.id,
         "asset_type": asset.asset_type,
@@ -426,7 +437,7 @@ def list_chunk_assets_api(
         )
     assets = query.order_by(ChunkAsset.char_start.asc(), ChunkAsset.id.asc()).all()
     return success(
-        {"items": [_serialize_asset(asset) for asset in assets]},
+        {"items": [_serialize_asset(asset, db, kb_id=kb_id) for asset in assets]},
         trace_id=get_trace_id(),
     )
 
@@ -462,6 +473,7 @@ def get_knowledge_chunk_api(
     status = get_embedding_status(db, row.id)
     payload = _serialize_chunk_detail(row, embedding_status=status)
     payload["previous_version"] = _serialize_previous_version(previous)
-    payload["assets"] = [_serialize_asset(asset) for asset in assets]
+    payload["assets"] = [_serialize_asset(asset, db, kb_id=kb_id) for asset in assets]
+    payload["image_ref_map"] = load_image_ref_map_payload(document_id=row.doc_id)
     return success(payload, trace_id=get_trace_id())
 
