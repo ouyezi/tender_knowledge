@@ -14,12 +14,12 @@ from src.models.file_import import (
     HashStatus,
 )
 from src.models.file_purpose_suggestion import FilePurposeSuggestion
+from src.models.file_purpose_suggestion import SuggestionSource
 from src.models.import_audit_log import ImportAuditAction, ImportAuditLog
 from src.services.duplicate_detection import find_duplicates_by_hash
 from src.services.file_hash import sha256_stream
 from src.services.file_storage import FileStorage
 from src.services.import_task_runner import run_post_upload
-from src.services.purpose_suggestion import suggest_from_filename
 
 ALLOWED_EXTENSIONS: dict[str, FileType] = {
     ".docx": FileType.docx,
@@ -57,6 +57,22 @@ class FileImportServiceError(Exception):
         self.status_code = status_code
         self.details = details or {}
         super().__init__(message)
+
+
+def _suggest_from_filename(file_name: str, file_type: str):
+    lower_name = file_name.lower()
+    if "模板" in lower_name or "template" in lower_name:
+        purpose = FilePurpose.template_file
+        rationale = "文件名命中模板关键词"
+    else:
+        purpose = FilePurpose.actual_bid
+        rationale = "默认归类为投标文件"
+    return {
+        "suggested_purpose": purpose,
+        "purpose_confidence": 0.6,
+        "suggestion_source": SuggestionSource.rule,
+        "rationale": f"{rationale} (type={file_type})",
+    }
 
 
 def upload_file_and_enqueue(
@@ -162,15 +178,15 @@ def upload_file_and_enqueue(
         rec.hash_status = HashStatus.unavailable
         rec.status = FileImportStatus.need_confirm
         is_duplicate_new_version = True
-        suggestion = suggest_from_filename(rec.file_name, rec.file_type.value)
+        suggestion = _suggest_from_filename(rec.file_name, rec.file_type.value)
         db.add(
             FilePurposeSuggestion(
                 kb_id=kb_id,
                 import_id=rec.import_id,
-                suggested_purpose=suggestion.suggested_purpose,
-                purpose_confidence=suggestion.purpose_confidence,
-                suggestion_source=suggestion.suggestion_source,
-                rationale=suggestion.rationale,
+                suggested_purpose=suggestion["suggested_purpose"],
+                purpose_confidence=suggestion["purpose_confidence"],
+                suggestion_source=suggestion["suggestion_source"],
+                rationale=suggestion["rationale"],
             )
         )
         db.add(
@@ -194,7 +210,7 @@ def upload_file_and_enqueue(
                 import_id=rec.import_id,
                 operator_id=operator_id,
                 action=ImportAuditAction.suggest_ready,
-                payload_summary={"suggested_purpose": suggestion.suggested_purpose.value},
+                payload_summary={"suggested_purpose": suggestion["suggested_purpose"].value},
             )
         )
 

@@ -21,24 +21,10 @@ class ImportContext:
 @dataclass
 class ImportResult:
     document_id: UUID
-    bid_outline_id: UUID
     tree_node_count: int
-    outline_node_count: int
-    candidate_count: int
     parse_engine: str
-    extract_strategy: str
     tree_id_map: dict[str, UUID] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
-
-
-@dataclass
-class OutlineTocEntry:
-    temp_id: str
-    parent_temp_id: str | None
-    title: str
-    level: int
-    sort_order: int
-    source_node_id: UUID | None = None
 
 
 class DocChunkImportError(Exception):

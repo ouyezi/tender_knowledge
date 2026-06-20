@@ -9,7 +9,7 @@ from src.services.knowledge_v2.embedding_task import (
     embed_knowledge_chunk,
     get_embedding_status,
 )
-from src.services.retrieval.indexing.embedding_client import EmbeddingResult
+from src.services.knowledge_v2.embedding_client import EmbeddingResult
 
 
 def _seed_chunk(db_session, kb_id, *, content: str = "chunk body", summary: str = "chunk summary"):

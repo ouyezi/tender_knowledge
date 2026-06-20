@@ -9,7 +9,7 @@ from src.config import settings
 from src.models.chunk_asset import ChunkAsset
 from src.models.chunk_embedding import ChunkEmbedding
 from src.models.knowledge_chunk import KnowledgeChunk
-from src.services.retrieval.indexing.embedding_client import EmbeddingClient, EmbeddingResult
+from src.services.knowledge_v2.embedding_client import EmbeddingClient, EmbeddingResult
 
 logger = logging.getLogger(__name__)
 

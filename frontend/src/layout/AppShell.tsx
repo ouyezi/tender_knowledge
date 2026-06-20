@@ -8,14 +8,7 @@ const { Text } = Typography;
 
 const NAV_ITEMS = [
   { key: "/", label: <Link to="/">知识库</Link> },
-  { key: "/product-categories", label: <Link to="/product-categories">产品分类</Link> },
-  { key: "/chapter-taxonomies", label: <Link to="/chapter-taxonomies">章节分类</Link> },
   { key: "/file-imports", label: <Link to="/file-imports">来源导入</Link> },
-  { key: "/template-libraries", label: <Link to="/template-libraries">模板库</Link> },
-  { key: "/outlines", label: <Link to="/outlines">目录</Link> },
-  { key: "/retrieval-optimization", label: <Link to="/retrieval-optimization">检索优化</Link> },
-  { key: "/candidates", label: <Link to="/candidates">候选</Link> },
-  { key: "/knowledge", label: <Link to="/knowledge">正式知识</Link> },
   { key: "/knowledge-v2/entry", label: <Link to="/knowledge-v2/entry">知识录入 V2</Link> },
   { key: "/knowledge-v2/browse", label: <Link to="/knowledge-v2/browse">知识浏览 V2</Link> },
 ];

@@ -1,5 +1,3 @@
-from uuid import UUID
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -10,14 +8,12 @@ from src.api.envelope import success
 from src.api.middleware.audit import get_trace_id
 from src.models.knowledge_base import KBStatus, KnowledgeBase
 from src.services import kb_service
-from src.services.kb_clone_service import clone_kb
 
 router = APIRouter(prefix="/api/v1/kbs", tags=["knowledge-bases"])
 
 
 class CreateKBRequest(BaseModel):
     name: str
-    clone_from_kb_id: UUID | None = None
 
 
 class PatchKBRequest(BaseModel):
@@ -38,17 +34,9 @@ def _kb_dict(kb: KnowledgeBase) -> dict:
 def create_kb(
     body: CreateKBRequest,
     db: Session = Depends(get_db),
-    operator_id: str = Depends(get_operator_id),
+    _: str = Depends(get_operator_id),
 ):
     kb = kb_service.create_kb(db, body.name)
-    if body.clone_from_kb_id is not None:
-        clone_kb(
-            db,
-            body.clone_from_kb_id,
-            kb.kb_id,
-            operator_id=operator_id,
-            trace_id=str(get_trace_id()),
-        )
     return success(_kb_dict(kb), trace_id=get_trace_id())
 
 

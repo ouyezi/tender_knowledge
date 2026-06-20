@@ -33,12 +33,6 @@ class FileType(str, enum.Enum):
 class FilePurpose(str, enum.Enum):
     actual_bid = "actual_bid"
     template_file = "template_file"
-    qualification = "qualification"
-    ppt_material = "ppt_material"
-    cover_guide = "cover_guide"
-    writing_guide = "writing_guide"
-    wiki_source = "wiki_source"
-    other = "other"
 
 
 class FileImportStatus(str, enum.Enum):
@@ -103,9 +97,7 @@ class FileImport(Base):
     product_category_ids: Mapped[list[Any]] = mapped_column(
         JSON, nullable=False, default=list
     )
-    chapter_taxonomy_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("chapter_taxonomies.taxonomy_id"), nullable=True
-    )
+    chapter_taxonomy_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     target_object_type: Mapped[TargetObjectType | None] = mapped_column(
         Enum(TargetObjectType), nullable=True
     )

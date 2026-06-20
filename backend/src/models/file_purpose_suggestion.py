@@ -32,7 +32,7 @@ class FilePurposeSuggestion(Base):
         JSON, nullable=False, default=list
     )
     suggested_chapter_taxonomy_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("chapter_taxonomies.taxonomy_id"), nullable=True
+        Uuid(as_uuid=True), nullable=True
     )
     suggestion_source: Mapped[SuggestionSource] = mapped_column(
         Enum(SuggestionSource), nullable=False, default=SuggestionSource.rule
