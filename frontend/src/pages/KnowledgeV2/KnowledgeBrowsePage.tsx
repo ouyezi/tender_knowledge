@@ -17,6 +17,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BOOLEAN_OPTIONS, getEnumLabel, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKBContext } from "../../layout/KBContext";
 import {
   listKnowledgeChunks,
@@ -157,6 +158,7 @@ export default function KnowledgeBrowsePage() {
   const [selectedPresetName, setSelectedPresetName] = useState<string>();
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetNameInput, setPresetNameInput] = useState("");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   useEffect(() => {
     if (!selectedKbId) {
@@ -270,7 +272,7 @@ export default function KnowledgeBrowsePage() {
   const columns: ColumnsType<KnowledgeChunkListItem> = useMemo(
     () => [
       {
-        title: "title",
+        title: getFieldLabel("title"),
         dataIndex: "title",
         key: "title",
         ellipsis: true,
@@ -281,40 +283,40 @@ export default function KnowledgeBrowsePage() {
         ),
       },
       {
-        title: "version",
+        title: getFieldLabel("version"),
         dataIndex: "version",
         key: "version",
         width: 120,
       },
       {
-        title: "category",
+        title: getFieldLabel("category"),
         dataIndex: "category",
         key: "category",
         width: 140,
-        render: (value: string) => value || "-",
+        render: (value: string) => getEnumLabel("category", value) || "-",
       },
       {
-        title: "knowledge_type",
+        title: getFieldLabel("knowledge_type"),
         dataIndex: "knowledge_type",
         key: "knowledge_type",
         width: 160,
-        render: (value: string) => value || "-",
+        render: (value: string) => <Tag>{getEnumLabel("knowledge_type", value)}</Tag>,
       },
       {
-        title: "status",
+        title: getFieldLabel("status"),
         dataIndex: "status",
         key: "status",
         width: 140,
-        render: (value: string) => <Tag>{value || "-"}</Tag>,
+        render: (value: string) => <Tag>{getEnumLabel("status", value)}</Tag>,
       },
       {
-        title: "token_count",
+        title: getFieldLabel("token_count"),
         dataIndex: "token_count",
         key: "token_count",
         width: 120,
       },
       {
-        title: "update_time",
+        title: getFieldLabel("update_time"),
         dataIndex: "update_time",
         key: "update_time",
         width: 190,
@@ -332,135 +334,134 @@ export default function KnowledgeBrowsePage() {
     <>
       <Card title="知识浏览 V2">
         <Form form={form} layout="vertical">
-          <Row gutter={12}>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="category" label="category">
+          <Row gutter={12} align="middle">
+            <Col flex="1 1 160px">
+              <Form.Item name="category" label={getFieldLabel("category")}>
                 <Input allowClear />
               </Form.Item>
             </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="knowledge_type" label="knowledge_type">
+            <Col flex="1 1 160px">
+              <Form.Item name="knowledge_type" label={getFieldLabel("knowledge_type")}>
                 <Input allowClear />
               </Form.Item>
             </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="source_type" label="source_type">
+            <Col flex="1 1 160px">
+              <Form.Item name="status" label={getFieldLabel("status")}>
                 <Input allowClear />
               </Form.Item>
             </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="status" label="status">
-                <Input allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="products" label="products">
-                <Select mode="tags" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="industries" label="industries">
-                <Select mode="tags" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="regions" label="regions">
-                <Select mode="tags" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="tags" label="tags">
-                <Select mode="tags" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="security_level" label="security_level">
-                <Input allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="is_template" label="is_template">
-                <Select
-                  allowClear
-                  options={[
-                    { value: "true", label: "true" },
-                    { value: "false", label: "false" },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="winning_flag" label="winning_flag">
-                <Select
-                  allowClear
-                  options={[
-                    { value: "true", label: "true" },
-                    { value: "false", label: "false" },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="review_status" label="review_status">
-                <Input allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="issue_date_from" label="issue_date_from">
-                <Input placeholder="YYYY-MM-DD" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="issue_date_to" label="issue_date_to">
-                <Input placeholder="YYYY-MM-DD" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="expire_date_from" label="expire_date_from">
-                <Input placeholder="YYYY-MM-DD" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Form.Item name="expire_date_to" label="expire_date_to">
-                <Input placeholder="YYYY-MM-DD" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={24} md={16} lg={12}>
-              <Form.Item name="keyword" label="keyword">
+            <Col flex="2 1 220px">
+              <Form.Item name="keyword" label={getFieldLabel("keyword")}>
                 <Input allowClear placeholder="匹配 title/summary" />
               </Form.Item>
             </Col>
+            <Col flex="0 0 auto">
+              <Space style={{ marginBottom: 24 }}>
+                <Button type="primary" onClick={applyFilters}>
+                  查询
+                </Button>
+                <Button onClick={resetFilters}>重置</Button>
+                <Button type="link" onClick={() => setFiltersExpanded((value) => !value)}>
+                  {filtersExpanded ? "收起筛选" : "展开更多筛选"}
+                </Button>
+              </Space>
+            </Col>
           </Row>
+
+          {filtersExpanded ? (
+            <>
+              <Row gutter={12}>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="source_type" label={getFieldLabel("source_type")}>
+                    <Input allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="products" label={getFieldLabel("products")}>
+                    <Select mode="tags" allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="industries" label={getFieldLabel("industries")}>
+                    <Select mode="tags" allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="regions" label={getFieldLabel("regions")}>
+                    <Select mode="tags" allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="tags" label={getFieldLabel("tags")}>
+                    <Select mode="tags" allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="security_level" label={getFieldLabel("security_level")}>
+                    <Input allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="is_template" label={getFieldLabel("is_template")}>
+                    <Select allowClear options={[...BOOLEAN_OPTIONS]} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="winning_flag" label={getFieldLabel("winning_flag")}>
+                    <Select allowClear options={[...BOOLEAN_OPTIONS]} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="review_status" label={getFieldLabel("review_status")}>
+                    <Input allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="issue_date_from" label={getFieldLabel("issue_date_from")}>
+                    <Input placeholder="YYYY-MM-DD" allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="issue_date_to" label={getFieldLabel("issue_date_to")}>
+                    <Input placeholder="YYYY-MM-DD" allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="expire_date_from" label={getFieldLabel("expire_date_from")}>
+                    <Input placeholder="YYYY-MM-DD" allowClear />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={6}>
+                  <Form.Item name="expire_date_to" label={getFieldLabel("expire_date_to")}>
+                    <Input placeholder="YYYY-MM-DD" allowClear />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Space style={{ marginBottom: 16 }}>
+                <Select
+                  allowClear
+                  placeholder="筛选方案"
+                  style={{ width: 220 }}
+                  value={selectedPresetName}
+                  options={presets.map((item) => ({ label: item.name, value: item.name }))}
+                  onChange={(value) => applyPreset(value)}
+                />
+                <Button onClick={() => setSavePresetOpen(true)}>保存方案</Button>
+                <Popconfirm
+                  title="确认删除当前筛选方案？"
+                  okText="删除"
+                  cancelText="取消"
+                  onConfirm={() => deletePreset(selectedPresetName)}
+                  disabled={!selectedPresetName}
+                >
+                  <Button disabled={!selectedPresetName}>删除方案</Button>
+                </Popconfirm>
+              </Space>
+            </>
+          ) : null}
         </Form>
 
-        <Space style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", width: "100%" }}>
-          <Space>
-            <Button type="primary" onClick={applyFilters}>
-              查询
-            </Button>
-            <Button onClick={resetFilters}>重置</Button>
-          </Space>
-          <Space>
-            <Select
-              allowClear
-              placeholder="筛选方案"
-              style={{ width: 220 }}
-              value={selectedPresetName}
-              options={presets.map((item) => ({ label: item.name, value: item.name }))}
-              onChange={(value) => applyPreset(value)}
-            />
-            <Button onClick={() => setSavePresetOpen(true)}>保存方案</Button>
-            <Popconfirm
-              title="确认删除当前筛选方案？"
-              okText="删除"
-              cancelText="取消"
-              onConfirm={() => deletePreset(selectedPresetName)}
-              disabled={!selectedPresetName}
-            >
-              <Button disabled={!selectedPresetName}>删除方案</Button>
-            </Popconfirm>
-          </Space>
-        </Space>
+        <div style={{ marginBottom: 16 }} />
 
         <Table
           rowKey="id"
