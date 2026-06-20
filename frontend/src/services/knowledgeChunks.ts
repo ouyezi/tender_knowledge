@@ -4,6 +4,7 @@ export interface EntryDocument {
   doc_id: string;
   document_name: string;
   import_id: string;
+  source_type?: string;
   updated_at: string | null;
 }
 

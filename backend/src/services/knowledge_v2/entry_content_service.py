@@ -9,7 +9,7 @@ from sqlalchemy import and_, exists
 from sqlalchemy.orm import Session
 
 from src.models.chunk_asset import ChunkAsset
-from src.models.document import Document, DocumentParseStatus
+from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import load_content_md
@@ -27,6 +27,12 @@ class NodeNotFoundError(Exception):
 
 class ContentNotAvailableError(Exception):
     pass
+
+
+def knowledge_source_type_for_document(document: Document) -> str:
+    if document.source_type == DocumentSourceType.template_file:
+        return "template"
+    return "bid"
 
 
 def list_entry_documents(db: Session, kb_id: UUID) -> list[Document]:

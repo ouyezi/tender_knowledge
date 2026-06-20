@@ -28,6 +28,7 @@ from src.services.knowledge_v2.entry_content_service import (
     NodeNotFoundError,
     get_document_tree,
     get_node_preview,
+    knowledge_source_type_for_document,
     list_entry_documents,
 )
 from src.services.knowledge_v2.prefill_service import prefill_knowledge_attributes
@@ -184,6 +185,7 @@ def list_entry_documents_api(
                     "doc_id": str(row.document_id),
                     "document_name": row.document_name,
                     "import_id": str(row.import_id),
+                    "source_type": knowledge_source_type_for_document(row),
                     "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 }
                 for row in rows

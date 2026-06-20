@@ -11,6 +11,7 @@ from src.db.session import Base
 
 class DocumentSourceType(str, enum.Enum):
     actual_bid = "actual_bid"
+    template_file = "template_file"
 
 
 class DocumentSourceUsage(str, enum.Enum):

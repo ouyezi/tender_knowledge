@@ -7,6 +7,9 @@ import uuid
 from sqlalchemy.orm import Session
 
 from src.config import Settings
+from src.services.doc_chunk.import_service import import_workspace_for_knowledge_entry
+from src.services.doc_chunk.pipeline_runner import run_doc_chunk_pipeline
+from src.services.doc_chunk.workspace_manager import cleanup_workspace, ensure_workspace, workspace_path_for_task
 from src.db.session import SessionLocal
 from src.models.downstream_task_entry import (
     DownstreamTaskEntry,
@@ -298,6 +301,57 @@ def enqueue_template_parse(
     return task
 
 
+def _import_knowledge_entry_document(
+    db: Session,
+    *,
+    file_import: FileImport,
+    task: TemplateParseTask,
+) -> None:
+    if not Settings().use_doc_chunk_parse:
+        return
+    if file_import.file_purpose != FilePurpose.template_file:
+        return
+
+    docx_path = _resolve_docx_path(file_import)
+    storage_root = Path(Settings().storage_root)
+    workspace = workspace_path_for_task(
+        storage_root=storage_root,
+        kb_id=file_import.kb_id,
+        import_id=file_import.import_id,
+        parse_task_id=task.parse_task_id,
+    )
+    ensure_workspace(workspace, overwrite=True)
+    try:
+        run_doc_chunk_pipeline(docx_path, workspace)
+        try:
+            with db.begin_nested():
+                result = import_workspace_for_knowledge_entry(
+                    db,
+                    kb_id=file_import.kb_id,
+                    import_id=file_import.import_id,
+                    workspace=workspace,
+                    file_import=file_import,
+                    persist_outline=False,
+                    persist_candidates=False,
+                )
+            _append_log(
+                task,
+                (
+                    f"知识录入文档已就绪：document_id={result.document_id} "
+                    f"tree_nodes={result.tree_node_count}"
+                ),
+            )
+            db.flush()
+        except Exception as exc:
+            _append_log(
+                task,
+                f"知识录入文档导入失败（不影响模板解析）: {exc}",
+                level="warning",
+            )
+    finally:
+        cleanup_workspace(workspace, on_success=True)
+
+
 def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
     file_import = db.get(FileImport, entry.import_id)
     if file_import is None:
@@ -331,6 +385,8 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
         docx_path = _resolve_docx_path(file_import)
         if not docx_path.exists():
             raise FileNotFoundError(f"File not found: {docx_path}")
+
+        _import_knowledge_entry_document(db, file_import=file_import, task=task)
 
         outline_nodes = parse_outline(docx_path)
         materials = extract_fixed_paragraph_materials(docx_path, outline_nodes=outline_nodes)
