@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     knowledge_prefill_model: str = "qwen3-max"
     knowledge_prefill_timeout_sec: int = 10
-    blueprint_generate_model: str = "qwen-plus"
+    blueprint_generate_model: str = "qwen-turbo"
     blueprint_generate_timeout_sec: int = 60
     blueprint_generate_max_tokens: int = 20480
     embedding_model: str = "text-embedding-v2"
