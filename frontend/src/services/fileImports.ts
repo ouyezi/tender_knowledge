@@ -342,9 +342,6 @@ export interface DeleteFileImportResult {
 export interface FileImportPurgeImpact {
   import_id: string;
   file_name: string;
-  has_published_assets: boolean;
-  published_counts: Record<string, number>;
-  published_total: number;
   intermediate_counts: Record<string, number>;
 }
 
@@ -361,15 +358,9 @@ export async function getFileImportPurgeImpact(
 export async function deleteFileImport(
   kbId: string,
   importId: string,
-  options?: { deprecatePublished?: boolean },
 ): Promise<DeleteFileImportResult> {
-  const params = new URLSearchParams();
-  if (options?.deprecatePublished) {
-    params.set("deprecate_published", "true");
-  }
-  const query = params.toString();
   return apiRequest<DeleteFileImportResult>(
-    `/api/v1/kbs/${kbId}/file-imports/${importId}${query ? `?${query}` : ""}`,
+    `/api/v1/kbs/${kbId}/file-imports/${importId}`,
     { method: "DELETE" },
   );
 }

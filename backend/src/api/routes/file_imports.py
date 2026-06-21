@@ -112,12 +112,16 @@ def list_file_imports(
             return None
         if task.status == ActualBidParseTaskStatus.running:
             return "parsing"
-        if task.status == ActualBidParseTaskStatus.completed:
+        if task.status == ActualBidParseTaskStatus.ready:
+            return "parse_ready"
+        if task.status == ActualBidParseTaskStatus.confirmed:
             return "parse_confirmed"
         if task.status == ActualBidParseTaskStatus.failed:
             return "failed"
         if task.status == ActualBidParseTaskStatus.pending:
             return "parsing"
+        if task.status == ActualBidParseTaskStatus.cancelled:
+            return "failed"
         return None
 
     items = [
@@ -571,7 +575,6 @@ def get_file_import_purge_impact(
 def delete_file_import(
     kb_id: UUID,
     import_id: UUID,
-    deprecate_published: bool = False,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(kb_write_guard),
     operator_id: str = Depends(get_operator_id),
@@ -583,7 +586,6 @@ def delete_file_import(
             import_id=import_id,
             operator_id=operator_id,
             trace_id=get_trace_id(),
-            deprecate_published=deprecate_published,
         )
         db.commit()
     except FileImportPurgeServiceError as exc:

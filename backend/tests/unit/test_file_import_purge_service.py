@@ -1,0 +1,161 @@
+from uuid import uuid4
+
+from src.models.document import Document, DocumentParseStatus, DocumentSourceType
+from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
+from src.models.knowledge_chunk import KnowledgeChunk
+from src.services.file_import_purge_service import check_purge_impact, purge_file_import
+
+
+def _seed_import_with_chunk(db_session, seeded_kb):
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="a.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/a.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
+    doc = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="a.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
+    )
+    db_session.add(doc)
+    db_session.flush()
+    db_session.add(
+        KnowledgeChunk(
+            id=1,
+            kb_id=seeded_kb.kb_id,
+            knowledge_code="K-001",
+            version="1.0",
+            title="t",
+            content="c",
+            knowledge_type="fact",
+            doc_id=doc.document_id,
+            source_type="bid",
+            catalog_path=[],
+            primary_node_id=str(uuid4()),
+            category="technical",
+            tags=[],
+            products=[],
+            industries=[],
+            customer_types=[],
+            regions=[],
+            content_hash="abc123",
+            token_count=1,
+        )
+    )
+    db_session.commit()
+    return import_id, doc
+
+
+def test_check_purge_impact_counts_knowledge_chunks(db_session, seeded_kb):
+    import_id, _doc = _seed_import_with_chunk(db_session, seeded_kb)
+
+    report = check_purge_impact(db_session, kb_id=seeded_kb.kb_id, import_id=import_id)
+    assert report.intermediate_counts["knowledge_chunks"] >= 1
+    assert report.has_published_assets is False
+
+
+def test_purge_file_import_hard_deletes_row(db_session, seeded_kb):
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="b.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/b.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
+    db_session.commit()
+
+    summary = purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert summary.status == "deleted"
+    assert db_session.get(FileImport, import_id) is None
+    assert summary.deleted_counts.get("file_imports") == 1
+
+
+def test_purge_file_import_deletes_knowledge_chunks(db_session, seeded_kb):
+    import_id, doc = _seed_import_with_chunk(db_session, seeded_kb)
+    doc_id = doc.document_id
+
+    purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert db_session.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc_id).count() == 0
+
+
+def test_purge_file_import_removes_storage_dirs(db_session, seeded_kb, tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "uploads"))
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="c.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/c.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
+    doc = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="c.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    storage_root = tmp_path / "uploads"
+    import_dir = storage_root / str(seeded_kb.kb_id) / str(import_id)
+    import_dir.mkdir(parents=True)
+    (import_dir / "upload.docx").write_bytes(b"x")
+    doc_dir = storage_root / "documents" / str(doc.document_id)
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "content.md").write_text("# hi", encoding="utf-8")
+    workspace_dir = storage_root / "doc_chunk_workspaces" / str(seeded_kb.kb_id) / str(import_id)
+    workspace_dir.mkdir(parents=True)
+
+    purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert not import_dir.exists()
+    assert not doc_dir.exists()
+    assert not workspace_dir.exists()

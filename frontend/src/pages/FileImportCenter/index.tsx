@@ -8,7 +8,6 @@ import ConfirmDrawer from "./ConfirmDrawer";
 import DuplicateFileModal from "./DuplicateFileModal";
 import TaskLogDrawer from "./TaskLogDrawer";
 import OperationLogDrawer from "./OperationLogDrawer";
-import ImpactAnalysisModal from "../../components/ImpactAnalysisModal";
 import {
   deleteFileImport,
   getFileImportPurgeImpact,
@@ -18,7 +17,6 @@ import {
   getFileImport,
   listFileImports,
   type FileImportListItem,
-  type FileImportPurgeImpact,
   type ParseStatus,
   uploadFile,
 } from "../../services/fileImports";
@@ -63,7 +61,13 @@ function ParseStatusCell({
     label: effectiveStatus,
   };
   const isFailed = effectiveStatus === "failed" || effectiveStatus === "parse_failed";
-  const canRetryParse = isFailed || effectiveStatus === "parsing" || effectiveStatus === "running";
+  const canRetryParse =
+    isFailed ||
+    effectiveStatus === "parsing" ||
+    effectiveStatus === "running" ||
+    effectiveStatus === "parse_ready" ||
+    importStatus === "completed" ||
+    importStatus === "failed";
 
   return (
     <Space size="small">
@@ -99,11 +103,7 @@ export default function FileImportCenterPage() {
   const [operationLogOpen, setOperationLogOpen] = useState(false);
   const [operationLogImportId, setOperationLogImportId] = useState<string>();
   const [purgingAll, setPurgingAll] = useState(false);
-  const [deleteImpactOpen, setDeleteImpactOpen] = useState(false);
   const [deleteImpactLoading, setDeleteImpactLoading] = useState(false);
-  const [deleteConfirmLoading, setDeleteConfirmLoading] = useState(false);
-  const [pendingDeleteImport, setPendingDeleteImport] = useState<FileImportListItem | null>(null);
-  const [purgeImpact, setPurgeImpact] = useState<FileImportPurgeImpact | undefined>();
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
@@ -146,65 +146,48 @@ export default function FileImportCenterPage() {
     [loadData, selectedKbId],
   );
 
-  const handleDeleteImport = useCallback(
-    async (record: FileImportListItem, deprecatePublished: boolean) => {
-      if (!selectedKbId) {
-        return;
-      }
-      if (deprecatePublished) {
-        setDeleteConfirmLoading(true);
-      }
-      try {
-        await deleteFileImport(selectedKbId, record.import_id, { deprecatePublished });
-        message.success(
-          deprecatePublished ? "已删除，相关已发布资产已废弃" : "已删除",
-        );
-        setDeleteImpactOpen(false);
-        setPendingDeleteImport(null);
-        setPurgeImpact(undefined);
-        void loadData();
-      } catch (error) {
-        message.error((error as Error).message);
-      } finally {
-        setDeleteConfirmLoading(false);
-      }
-    },
-    [loadData, selectedKbId],
-  );
-
   const handleDeleteClick = useCallback(
     async (record: FileImportListItem) => {
       if (!selectedKbId) {
         return;
       }
-      setPendingDeleteImport(record);
       setDeleteImpactLoading(true);
+      let impactText = "将删除导入文件、解析数据及已录入知识，不可恢复。";
       try {
         const impact = await getFileImportPurgeImpact(selectedKbId, record.import_id);
-        setPurgeImpact(impact);
-        if (impact.has_published_assets) {
-          setDeleteImpactOpen(true);
-          return;
+        const counts = impact.intermediate_counts;
+        const parts = [
+          counts.knowledge_chunks ? `${counts.knowledge_chunks} 条知识` : null,
+          counts.documents ? `${counts.documents} 个文档` : null,
+        ].filter(Boolean);
+        if (parts.length > 0) {
+          impactText = `将删除 ${parts.join("、")} 及导入文件，不可恢复。`;
         }
-        setPendingDeleteImport(null);
-        setPurgeImpact(undefined);
-        Modal.confirm({
-          title: "确定删除该导入记录？",
-          content: "将删除导入文件及解析数据，不可恢复。",
-          okText: "删除",
-          okButtonProps: { danger: true },
-          cancelText: "取消",
-          onOk: () => handleDeleteImport(record, false),
-        });
       } catch (error) {
         message.error((error as Error).message);
-        setPendingDeleteImport(null);
-        setPurgeImpact(undefined);
+        return;
       } finally {
         setDeleteImpactLoading(false);
       }
+      Modal.confirm({
+        title: "确定删除该导入记录？",
+        content: impactText,
+        okText: "删除",
+        okButtonProps: { danger: true },
+        cancelText: "取消",
+        onOk: async () => {
+          try {
+            await deleteFileImport(selectedKbId, record.import_id);
+            message.success("已删除");
+            void loadData();
+          } catch (error) {
+            message.error((error as Error).message);
+            throw error;
+          }
+        },
+      });
     },
-    [handleDeleteImport, selectedKbId],
+    [loadData, selectedKbId],
   );
 
   useEffect(() => {
@@ -505,32 +488,6 @@ export default function FileImportCenterPage() {
         kbId={selectedKbId}
         importId={operationLogImportId}
         onClose={() => setOperationLogOpen(false)}
-      />
-      <ImpactAnalysisModal
-        open={deleteImpactOpen}
-        title="删除影响确认"
-        loading={deleteImpactLoading}
-        counts={purgeImpact?.published_counts}
-        totalCount={purgeImpact?.published_total}
-        description={
-          purgeImpact
-            ? `将废弃 ${purgeImpact.published_total} 个已发布知识资产，并删除导入文件及解析数据，不可恢复。`
-            : undefined
-        }
-        onClose={() => {
-          setDeleteImpactOpen(false);
-          setPendingDeleteImport(null);
-          setPurgeImpact(undefined);
-        }}
-        onConfirm={
-          pendingDeleteImport
-            ? () => {
-                void handleDeleteImport(pendingDeleteImport, true);
-              }
-            : undefined
-        }
-        confirmText="废弃已发布资产并删除"
-        confirmLoading={deleteConfirmLoading}
       />
     </Card>
   );
