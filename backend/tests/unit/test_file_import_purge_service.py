@@ -1,11 +1,21 @@
 from uuid import uuid4
 
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
 from src.models.actual_bid_parse_task import ActualBidParseTask, ActualBidParseTaskStatus
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
 from src.models.knowledge_chunk import KnowledgeChunk
+from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.services.file_import_purge_service import check_purge_impact, purge_file_import
+from src.services.knowledge.blueprint_service import create_blueprint
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(_type, _compiler, **_kw):
+    return "JSON"
 
 
 def _seed_import_with_chunk(db_session, seeded_kb):
@@ -113,6 +123,58 @@ def test_purge_file_import_deletes_knowledge_chunks(db_session, seeded_kb):
     assert db_session.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc_id).count() == 0
 
 
+def test_purge_deletes_blueprints_for_document(db_session, seeded_kb):
+    import_id, doc = _seed_import_with_chunk(db_session, seeded_kb)
+    doc_id = doc.document_id
+    create_blueprint(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        payload={
+            "name": "蓝图-待删除",
+            "description": "purge-test",
+            "source_doc_id": doc_id,
+            "source_node_id": uuid4(),
+            "source_chapter_title": "第一章",
+            "product_tags": ["prod-a"],
+            "industry_tags": ["ind-a"],
+            "scenario_tags": ["scene-a"],
+            "applicable_project_type": ["type-a"],
+            "related_regulations": ["reg-a"],
+            "overall_strategy": "先总后分",
+            "common_mistakes": "避免空泛描述",
+            "template_style": "formal",
+            "usual_page_range": "10-20",
+            "status": "active",
+            "nodes": [
+                {
+                    "node_title": "章节一",
+                    "node_level": 1,
+                    "node_order": 1,
+                    "importance_level": "required",
+                    "children": [],
+                }
+            ],
+        },
+    )
+    db_session.commit()
+
+    purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert (
+        db_session.query(KnowledgeBlueprint)
+        .filter(KnowledgeBlueprint.source_doc_id == doc_id)
+        .count()
+        == 0
+    )
+
+
 def test_purge_file_import_deletes_parse_task_before_document(db_session, seeded_kb):
     import_id = uuid4()
     imp = FileImport(
@@ -195,6 +257,55 @@ def test_purge_file_import_deletes_parse_task_before_document(db_session, seeded
         .count()
         == 0
     )
+
+
+def test_purge_file_import_writes_delete_audit_log(db_session, seeded_kb):
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="audited.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/audited.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
+    doc = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="audited.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    from src.models.import_audit_log import ImportAuditAction, ImportAuditLog
+
+    row = (
+        db_session.query(ImportAuditLog)
+        .filter(
+            ImportAuditLog.kb_id == seeded_kb.kb_id,
+            ImportAuditLog.action == ImportAuditAction.delete,
+        )
+        .order_by(ImportAuditLog.created_at.desc())
+        .first()
+    )
+    assert row is not None
+    assert row.payload_summary == {"file_name": "audited.docx"}
 
 
 def test_purge_file_import_removes_storage_dirs(db_session, seeded_kb, tmp_path, monkeypatch):

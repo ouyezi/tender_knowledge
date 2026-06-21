@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "outline_source": "original",
+  "chunks": [
+    {
+      "chunk_id": "chunk-0001",
+      "title": "1 项目概述",
+      "section_path": [
+        "1 项目概述"
+      ],
+      "heading_level": 1,
+      "token_estimate": 2,
+      "refined_node_id": null,
+      "original_node_ids": [
+        "n1"
+      ],
+      "primary_outline_node_id": "n1",
+      "document_tree_node_id": "t0001",
+      "path": "chunk-0001.json"
+    },
+    {
+      "chunk_id": "chunk-0002",
+      "title": "1.1 实施范围",
+      "section_path": [
+        "1 项目概述",
+        "1.1 实施范围"
+      ],
+      "heading_level": 2,
+      "token_estimate": 7,
+      "refined_node_id": null,
+      "original_node_ids": [
+        "n2"
+      ],
+      "primary_outline_node_id": "n2",
+      "document_tree_node_id": "t0002",
+      "path": "chunk-0002.json"
+    }
+  ]
+}

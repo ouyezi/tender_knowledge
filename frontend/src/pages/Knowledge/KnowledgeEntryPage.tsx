@@ -10,6 +10,7 @@ import {
   Space,
   Spin,
   Switch,
+  Tabs,
   Tag,
   Tree,
   Typography,
@@ -17,11 +18,19 @@ import {
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import BlueprintEditor from "../../components/Blueprint/BlueprintEditor";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import ResizableWorkspace from "../../components/Knowledge/ResizableWorkspace";
 import { getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKBContext } from "../../layout/KBContext";
 import { ApiError } from "../../services/apiClient";
+import {
+  createBlueprint,
+  generateBlueprint,
+  getBlueprintBySource,
+  updateBlueprint,
+  type BlueprintDraft,
+} from "../../services/blueprints";
 import {
   createKnowledgeChunk,
   getDocumentTree,
@@ -37,6 +46,9 @@ import {
 } from "../../services/knowledgeChunks";
 
 const { Text } = Typography;
+
+const WORKSPACE_CARD_STYLE = { height: "100%", display: "flex", flexDirection: "column" } as const;
+const WORKSPACE_CARD_BODY_STYLE = { flex: 1, overflow: "auto", minHeight: 0 };
 
 interface EntryFormValues {
   title: string;
@@ -77,6 +89,8 @@ interface EntryFormValues {
   winning_flag?: boolean;
 }
 
+type EntryTabKey = "entry" | "blueprint";
+
 function toTreeData(nodes: TreeNode[]): DataNode[] {
   return nodes.map((node) => ({
     key: node.node_id,
@@ -84,6 +98,7 @@ function toTreeData(nodes: TreeNode[]): DataNode[] {
       <Space size={8}>
         <span>{node.title || "(未命名节点)"}</span>
         {node.ingested ? <Tag color="green">已入库</Tag> : null}
+        {node.has_blueprint ? <Tag color="blue">已生成蓝图</Tag> : null}
       </Space>
     ),
     children: toTreeData(node.children ?? []),
@@ -111,6 +126,20 @@ function parseJsonArray<T>(raw?: string): T[] | undefined {
   return parsed as T[];
 }
 
+function findTreeNodeById(nodes: TreeNode[], nodeId?: string): TreeNode | undefined {
+  if (!nodeId) return undefined;
+  for (const node of nodes) {
+    if (node.node_id === nodeId) {
+      return node;
+    }
+    const child = findTreeNodeById(node.children ?? [], nodeId);
+    if (child) {
+      return child;
+    }
+  }
+  return undefined;
+}
+
 export default function KnowledgeEntryPage() {
   const { selectedKbId, readOnly } = useKBContext();
   const [form] = Form.useForm<EntryFormValues>();
@@ -125,10 +154,34 @@ export default function KnowledgeEntryPage() {
   const [rightExpanded, setRightExpanded] = useState(false);
   const [prefilling, setPrefilling] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [activeTab, setActiveTab] = useState<EntryTabKey>("entry");
+  const [blueprintDraft, setBlueprintDraft] = useState<BlueprintDraft>();
+  const [blueprintLoading, setBlueprintLoading] = useState(false);
+  const [existingBlueprintId, setExistingBlueprintId] = useState<string>();
 
   const selectedDocument = useMemo(
     () => documents.find((doc) => doc.doc_id === selectedDocId),
     [documents, selectedDocId],
+  );
+  const selectedTreeNode = useMemo(
+    () => findTreeNodeById(treeNodes, selectedNodeId),
+    [selectedNodeId, treeNodes],
+  );
+  const selectedNodeIsLeaf = Boolean(selectedTreeNode && !(selectedTreeNode.children?.length));
+  // entry/documents 仅返回 parse_status=ready 且已有目录树的文档
+  const canShowExtractBlueprint = Boolean(selectedDocument);
+  const extractBlueprintDisabled = readOnly || blueprintLoading || !selectedNodeId || selectedNodeIsLeaf;
+  const emptyBlueprintDraft = useMemo<BlueprintDraft>(
+    () => ({
+      name: "",
+      description: null,
+      source_doc_id: selectedDocId ?? "",
+      source_node_id: selectedNodeId ?? "",
+      source_chapter_title:
+        preview?.catalog_path?.[preview.catalog_path.length - 1]?.title ?? selectedTreeNode?.title ?? "",
+      nodes: [],
+    }),
+    [preview?.catalog_path, selectedDocId, selectedNodeId, selectedTreeNode?.title],
   );
 
   const loadDocuments = useCallback(async () => {
@@ -165,8 +218,6 @@ export default function KnowledgeEntryPage() {
       setTreeNodes(result.items ?? []);
       setSelectedNodeId(undefined);
       setPreview(undefined);
-      setRightExpanded(false);
-      form.resetFields();
     } catch (error) {
       message.error((error as Error).message);
       setTreeNodes([]);
@@ -186,8 +237,6 @@ export default function KnowledgeEntryPage() {
     try {
       const result = await getNodePreview(selectedKbId, selectedDocId, selectedNodeId);
       setPreview(result);
-      setRightExpanded(false);
-      form.resetFields();
     } catch (error) {
       message.error((error as Error).message);
       setPreview(undefined);
@@ -207,6 +256,14 @@ export default function KnowledgeEntryPage() {
   useEffect(() => {
     void loadPreview();
   }, [loadPreview]);
+
+  useEffect(() => {
+    form.resetFields();
+    setRightExpanded(false);
+    setBlueprintDraft(undefined);
+    setExistingBlueprintId(undefined);
+    setActiveTab("entry");
+  }, [form, selectedDocId, selectedNodeId]);
 
   const applyPrefillToForm = useCallback(
     (result: PrefillResult) => {
@@ -255,6 +312,7 @@ export default function KnowledgeEntryPage() {
       message.warning("请先选择文档节点并加载预览");
       return;
     }
+    setActiveTab("entry");
     setRightExpanded(true);
     setPrefilling(true);
     try {
@@ -384,13 +442,182 @@ export default function KnowledgeEntryPage() {
     }
   }, [submitCreate]);
 
+  const handleExtractBlueprint = useCallback(async () => {
+    if (!selectedKbId || !selectedDocId || !selectedNodeId) {
+      message.warning("请先选择目录节点");
+      return;
+    }
+    if (selectedNodeIsLeaf) {
+      message.warning("叶子节点不支持提取目录蓝图");
+      return;
+    }
+    setBlueprintLoading(true);
+    try {
+      const matched = await getBlueprintBySource(selectedKbId, {
+        doc_id: selectedDocId,
+        node_id: selectedNodeId,
+      });
+      const hasExisting = Boolean(selectedTreeNode?.has_blueprint || matched);
+      if (hasExisting) {
+        const confirmed = await new Promise<boolean>((resolve) => {
+          Modal.confirm({
+            title: "该节点已存在目录蓝图",
+            content: "继续提取将覆盖当前草稿，是否继续？",
+            okText: "继续提取",
+            cancelText: "取消",
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
+          });
+        });
+        if (!confirmed) {
+          return;
+        }
+      }
+      const draft = await generateBlueprint(selectedKbId, {
+        doc_id: selectedDocId,
+        node_id: selectedNodeId,
+      });
+      setBlueprintDraft(draft);
+      setExistingBlueprintId(matched?.blueprint_id);
+      setActiveTab("blueprint");
+      message.success("目录蓝图提取完成");
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setBlueprintLoading(false);
+    }
+  }, [selectedDocId, selectedKbId, selectedNodeId, selectedNodeIsLeaf, selectedTreeNode?.has_blueprint]);
+
+  const handleSaveBlueprint = useCallback(async () => {
+    if (!selectedKbId || !selectedDocId || !selectedNodeId) {
+      message.warning("请先选择目录节点");
+      return;
+    }
+    const draft = blueprintDraft ?? emptyBlueprintDraft;
+    const name = draft.name?.trim();
+    if (!name) {
+      message.warning("请输入蓝图名称");
+      return;
+    }
+    const hasLevelOneNodes = (draft.nodes ?? []).some((node) => node.node_level === 1);
+    if (!hasLevelOneNodes) {
+      message.warning("请至少保留一个一级目录节点");
+      return;
+    }
+    const payload: BlueprintDraft = {
+      ...draft,
+      name,
+      source_doc_id: selectedDocId,
+      source_node_id: selectedNodeId,
+      source_chapter_title:
+        preview?.catalog_path?.[preview.catalog_path.length - 1]?.title ?? selectedTreeNode?.title ?? "",
+    };
+    setBlueprintLoading(true);
+    try {
+      const created = await createBlueprint(selectedKbId, payload);
+      setExistingBlueprintId(created.blueprint_id);
+      await loadTree();
+      message.success("目录蓝图保存成功");
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "blueprint_source_exists") {
+        setBlueprintLoading(false);
+        Modal.confirm({
+          title: "检测到同源蓝图已存在",
+          content: "是否覆盖更新已存在的目录蓝图？",
+          okText: "覆盖更新",
+          cancelText: "取消",
+          onOk: async () => {
+            try {
+              setBlueprintLoading(true);
+              const matched =
+                existingBlueprintId
+                  ? { blueprint_id: existingBlueprintId }
+                  : await getBlueprintBySource(selectedKbId, {
+                      doc_id: selectedDocId,
+                      node_id: selectedNodeId,
+                    });
+              if (!matched?.blueprint_id) {
+                message.error("未找到可更新的目录蓝图，请刷新后重试");
+                return;
+              }
+              await updateBlueprint(selectedKbId, matched.blueprint_id, payload);
+              setExistingBlueprintId(matched.blueprint_id);
+              await loadTree();
+              message.success("目录蓝图已覆盖更新");
+            } catch (updateError) {
+              message.error((updateError as Error).message);
+            } finally {
+              setBlueprintLoading(false);
+            }
+          },
+        });
+        return;
+      }
+      message.error((error as Error).message);
+    } finally {
+      setBlueprintLoading(false);
+    }
+  }, [
+    blueprintDraft,
+    emptyBlueprintDraft,
+    existingBlueprintId,
+    loadTree,
+    preview?.catalog_path,
+    selectedDocId,
+    selectedKbId,
+    selectedNodeId,
+    selectedTreeNode?.title,
+  ]);
+
+  const handleRegenerateBlueprint = useCallback(() => {
+    if (!selectedKbId || !selectedDocId || !selectedNodeId) {
+      message.warning("请先选择目录节点");
+      return;
+    }
+    if (selectedNodeIsLeaf) {
+      message.warning("叶子节点不支持提取目录蓝图");
+      return;
+    }
+    Modal.confirm({
+      title: "确认重新生成目录蓝图？",
+      content: "重新生成会覆盖当前草稿内容。",
+      okText: "重新生成",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          setBlueprintLoading(true);
+          const draft = await generateBlueprint(selectedKbId, {
+            doc_id: selectedDocId,
+            node_id: selectedNodeId,
+          });
+          setBlueprintDraft(draft);
+          setActiveTab("blueprint");
+          message.success("目录蓝图已重新生成");
+        } catch (error) {
+          message.error((error as Error).message);
+        } finally {
+          setBlueprintLoading(false);
+        }
+      },
+    });
+  }, [selectedDocId, selectedKbId, selectedNodeId, selectedNodeIsLeaf]);
+
   if (!selectedKbId) {
     return <Alert message="请先选择知识库" type="info" showIcon />;
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        width: "100%",
+        height: readOnly ? "calc(100vh - 200px)" : "calc(100vh - 160px)",
+        minHeight: 480,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", flexShrink: 0 }}>
         <span>来源文档：</span>
         <Select
           style={{ width: 420, maxWidth: "100%", flex: 1 }}
@@ -405,184 +632,266 @@ export default function KnowledgeEntryPage() {
         />
       </div>
 
-      <ResizableWorkspace
-        treePanel={
-          <Card title="目录树" bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
-            {loadingTree ? (
-              <Spin />
-            ) : (
-              <Tree
-                treeData={toTreeData(treeNodes)}
-                selectedKeys={selectedNodeId ? [selectedNodeId] : []}
-                onSelect={(keys) => setSelectedNodeId(keys[0] as string | undefined)}
-              />
-            )}
-          </Card>
-        }
-        previewPanel={
-          <Card
-            title="章节预览"
-            extra={
-              <Button disabled={!preview || readOnly} onClick={() => void handlePrefill()}>
-                添加到知识库
-              </Button>
-            }
-            bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}
-          >
-            {loadingPreview ? <Spin /> : null}
-            {!loadingPreview && !preview ? <Text type="secondary">请选择目录节点查看内容</Text> : null}
-            {preview ? (
-              <KnowledgeContentViewer
-                contentMd={preview.content_md}
-                assets={preview.assets}
-                sectionCharStart={preview.char_start}
-                kbId={selectedKbId}
-                imageRefMap={preview.image_ref_map}
-              />
-            ) : null}
-          </Card>
-        }
-        entryPanel={
-          <Card title="知识录入" bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
-            {!rightExpanded ? (
-              <Space direction="vertical">
-                <Text type="secondary">点击“添加到知识库”后，右侧将展开预填表单。</Text>
-              </Space>
-            ) : null}
-            {rightExpanded && prefilling ? (
-              <div style={{ minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Space direction="vertical" align="center">
-                  <Spin />
-                  <Text>AI 预填中...</Text>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResizableWorkspace
+          treePanel={
+            <Card title="目录树" style={WORKSPACE_CARD_STYLE} styles={{ body: WORKSPACE_CARD_BODY_STYLE }}>
+              {loadingTree ? (
+                <Spin />
+              ) : treeNodes.length === 0 ? (
+                <Text type="secondary">当前文档暂无目录结构</Text>
+              ) : (
+                <Tree
+                  treeData={toTreeData(treeNodes)}
+                  selectedKeys={selectedNodeId ? [selectedNodeId] : []}
+                  onSelect={(keys) => setSelectedNodeId(keys[0] as string | undefined)}
+                />
+              )}
+            </Card>
+          }
+          previewPanel={
+            <Card
+              title="章节预览"
+              style={WORKSPACE_CARD_STYLE}
+              styles={{ body: WORKSPACE_CARD_BODY_STYLE }}
+              extra={
+                <Space>
+                  {canShowExtractBlueprint ? (
+                    <Button
+                      disabled={extractBlueprintDisabled}
+                      loading={blueprintLoading}
+                      onClick={() => {
+                        if (readOnly) return;
+                        if (!selectedNodeId) {
+                          message.warning("请先选择目录节点");
+                          return;
+                        }
+                        if (selectedNodeIsLeaf) {
+                          message.warning("当前章节无子结构，无法提取蓝图");
+                          return;
+                        }
+                        void handleExtractBlueprint();
+                      }}
+                    >
+                      提取目录蓝图
+                    </Button>
+                  ) : null}
+                  <Button disabled={!preview || readOnly} onClick={() => void handlePrefill()}>
+                    添加到知识库
+                  </Button>
                 </Space>
-              </div>
-            ) : null}
-            {rightExpanded && !prefilling ? (
-              <Form<EntryFormValues> form={form} layout="vertical" initialValues={{ content: preview?.content_md }}>
-                <Form.Item
-                  name="title"
-                  label={getFieldLabel("title")}
-                  rules={[{ required: true, message: "请输入标题" }]}
-                >
-                  <Input />
-                </Form.Item>
-                <Form.Item name="content" label={`${getFieldLabel("content")}（只读）`}>
-                  <Input.TextArea rows={6} readOnly />
-                </Form.Item>
-                <Form.Item name="summary" label={getFieldLabel("summary")}>
-                  <Input.TextArea rows={3} />
-                </Form.Item>
-                <Form.Item name="knowledge_type" label={getFieldLabel("knowledge_type")}>
-                  <Select allowClear options={getEnumOptions("knowledge_type")} />
-                </Form.Item>
-                <Form.Item name="content_type" label={getFieldLabel("content_type")}>
-                  <Select allowClear options={getEnumOptions("content_type")} />
-                </Form.Item>
-                <Form.Item name="source_type" label={getFieldLabel("source_type")}>
-                  <Select allowClear options={getEnumOptions("source_type")} />
-                </Form.Item>
-                <Form.Item name="file_name" label={getFieldLabel("file_name")}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="project_name" label={getFieldLabel("project_name")}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="category" label={getFieldLabel("category")}>
-                  <Select allowClear options={getEnumOptions("category")} />
-                </Form.Item>
-                <Form.Item name="status" label={getFieldLabel("status")}>
-                  <Select allowClear options={getEnumOptions("status")} />
-                </Form.Item>
-                <Form.Item name="quote_mode" label={getFieldLabel("quote_mode")}>
-                  <Select allowClear options={getEnumOptions("quote_mode")} />
-                </Form.Item>
-                <Form.Item name="template_type" label={getFieldLabel("template_type")}>
-                  <Select allowClear options={getEnumOptions("template_type")} />
-                </Form.Item>
-                <Form.Item name="security_level" label={getFieldLabel("security_level")}>
-                  <Select allowClear options={getEnumOptions("security_level")} />
-                </Form.Item>
-                <Form.Item name="review_status" label={getFieldLabel("review_status")}>
-                  <Select allowClear options={getEnumOptions("review_status")} />
-                </Form.Item>
-                <Form.Item name="owner" label={getFieldLabel("owner")}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="issue_date" label={getFieldLabel("issue_date")}>
-                  <Input placeholder="YYYY-MM-DD" />
-                </Form.Item>
-                <Form.Item name="expire_date" label={getFieldLabel("expire_date")}>
-                  <Input placeholder="YYYY-MM-DD" />
-                </Form.Item>
-                <Form.Item name="tags" label={getFieldLabel("tags")}>
-                  <Select mode="tags" />
-                </Form.Item>
-                <Form.Item name="products" label={getFieldLabel("products")}>
-                  <Select mode="tags" />
-                </Form.Item>
-                <Form.Item name="industries" label={getFieldLabel("industries")}>
-                  <Select mode="tags" />
-                </Form.Item>
-                <Form.Item name="customer_types" label={getFieldLabel("customer_types")}>
-                  <Select mode="tags" />
-                </Form.Item>
-                <Form.Item name="regions" label={getFieldLabel("regions")}>
-                  <Select mode="tags" />
-                </Form.Item>
-                <Form.Item name="page_start" label={getFieldLabel("page_start")}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="page_end" label={getFieldLabel("page_end")}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="char_start" label={getFieldLabel("char_start")}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="char_end" label={getFieldLabel("char_end")}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="parent_id" label={getFieldLabel("parent_id")}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="retrieval_weight" label={getFieldLabel("retrieval_weight")}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="edit_distance_avg" label={getFieldLabel("edit_distance_avg")}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="catalog_path_json" label={`${getFieldLabel("catalog_path")}(JSON 数组)`}>
-                  <Input.TextArea rows={4} />
-                </Form.Item>
-                <Form.Item name="variables_json" label={`${getFieldLabel("variables")}(JSON 数组)`}>
-                  <Input.TextArea rows={4} />
-                </Form.Item>
-                <Form.Item name="exclusion_rules_json" label={`${getFieldLabel("exclusion_rules")}(JSON 数组)`}>
-                  <Input.TextArea rows={4} />
-                </Form.Item>
-                <Form.Item
-                  name="need_parent_context"
-                  label={getFieldLabel("need_parent_context")}
-                  valuePropName="checked"
-                >
-                  <Switch />
-                </Form.Item>
-                <Form.Item name="is_template" label={getFieldLabel("is_template")} valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-                <Form.Item name="is_immutable" label={getFieldLabel("is_immutable")} valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-                <Form.Item name="winning_flag" label={getFieldLabel("winning_flag")} valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-                <Button type="primary" disabled={readOnly} loading={creating} onClick={() => void handleCreate()}>
-                  确认添加
-                </Button>
-              </Form>
-            ) : null}
+              }
+            >
+              {loadingPreview ? <Spin /> : null}
+              {!loadingPreview && !preview ? <Text type="secondary">请选择目录节点查看内容</Text> : null}
+              {preview ? (
+                <KnowledgeContentViewer
+                  contentMd={preview.content_md}
+                  assets={preview.assets}
+                  sectionCharStart={preview.char_start}
+                  kbId={selectedKbId}
+                  imageRefMap={preview.image_ref_map}
+                />
+              ) : null}
+            </Card>
+          }
+          entryPanel={
+            <Card style={WORKSPACE_CARD_STYLE} styles={{ body: WORKSPACE_CARD_BODY_STYLE }}>
+              <Tabs
+                activeKey={activeTab}
+                onChange={(key) => setActiveTab(key as EntryTabKey)}
+                items={[
+                  {
+                    key: "entry",
+                    label: "知识录入",
+                    children: (
+                      <>
+                        {!rightExpanded ? (
+                          <Space direction="vertical">
+                            <Text type="secondary">点击“添加到知识库”后，右侧将展开预填表单。</Text>
+                          </Space>
+                        ) : null}
+                        {rightExpanded && prefilling ? (
+                          <div
+                            style={{ minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >
+                            <Space direction="vertical" align="center">
+                              <Spin />
+                              <Text>AI 预填中...</Text>
+                            </Space>
+                          </div>
+                        ) : null}
+                        {rightExpanded && !prefilling ? (
+                          <Form<EntryFormValues>
+                            form={form}
+                            layout="vertical"
+                            initialValues={{ content: preview?.content_md }}
+                          >
+                          <Form.Item
+                            name="title"
+                            label={getFieldLabel("title")}
+                            rules={[{ required: true, message: "请输入标题" }]}
+                          >
+                            <Input />
+                          </Form.Item>
+                          <Form.Item name="content" label={`${getFieldLabel("content")}（只读）`}>
+                            <Input.TextArea rows={6} readOnly />
+                          </Form.Item>
+                          <Form.Item name="summary" label={getFieldLabel("summary")}>
+                            <Input.TextArea rows={3} />
+                          </Form.Item>
+                          <Form.Item name="knowledge_type" label={getFieldLabel("knowledge_type")}>
+                            <Select allowClear options={getEnumOptions("knowledge_type")} />
+                          </Form.Item>
+                          <Form.Item name="content_type" label={getFieldLabel("content_type")}>
+                            <Select allowClear options={getEnumOptions("content_type")} />
+                          </Form.Item>
+                          <Form.Item name="source_type" label={getFieldLabel("source_type")}>
+                            <Select allowClear options={getEnumOptions("source_type")} />
+                          </Form.Item>
+                          <Form.Item name="file_name" label={getFieldLabel("file_name")}>
+                            <Input />
+                          </Form.Item>
+                          <Form.Item name="project_name" label={getFieldLabel("project_name")}>
+                            <Input />
+                          </Form.Item>
+                          <Form.Item name="category" label={getFieldLabel("category")}>
+                            <Select allowClear options={getEnumOptions("category")} />
+                          </Form.Item>
+                          <Form.Item name="status" label={getFieldLabel("status")}>
+                            <Select allowClear options={getEnumOptions("status")} />
+                          </Form.Item>
+                          <Form.Item name="quote_mode" label={getFieldLabel("quote_mode")}>
+                            <Select allowClear options={getEnumOptions("quote_mode")} />
+                          </Form.Item>
+                          <Form.Item name="template_type" label={getFieldLabel("template_type")}>
+                            <Select allowClear options={getEnumOptions("template_type")} />
+                          </Form.Item>
+                          <Form.Item name="security_level" label={getFieldLabel("security_level")}>
+                            <Select allowClear options={getEnumOptions("security_level")} />
+                          </Form.Item>
+                          <Form.Item name="review_status" label={getFieldLabel("review_status")}>
+                            <Select allowClear options={getEnumOptions("review_status")} />
+                          </Form.Item>
+                          <Form.Item name="owner" label={getFieldLabel("owner")}>
+                            <Input />
+                          </Form.Item>
+                          <Form.Item name="issue_date" label={getFieldLabel("issue_date")}>
+                            <Input placeholder="YYYY-MM-DD" />
+                          </Form.Item>
+                          <Form.Item name="expire_date" label={getFieldLabel("expire_date")}>
+                            <Input placeholder="YYYY-MM-DD" />
+                          </Form.Item>
+                          <Form.Item name="tags" label={getFieldLabel("tags")}>
+                            <Select mode="tags" />
+                          </Form.Item>
+                          <Form.Item name="products" label={getFieldLabel("products")}>
+                            <Select mode="tags" />
+                          </Form.Item>
+                          <Form.Item name="industries" label={getFieldLabel("industries")}>
+                            <Select mode="tags" />
+                          </Form.Item>
+                          <Form.Item name="customer_types" label={getFieldLabel("customer_types")}>
+                            <Select mode="tags" />
+                          </Form.Item>
+                          <Form.Item name="regions" label={getFieldLabel("regions")}>
+                            <Select mode="tags" />
+                          </Form.Item>
+                          <Form.Item name="page_start" label={getFieldLabel("page_start")}>
+                            <InputNumber style={{ width: "100%" }} />
+                          </Form.Item>
+                          <Form.Item name="page_end" label={getFieldLabel("page_end")}>
+                            <InputNumber style={{ width: "100%" }} />
+                          </Form.Item>
+                          <Form.Item name="char_start" label={getFieldLabel("char_start")}>
+                            <InputNumber style={{ width: "100%" }} />
+                          </Form.Item>
+                          <Form.Item name="char_end" label={getFieldLabel("char_end")}>
+                            <InputNumber style={{ width: "100%" }} />
+                          </Form.Item>
+                          <Form.Item name="parent_id" label={getFieldLabel("parent_id")}>
+                            <InputNumber style={{ width: "100%" }} />
+                          </Form.Item>
+                          <Form.Item name="retrieval_weight" label={getFieldLabel("retrieval_weight")}>
+                            <InputNumber style={{ width: "100%" }} />
+                          </Form.Item>
+                          <Form.Item name="edit_distance_avg" label={getFieldLabel("edit_distance_avg")}>
+                            <InputNumber style={{ width: "100%" }} />
+                          </Form.Item>
+                          <Form.Item name="catalog_path_json" label={`${getFieldLabel("catalog_path")}(JSON 数组)`}>
+                            <Input.TextArea rows={4} />
+                          </Form.Item>
+                          <Form.Item name="variables_json" label={`${getFieldLabel("variables")}(JSON 数组)`}>
+                            <Input.TextArea rows={4} />
+                          </Form.Item>
+                          <Form.Item
+                            name="exclusion_rules_json"
+                            label={`${getFieldLabel("exclusion_rules")}(JSON 数组)`}
+                          >
+                            <Input.TextArea rows={4} />
+                          </Form.Item>
+                          <Form.Item
+                            name="need_parent_context"
+                            label={getFieldLabel("need_parent_context")}
+                            valuePropName="checked"
+                          >
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item name="is_template" label={getFieldLabel("is_template")} valuePropName="checked">
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item
+                            name="is_immutable"
+                            label={getFieldLabel("is_immutable")}
+                            valuePropName="checked"
+                          >
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item
+                            name="winning_flag"
+                            label={getFieldLabel("winning_flag")}
+                            valuePropName="checked"
+                          >
+                            <Switch />
+                          </Form.Item>
+                          <Button
+                            type="primary"
+                            disabled={readOnly}
+                            loading={creating}
+                            onClick={() => void handleCreate()}
+                          >
+                            确认添加
+                          </Button>
+                        </Form>
+                      ) : null}
+                    </>
+                  ),
+                },
+                {
+                  key: "blueprint",
+                  label: "目录蓝图",
+                  children: (
+                    <BlueprintEditor
+                      mode={existingBlueprintId ? "edit" : "draft"}
+                      value={blueprintDraft ?? emptyBlueprintDraft}
+                      loading={blueprintLoading}
+                      readOnly={readOnly}
+                      onChange={setBlueprintDraft}
+                      onRegenerate={handleRegenerateBlueprint}
+                      onSave={() => void handleSaveBlueprint()}
+                      sourceInfo={{
+                        chapterTitle: preview?.catalog_path?.[preview.catalog_path.length - 1]?.title ?? "",
+                        documentName: selectedDocument?.document_name ?? "",
+                      }}
+                    />
+                  ),
+                },
+              ]}
+            />
           </Card>
         }
-      />
-    </Space>
+        />
+      </div>
+    </div>
   );
 }

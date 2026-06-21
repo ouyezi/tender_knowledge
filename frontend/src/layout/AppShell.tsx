@@ -11,7 +11,15 @@ const NAV_ITEMS = [
   { key: "/file-imports", label: <Link to="/file-imports">来源导入</Link> },
   { key: "/knowledge/entry", label: <Link to="/knowledge/entry">知识录入</Link> },
   { key: "/knowledge/browse", label: <Link to="/knowledge/browse">知识浏览</Link> },
+  { key: "/knowledge/blueprints", label: <Link to="/knowledge/blueprints">目录蓝图</Link> },
 ];
+
+function getSelectedNavKey(pathname: string): string {
+  if (pathname.startsWith("/knowledge/blueprints")) {
+    return "/knowledge/blueprints";
+  }
+  return pathname;
+}
 
 export default function AppShell() {
   const location = useLocation();
@@ -48,7 +56,7 @@ export default function AppShell() {
         <Space size={24} style={{ width: "100%", justifyContent: "space-between" }}>
           <Menu
             mode="horizontal"
-            selectedKeys={[location.pathname]}
+            selectedKeys={[getSelectedNavKey(location.pathname)]}
             items={NAV_ITEMS}
             style={{ flex: 1, minWidth: 0 }}
           />

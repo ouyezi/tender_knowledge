@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.models.chunk_asset import ChunkAsset
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
+from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import load_content_md
 from src.services.doc_chunk.section_slice import outline_nodes_from_tree_nodes, slice_section_markdown
@@ -31,6 +32,55 @@ class NodeNotFoundError(Exception):
 
 class ContentNotAvailableError(Exception):
     pass
+
+
+_NUM_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s")
+_CN_CHAPTER_RE = re.compile(r"^([一二三四五六七八九十百零]+)、")
+_CN_DIGITS = {
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+
+
+def _chinese_numeral_value(text: str) -> int | None:
+    if not text:
+        return None
+    if text == "十":
+        return 10
+    if text.startswith("十") and len(text) == 2:
+        return 10 + (_CN_DIGITS.get(text[1]) or 0)
+    if text.endswith("十") and len(text) == 2:
+        return (_CN_DIGITS.get(text[0]) or 0) * 10
+    if "十" in text:
+        left, _, right = text.partition("十")
+        tens = _CN_DIGITS.get(left, 0) if left else 1
+        ones = _CN_DIGITS.get(right, 0) if right else 0
+        return tens * 10 + ones
+    if len(text) == 1:
+        return _CN_DIGITS.get(text)
+    return None
+
+
+def _heading_display_sort_key(node: DocumentTreeNode) -> tuple[Any, ...]:
+    title = (node.title or "").strip()
+    numeric = _NUM_PREFIX_RE.match(title)
+    if numeric:
+        parts = tuple(int(part) for part in numeric.group(1).split("."))
+        return (0, parts, node.sort_order, title)
+    chinese = _CN_CHAPTER_RE.match(title)
+    if chinese:
+        value = _chinese_numeral_value(chinese.group(1))
+        if value is not None:
+            return (0, (value,), node.sort_order, title)
+    return (1, node.sort_order, title)
 
 
 def knowledge_source_type_for_document(document: Document) -> str:
@@ -61,7 +111,8 @@ def list_entry_documents(db: Session, kb_id: UUID) -> list[Document]:
 def get_document_tree(db: Session, kb_id: UUID, doc_id: UUID) -> list[dict]:
     _get_ready_document(db, kb_id=kb_id, doc_id=doc_id)
     nodes = _load_heading_nodes(db, kb_id=kb_id, doc_id=doc_id)
-    node_ids = [str(node.node_id) for node in nodes]
+    node_uuids = [node.node_id for node in nodes]
+    node_ids = [str(node_id) for node_id in node_uuids]
     ingested_node_ids: set[str] = set()
     if node_ids:
         ingested_node_ids = {
@@ -77,7 +128,25 @@ def get_document_tree(db: Session, kb_id: UUID, doc_id: UUID) -> list[dict]:
                 .all()
             )
         }
-    return _build_tree_payload(nodes, ingested_node_ids=ingested_node_ids)
+    blueprint_node_ids: set[str] = set()
+    if node_uuids:
+        blueprint_node_ids = {
+            str(source_node_id)
+            for (source_node_id,) in (
+                db.query(KnowledgeBlueprint.source_node_id)
+                .filter(
+                    KnowledgeBlueprint.kb_id == kb_id,
+                    KnowledgeBlueprint.source_doc_id == doc_id,
+                    KnowledgeBlueprint.source_node_id.in_(node_uuids),
+                )
+                .all()
+            )
+        }
+    return _build_tree_payload(
+        nodes,
+        ingested_node_ids=ingested_node_ids,
+        blueprint_node_ids=blueprint_node_ids,
+    )
 
 
 def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> dict:
@@ -202,13 +271,17 @@ def _load_heading_nodes(db: Session, *, kb_id: UUID, doc_id: UUID) -> list[Docum
 
 
 def _build_tree_payload(
-    nodes: list[DocumentTreeNode], *, ingested_node_ids: set[str]
+    nodes: list[DocumentTreeNode],
+    *,
+    ingested_node_ids: set[str],
+    blueprint_node_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    blueprint_node_ids = blueprint_node_ids or set()
     children_by_parent: dict[UUID | None, list[DocumentTreeNode]] = defaultdict(list)
     for node in nodes:
         children_by_parent[node.parent_id].append(node)
     for children in children_by_parent.values():
-        children.sort(key=lambda item: (item.sort_order, item.created_at))
+        children.sort(key=lambda item: (_heading_display_sort_key(item), item.created_at))
 
     def build(node: DocumentTreeNode) -> dict[str, Any]:
         return {
@@ -218,10 +291,12 @@ def _build_tree_payload(
             "level": int(node.level or 1),
             "sort_order": int(node.sort_order),
             "ingested": str(node.node_id) in ingested_node_ids,
+            "has_blueprint": str(node.node_id) in blueprint_node_ids,
             "children": [build(child) for child in children_by_parent.get(node.node_id, [])],
         }
 
     roots = children_by_parent.get(None, [])
+    roots.sort(key=lambda item: (_heading_display_sort_key(item), item.created_at))
     return [build(root) for root in roots]
 
 

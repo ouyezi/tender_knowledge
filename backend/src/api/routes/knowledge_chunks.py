@@ -197,6 +197,7 @@ def list_entry_documents_api(
                     "document_name": row.document_name,
                     "import_id": str(row.import_id),
                     "source_type": knowledge_source_type_for_document(row),
+                    "parse_status": row.parse_status.value,
                     "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 }
                 for row in rows

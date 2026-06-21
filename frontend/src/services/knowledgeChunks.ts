@@ -5,6 +5,7 @@ export interface EntryDocument {
   document_name: string;
   import_id: string;
   source_type?: string;
+  parse_status?: "ready" | "pending" | "parsing" | "failed" | null;
   updated_at: string | null;
 }
 
@@ -15,6 +16,7 @@ export interface TreeNode {
   level: number;
   sort_order: number;
   ingested: boolean;
+  has_blueprint?: boolean;
   children: TreeNode[];
 }
 

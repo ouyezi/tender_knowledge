@@ -17,6 +17,8 @@ def test_business_tables_match_retained_schema():
         "chunk_embeddings",
         "chunk_assets",
         "knowledge_chunks",
+        "knowledge_blueprint_nodes",
+        "knowledge_blueprints",
         "document_media_assets",
         "document_parse_suggestions",
         "document_tree_nodes",

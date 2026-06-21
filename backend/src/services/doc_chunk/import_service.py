@@ -9,6 +9,10 @@ from src.config import Settings
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.file_import import FileImport, FilePurpose
 from src.services.doc_chunk.content_md_store import persist_content_md, persist_image_ref_map
+from src.services.doc_chunk.outline_store import (
+    persist_outline_from_source,
+    persist_outline_node_map,
+)
 from src.services.doc_chunk.mappers.document_tree import import_document_tree
 from src.services.doc_chunk.mappers.enrich_document_tree import enrich_document_tree_from_chunks
 from src.services.doc_chunk.mappers.media_assets import import_media_assets
@@ -132,6 +136,17 @@ def import_workspace_for_knowledge_entry(
         document=document,
         kb_id=kb_id,
         tree_payload=loaded.document_tree,
+        outline_payload=loaded.outline,
+    )
+    persist_outline_from_source(
+        document_id=document.document_id,
+        source_path=loaded.root / "outline.json",
+        storage_root=Path(Settings().storage_root),
+    )
+    persist_outline_node_map(
+        document_id=document.document_id,
+        outline_node_to_tree_id=ctx.outline_node_id_to_tree_id,
+        storage_root=Path(Settings().storage_root),
     )
     enriched_tree_nodes = enrich_document_tree_from_chunks(
         db,
