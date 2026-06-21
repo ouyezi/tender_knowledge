@@ -15,6 +15,7 @@ export interface TreeNode {
   level: number;
   sort_order: number;
   ingested: boolean;
+  has_blueprint?: boolean;
   children: TreeNode[];
 }
 
