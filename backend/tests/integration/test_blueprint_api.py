@@ -225,3 +225,28 @@ def test_list_and_delete(client, db_session, seeded_kb):
     )
     assert delete_resp.status_code == 200
     assert delete_resp.json()["data"]["deleted"] is True
+
+
+def test_document_tree_includes_has_blueprint(client, db_session, seeded_kb):
+    document, parent, child = _seed_document_tree(db_session, seeded_kb.kb_id)
+    create_payload = _build_manual_payload(
+        document.document_id,
+        parent.node_id,
+        name="树节点蓝图",
+        description="用于测试 has_blueprint",
+    )
+    create_resp = client.post(f"/api/v1/kbs/{seeded_kb.kb_id}/blueprints", json=create_payload)
+    assert create_resp.status_code == 201
+
+    tree_resp = client.get(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/entry/documents/"
+        f"{document.document_id}/tree"
+    )
+    assert tree_resp.status_code == 200
+    tree = tree_resp.json()["data"]["items"]
+    assert len(tree) == 1
+    assert tree[0]["node_id"] == str(parent.node_id)
+    assert tree[0]["has_blueprint"] is True
+    assert len(tree[0]["children"]) == 1
+    assert tree[0]["children"][0]["node_id"] == str(child.node_id)
+    assert tree[0]["children"][0]["has_blueprint"] is False

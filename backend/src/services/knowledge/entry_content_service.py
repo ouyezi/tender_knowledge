@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.models.chunk_asset import ChunkAsset
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
+from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import load_content_md
 from src.services.doc_chunk.section_slice import outline_nodes_from_tree_nodes, slice_section_markdown
@@ -61,7 +62,8 @@ def list_entry_documents(db: Session, kb_id: UUID) -> list[Document]:
 def get_document_tree(db: Session, kb_id: UUID, doc_id: UUID) -> list[dict]:
     _get_ready_document(db, kb_id=kb_id, doc_id=doc_id)
     nodes = _load_heading_nodes(db, kb_id=kb_id, doc_id=doc_id)
-    node_ids = [str(node.node_id) for node in nodes]
+    node_uuids = [node.node_id for node in nodes]
+    node_ids = [str(node_id) for node_id in node_uuids]
     ingested_node_ids: set[str] = set()
     if node_ids:
         ingested_node_ids = {
@@ -77,7 +79,25 @@ def get_document_tree(db: Session, kb_id: UUID, doc_id: UUID) -> list[dict]:
                 .all()
             )
         }
-    return _build_tree_payload(nodes, ingested_node_ids=ingested_node_ids)
+    blueprint_node_ids: set[str] = set()
+    if node_uuids:
+        blueprint_node_ids = {
+            str(source_node_id)
+            for (source_node_id,) in (
+                db.query(KnowledgeBlueprint.source_node_id)
+                .filter(
+                    KnowledgeBlueprint.kb_id == kb_id,
+                    KnowledgeBlueprint.source_doc_id == doc_id,
+                    KnowledgeBlueprint.source_node_id.in_(node_uuids),
+                )
+                .all()
+            )
+        }
+    return _build_tree_payload(
+        nodes,
+        ingested_node_ids=ingested_node_ids,
+        blueprint_node_ids=blueprint_node_ids,
+    )
 
 
 def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> dict:
@@ -202,8 +222,12 @@ def _load_heading_nodes(db: Session, *, kb_id: UUID, doc_id: UUID) -> list[Docum
 
 
 def _build_tree_payload(
-    nodes: list[DocumentTreeNode], *, ingested_node_ids: set[str]
+    nodes: list[DocumentTreeNode],
+    *,
+    ingested_node_ids: set[str],
+    blueprint_node_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    blueprint_node_ids = blueprint_node_ids or set()
     children_by_parent: dict[UUID | None, list[DocumentTreeNode]] = defaultdict(list)
     for node in nodes:
         children_by_parent[node.parent_id].append(node)
@@ -218,6 +242,7 @@ def _build_tree_payload(
             "level": int(node.level or 1),
             "sort_order": int(node.sort_order),
             "ingested": str(node.node_id) in ingested_node_ids,
+            "has_blueprint": str(node.node_id) in blueprint_node_ids,
             "children": [build(child) for child in children_by_parent.get(node.node_id, [])],
         }
 
