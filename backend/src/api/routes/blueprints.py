@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -34,6 +35,8 @@ from src.services.knowledge.blueprint_service import (
     list_blueprints,
     update_blueprint,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/blueprints",
@@ -87,7 +90,14 @@ def generate_blueprint_draft_api(
                 trace_id=get_trace_id(),
             ),
         )
-    except BlueprintGenerateFailedError:
+    except BlueprintGenerateFailedError as exc:
+        logger.warning(
+            "blueprint generate failed kb_id=%s doc_id=%s node_id=%s reason=%s",
+            kb_id,
+            body.doc_id,
+            body.node_id,
+            exc,
+        )
         return JSONResponse(
             status_code=502,
             content=error(

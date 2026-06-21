@@ -12,7 +12,10 @@ from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
 from src.services.knowledge.blueprint_generate_service import (
     BlueprintGenerateFailedError,
+    BlueprintGenerateTimeoutError,
     NoChildNodesError,
+    _chat_with_timeout,
+    _estimate_max_tokens,
     generate_blueprint_draft,
 )
 
@@ -121,9 +124,74 @@ def test_generate_maps_importance_and_node_code(db_session, seeded_kb, monkeypat
     )
 
     assert result["name"] == "供应链方案通用大纲"
-    assert result["nodes"][0]["importance_level"] == "required"
+    assert result["nodes"][0]["node_title"] == "第一章 总体方案"
+    assert result["nodes"][0]["node_level"] == 1
     assert result["nodes"][0]["node_code"] == "1"
+    assert result["nodes"][0]["children"][0]["importance_level"] == "required"
+    assert result["nodes"][0]["children"][0]["node_code"] == "1.1"
     assert result["source_chapter_title"] == "第一章 总体方案"
+    assert result["source_doc_id"] == str(document.document_id)
+    assert result["source_node_id"] == str(root.node_id)
+
+
+def test_estimate_max_tokens_scales_with_subtree_size():
+    assert _estimate_max_tokens(subtree_node_count=6) == 2192
+    assert _estimate_max_tokens(subtree_node_count=100) == 4096
+
+
+def test_wraps_mid_level_llm_nodes_under_source_root(db_session, seeded_kb, monkeypatch):
+    document, root, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    monkeypatch.setattr(
+        "src.services.knowledge.blueprint_generate_service._chat_with_timeout",
+        lambda **kw: json.dumps(
+            {
+                "outline_title": "企业资质",
+                "nodes": [
+                    {
+                        "node_title": "2.1子章节",
+                        "node_level": 3,
+                        "children": [],
+                        "required_flag": True,
+                        "recommended_flag": False,
+                    },
+                    {
+                        "node_title": "2.2子章节",
+                        "node_level": 3,
+                        "children": [],
+                        "required_flag": False,
+                        "recommended_flag": True,
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    result = generate_blueprint_draft(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=document.document_id,
+        node_id=root.node_id,
+    )
+
+    assert result["nodes"][0]["node_title"] == "第一章 总体方案"
+    assert result["nodes"][0]["node_level"] == 1
+    assert len(result["nodes"][0]["children"]) == 2
+    assert result["nodes"][0]["children"][0]["node_level"] == 2
+    assert result["nodes"][0]["children"][0]["node_code"] == "1.1"
+
+
+def test_generate_rejects_when_llm_not_configured(db_session, seeded_kb, monkeypatch):
+    document, root, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    monkeypatch.setattr("src.services.knowledge.blueprint_generate_service.settings.llm_api_key", None)
+
+    with pytest.raises(BlueprintGenerateFailedError, match="llm not configured"):
+        generate_blueprint_draft(
+            db_session,
+            kb_id=seeded_kb.kb_id,
+            doc_id=document.document_id,
+            node_id=root.node_id,
+        )
 
 
 def test_generate_rejects_leaf_node(db_session, seeded_kb):
@@ -152,3 +220,13 @@ def test_generate_failed_on_bad_json(db_session, seeded_kb, monkeypatch):
             doc_id=document.document_id,
             node_id=root.node_id,
         )
+
+
+def test_chat_with_timeout_raises_on_direct_timeout(monkeypatch):
+    def _raise_timeout(*args, **kwargs):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_timeout)
+
+    with pytest.raises(BlueprintGenerateTimeoutError):
+        _chat_with_timeout(system_prompt="s", user_prompt="u", max_tokens=1024)

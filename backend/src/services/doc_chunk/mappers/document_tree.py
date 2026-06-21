@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -7,8 +8,11 @@ from sqlalchemy.orm import Session
 
 from src.models.document import Document
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
+from src.services.doc_chunk.outline_heading_correction import apply_outline_heading_corrections
 from src.services.doc_chunk.types import ImportContext
 from src.services.text_sanitize import sanitize_pg_text
+
+logger = logging.getLogger(__name__)
 
 
 def _coerce_node_type(value: str | None) -> DocumentTreeNodeType:
@@ -25,6 +29,7 @@ def import_document_tree(
     document: Document,
     kb_id: UUID,
     tree_payload: dict[str, Any],
+    outline_payload: dict[str, Any] | None = None,
 ) -> dict[str, UUID]:
     nodes = list(tree_payload.get("nodes") or [])
     tree_id_map: dict[str, UUID] = {}
@@ -92,6 +97,19 @@ def import_document_tree(
         db.query(DocumentTreeNode).filter(DocumentTreeNode.node_id == child_id).update(
             {"parent_id": parent_id},
             synchronize_session=False,
+        )
+
+    if outline_payload:
+        corrected = apply_outline_heading_corrections(
+            db,
+            document_id=document.document_id,
+            outline_payload=outline_payload,
+            outline_node_to_tree_id=outline_node_to_tree,
+        )
+        logger.info(
+            "import_document_tree outline corrections document_id=%s updated=%d",
+            document.document_id,
+            corrected,
         )
 
     db.flush()

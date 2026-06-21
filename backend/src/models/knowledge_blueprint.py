@@ -40,8 +40,8 @@ class KnowledgeBlueprint(Base):
     related_regulations: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     overall_strategy: Mapped[str | None] = mapped_column(Text, nullable=True)
     common_mistakes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    template_style: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    usual_page_range: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    template_style: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usual_page_range: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[BlueprintStatus] = mapped_column(
         Enum(BlueprintStatus, native_enum=False, length=20),
         nullable=False,

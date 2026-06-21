@@ -34,6 +34,55 @@ class ContentNotAvailableError(Exception):
     pass
 
 
+_NUM_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s")
+_CN_CHAPTER_RE = re.compile(r"^([一二三四五六七八九十百零]+)、")
+_CN_DIGITS = {
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+
+
+def _chinese_numeral_value(text: str) -> int | None:
+    if not text:
+        return None
+    if text == "十":
+        return 10
+    if text.startswith("十") and len(text) == 2:
+        return 10 + (_CN_DIGITS.get(text[1]) or 0)
+    if text.endswith("十") and len(text) == 2:
+        return (_CN_DIGITS.get(text[0]) or 0) * 10
+    if "十" in text:
+        left, _, right = text.partition("十")
+        tens = _CN_DIGITS.get(left, 0) if left else 1
+        ones = _CN_DIGITS.get(right, 0) if right else 0
+        return tens * 10 + ones
+    if len(text) == 1:
+        return _CN_DIGITS.get(text)
+    return None
+
+
+def _heading_display_sort_key(node: DocumentTreeNode) -> tuple[Any, ...]:
+    title = (node.title or "").strip()
+    numeric = _NUM_PREFIX_RE.match(title)
+    if numeric:
+        parts = tuple(int(part) for part in numeric.group(1).split("."))
+        return (0, parts, node.sort_order, title)
+    chinese = _CN_CHAPTER_RE.match(title)
+    if chinese:
+        value = _chinese_numeral_value(chinese.group(1))
+        if value is not None:
+            return (0, (value,), node.sort_order, title)
+    return (1, node.sort_order, title)
+
+
 def knowledge_source_type_for_document(document: Document) -> str:
     if document.source_type == DocumentSourceType.template_file:
         return "template"
@@ -232,7 +281,7 @@ def _build_tree_payload(
     for node in nodes:
         children_by_parent[node.parent_id].append(node)
     for children in children_by_parent.values():
-        children.sort(key=lambda item: (item.sort_order, item.created_at))
+        children.sort(key=lambda item: (_heading_display_sort_key(item), item.created_at))
 
     def build(node: DocumentTreeNode) -> dict[str, Any]:
         return {
@@ -247,6 +296,7 @@ def _build_tree_payload(
         }
 
     roots = children_by_parent.get(None, [])
+    roots.sort(key=lambda item: (_heading_display_sort_key(item), item.created_at))
     return [build(root) for root in roots]
 
 

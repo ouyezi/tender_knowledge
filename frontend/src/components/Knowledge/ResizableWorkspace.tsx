@@ -57,7 +57,7 @@ export default function ResizableWorkspace({ treePanel, previewPanel, entryPanel
 
   return (
     <Splitter
-      style={{ width: "100%", minHeight: "calc(100vh - 280px)" }}
+      style={{ width: "100%", height: "100%" }}
       onResizeEnd={(sizes) => {
         const outer = toPercentPair(sizes);
         if (!outer) return;
@@ -65,7 +65,7 @@ export default function ResizableWorkspace({ treePanel, previewPanel, entryPanel
       }}
     >
       <Splitter.Panel defaultSize={`${initial.outer[0]}%`} min="200px">
-        {treePanel}
+        <div style={{ height: "100%" }}>{treePanel}</div>
       </Splitter.Panel>
       <Splitter.Panel defaultSize={`${initial.outer[1]}%`} min="200px">
         <Splitter
@@ -77,10 +77,10 @@ export default function ResizableWorkspace({ treePanel, previewPanel, entryPanel
           }}
         >
           <Splitter.Panel defaultSize={`${initial.inner[0]}%`} min="200px">
-            {previewPanel}
+            <div style={{ height: "100%" }}>{previewPanel}</div>
           </Splitter.Panel>
           <Splitter.Panel defaultSize={`${initial.inner[1]}%`} min="200px">
-            {entryPanel}
+            <div style={{ height: "100%" }}>{entryPanel}</div>
           </Splitter.Panel>
         </Splitter>
       </Splitter.Panel>

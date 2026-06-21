@@ -5,7 +5,7 @@ export interface EntryDocument {
   document_name: string;
   import_id: string;
   source_type?: string;
-  parse_status?: "parse_ready" | "parse_confirmed" | "parsing" | "running" | "failed" | "parse_failed" | null;
+  parse_status?: "ready" | "pending" | "parsing" | "failed" | null;
   updated_at: string | null;
 }
 

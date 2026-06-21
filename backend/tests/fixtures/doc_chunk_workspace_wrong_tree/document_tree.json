@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "nodes": [
+    {
+      "node_id": "t1",
+      "parent_id": null,
+      "outline_node_id": "n1",
+      "node_type": "heading",
+      "title": "1 项目概述",
+      "level": 1,
+      "sort_order": 0,
+      "needs_review": false
+    },
+    {
+      "node_id": "t2",
+      "parent_id": "t1",
+      "outline_node_id": "n2",
+      "node_type": "heading",
+      "title": "1.1 实施范围",
+      "level": 2,
+      "sort_order": 1,
+      "needs_review": false
+    },
+    {
+      "node_id": "t3",
+      "parent_id": "t1",
+      "outline_node_id": "n3",
+      "node_type": "heading",
+      "title": "1.2 合同附件",
+      "level": 3,
+      "sort_order": 2,
+      "needs_review": false
+    },
+    {
+      "node_id": "t4",
+      "parent_id": "t2",
+      "outline_node_id": "n4",
+      "node_type": "heading",
+      "title": "1.2.1 合同扫描件",
+      "level": 4,
+      "sort_order": 3,
+      "needs_review": false
+    }
+  ]
+}

@@ -47,6 +47,9 @@ import {
 
 const { Text } = Typography;
 
+const WORKSPACE_CARD_STYLE = { height: "100%", display: "flex", flexDirection: "column" } as const;
+const WORKSPACE_CARD_BODY_STYLE = { flex: 1, overflow: "auto", minHeight: 0 };
+
 interface EntryFormValues {
   title: string;
   content: string;
@@ -165,12 +168,8 @@ export default function KnowledgeEntryPage() {
     [selectedNodeId, treeNodes],
   );
   const selectedNodeIsLeaf = Boolean(selectedTreeNode && !(selectedTreeNode.children?.length));
-  const canShowExtractBlueprint = Boolean(
-    selectedDocument &&
-      (selectedDocument.parse_status === "parse_ready" ||
-        selectedDocument.parse_status === "parse_confirmed" ||
-        treeNodes.length > 0),
-  );
+  // entry/documents 仅返回 parse_status=ready 且已有目录树的文档
+  const canShowExtractBlueprint = Boolean(selectedDocument);
   const extractBlueprintDisabled = readOnly || blueprintLoading || !selectedNodeId || selectedNodeIsLeaf;
   const emptyBlueprintDraft = useMemo<BlueprintDraft>(
     () => ({
@@ -608,8 +607,17 @@ export default function KnowledgeEntryPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        width: "100%",
+        height: readOnly ? "calc(100vh - 200px)" : "calc(100vh - 160px)",
+        minHeight: 480,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", flexShrink: 0 }}>
         <span>来源文档：</span>
         <Select
           style={{ width: 420, maxWidth: "100%", flex: 1 }}
@@ -624,12 +632,14 @@ export default function KnowledgeEntryPage() {
         />
       </div>
 
-      <ResizableWorkspace
-        treePanel={
-          <Card title="目录树" bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
-            <Space direction="vertical" style={{ width: "100%" }}>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResizableWorkspace
+          treePanel={
+            <Card title="目录树" style={WORKSPACE_CARD_STYLE} styles={{ body: WORKSPACE_CARD_BODY_STYLE }}>
               {loadingTree ? (
                 <Spin />
+              ) : treeNodes.length === 0 ? (
+                <Text type="secondary">当前文档暂无目录结构</Text>
               ) : (
                 <Tree
                   treeData={toTreeData(treeNodes)}
@@ -637,85 +647,86 @@ export default function KnowledgeEntryPage() {
                   onSelect={(keys) => setSelectedNodeId(keys[0] as string | undefined)}
                 />
               )}
-              {canShowExtractBlueprint ? (
-                <div
-                  onClick={() => {
-                    if (readOnly) return;
-                    if (!selectedNodeId) {
-                      message.warning("请先在目录树中选择节点");
-                      return;
-                    }
-                    if (selectedNodeIsLeaf) {
-                      message.warning("叶子节点不支持提取目录蓝图");
-                      return;
-                    }
-                    if (blueprintLoading) return;
-                    void handleExtractBlueprint();
-                  }}
-                >
-                  <Button block disabled={extractBlueprintDisabled} loading={blueprintLoading}>
-                    【提取目录蓝图】
+            </Card>
+          }
+          previewPanel={
+            <Card
+              title="章节预览"
+              style={WORKSPACE_CARD_STYLE}
+              styles={{ body: WORKSPACE_CARD_BODY_STYLE }}
+              extra={
+                <Space>
+                  {canShowExtractBlueprint ? (
+                    <Button
+                      disabled={extractBlueprintDisabled}
+                      loading={blueprintLoading}
+                      onClick={() => {
+                        if (readOnly) return;
+                        if (!selectedNodeId) {
+                          message.warning("请先选择目录节点");
+                          return;
+                        }
+                        if (selectedNodeIsLeaf) {
+                          message.warning("当前章节无子结构，无法提取蓝图");
+                          return;
+                        }
+                        void handleExtractBlueprint();
+                      }}
+                    >
+                      提取目录蓝图
+                    </Button>
+                  ) : null}
+                  <Button disabled={!preview || readOnly} onClick={() => void handlePrefill()}>
+                    添加到知识库
                   </Button>
-                </div>
+                </Space>
+              }
+            >
+              {loadingPreview ? <Spin /> : null}
+              {!loadingPreview && !preview ? <Text type="secondary">请选择目录节点查看内容</Text> : null}
+              {preview ? (
+                <KnowledgeContentViewer
+                  contentMd={preview.content_md}
+                  assets={preview.assets}
+                  sectionCharStart={preview.char_start}
+                  kbId={selectedKbId}
+                  imageRefMap={preview.image_ref_map}
+                />
               ) : null}
-            </Space>
-          </Card>
-        }
-        previewPanel={
-          <Card
-            title="章节预览"
-            extra={
-              <Button disabled={!preview || readOnly} onClick={() => void handlePrefill()}>
-                添加到知识库
-              </Button>
-            }
-            bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}
-          >
-            {loadingPreview ? <Spin /> : null}
-            {!loadingPreview && !preview ? <Text type="secondary">请选择目录节点查看内容</Text> : null}
-            {preview ? (
-              <KnowledgeContentViewer
-                contentMd={preview.content_md}
-                assets={preview.assets}
-                sectionCharStart={preview.char_start}
-                kbId={selectedKbId}
-                imageRefMap={preview.image_ref_map}
-              />
-            ) : null}
-          </Card>
-        }
-        entryPanel={
-          <Card bodyStyle={{ maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
-            <Tabs
-              activeKey={activeTab}
-              onChange={(key) => setActiveTab(key as EntryTabKey)}
-              items={[
-                {
-                  key: "entry",
-                  label: "知识录入",
-                  children: (
-                    <>
-                      {!rightExpanded ? (
-                        <Space direction="vertical">
-                          <Text type="secondary">点击“添加到知识库”后，右侧将展开预填表单。</Text>
-                        </Space>
-                      ) : null}
-                      {rightExpanded && prefilling ? (
-                        <div
-                          style={{ minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >
-                          <Space direction="vertical" align="center">
-                            <Spin />
-                            <Text>AI 预填中...</Text>
+            </Card>
+          }
+          entryPanel={
+            <Card style={WORKSPACE_CARD_STYLE} styles={{ body: WORKSPACE_CARD_BODY_STYLE }}>
+              <Tabs
+                activeKey={activeTab}
+                onChange={(key) => setActiveTab(key as EntryTabKey)}
+                items={[
+                  {
+                    key: "entry",
+                    label: "知识录入",
+                    children: (
+                      <>
+                        {!rightExpanded ? (
+                          <Space direction="vertical">
+                            <Text type="secondary">点击“添加到知识库”后，右侧将展开预填表单。</Text>
                           </Space>
-                        </div>
-                      ) : null}
-                      {rightExpanded && !prefilling ? (
-                        <Form<EntryFormValues>
-                          form={form}
-                          layout="vertical"
-                          initialValues={{ content: preview?.content_md }}
-                        >
+                        ) : null}
+                        {rightExpanded && prefilling ? (
+                          <div
+                            style={{ minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >
+                            <Space direction="vertical" align="center">
+                              <Spin />
+                              <Text>AI 预填中...</Text>
+                            </Space>
+                          </div>
+                        ) : null}
+                        {rightExpanded && !prefilling ? (
+                          <Form<EntryFormValues>
+                            form={form}
+                            layout="vertical"
+                            initialValues={{ content: preview?.content_md }}
+                          >
                           <Form.Item
                             name="title"
                             label={getFieldLabel("title")}
@@ -879,7 +890,8 @@ export default function KnowledgeEntryPage() {
             />
           </Card>
         }
-      />
-    </Space>
+        />
+      </div>
+    </div>
   );
 }

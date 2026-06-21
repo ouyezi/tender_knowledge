@@ -48,7 +48,7 @@ class KnowledgeBlueprintNode(Base):
     importance_level: Mapped[ImportanceLevel] = mapped_column(
         Enum(ImportanceLevel, native_enum=False, length=20), nullable=False
     )
-    content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     keyword_hint: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)

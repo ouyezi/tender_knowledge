@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "status": "success",
+  "source": {
+    "path": "tests/fixtures/sample-actual-bid.docx",
+    "file_name": "sample-actual-bid.docx",
+    "file_type": "docx",
+    "title": "sample-actual-bid"
+  },
+  "stages": {
+    "extract": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    },
+    "outline": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    },
+    "tree": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    },
+    "chunk": {
+      "status": "success",
+      "started_at": null,
+      "finished_at": null,
+      "warnings": []
+    }
+  },
+  "outputs": {
+    "content": "content.md",
+    "images": "images",
+    "content_blocks": "content.blocks.json",
+    "images_manifest": "images/manifest.json",
+    "outline": "outline.json",
+    "document_tree": "document_tree.json",
+    "linkage": "linkage.json",
+    "chunks": "chunks"
+  },
+  "warnings": [],
+  "errors": []
+}

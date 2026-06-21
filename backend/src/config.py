@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     knowledge_prefill_model: str = "qwen3-max"
     knowledge_prefill_timeout_sec: int = 10
     blueprint_generate_model: str = "qwen-plus"
-    blueprint_generate_timeout_sec: int = 30
+    blueprint_generate_timeout_sec: int = 60
+    blueprint_generate_max_tokens: int = 4096
     embedding_model: str = "text-embedding-v2"
 
     model_config = SettingsConfigDict(env_file=_discover_env_files(), extra="ignore")
