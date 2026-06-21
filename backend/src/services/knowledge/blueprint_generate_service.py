@@ -193,7 +193,7 @@ def collect_subtree_outline(
 
 
 def _estimate_max_tokens(*, subtree_node_count: int) -> int:
-    """Scale output budget with subtree size; avoid fixed 4096 on small trees."""
+    """Scale output budget with subtree size; cap at blueprint_generate_max_tokens."""
     per_node = 280
     base = 512
     estimated = base + subtree_node_count * per_node
