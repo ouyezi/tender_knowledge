@@ -136,7 +136,7 @@ def test_generate_maps_importance_and_node_code(db_session, seeded_kb, monkeypat
 
 def test_estimate_max_tokens_scales_with_subtree_size():
     assert _estimate_max_tokens(subtree_node_count=6) == 2192
-    assert _estimate_max_tokens(subtree_node_count=100) == 4096
+    assert _estimate_max_tokens(subtree_node_count=100) == 20480
 
 
 def test_wraps_mid_level_llm_nodes_under_source_root(db_session, seeded_kb, monkeypatch):
