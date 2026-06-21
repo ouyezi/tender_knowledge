@@ -22,6 +22,8 @@ from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.import_audit_log import ImportAuditAction, ImportAuditLog
 from src.models.import_task import ImportTask
 from src.models.knowledge_chunk import KnowledgeChunk
+from src.models.knowledge_blueprint import KnowledgeBlueprint
+from src.services.knowledge.blueprint_service import delete_blueprints_by_doc_id
 
 
 class FileImportPurgeServiceError(Exception):
@@ -204,6 +206,12 @@ def _purge_documents_for_import(
         .filter(DocumentParseSuggestion.document_id.in_(document_ids))
         .delete(synchronize_session=False),
     )
+    for doc_id in document_ids:
+        _inc(
+            counts,
+            "knowledge_blueprints",
+            delete_blueprints_by_doc_id(db, doc_id=doc_id),
+        )
     _purge_document_tree_nodes(db, document_ids=document_ids, counts=counts)
     _inc(
         counts,
@@ -268,6 +276,11 @@ def check_purge_impact(db: Session, *, kb_id: UUID, import_id: UUID) -> PurgeImp
     parse_task_count = (
         db.query(ActualBidParseTask).filter(ActualBidParseTask.import_id.in_(import_ids)).count()
     )
+    blueprint_count = (
+        db.query(KnowledgeBlueprint).filter(KnowledgeBlueprint.source_doc_id.in_(document_ids)).count()
+        if document_ids
+        else 0
+    )
 
     return PurgeImpactReport(
         import_id=str(import_id),
@@ -282,6 +295,7 @@ def check_purge_impact(db: Session, *, kb_id: UUID, import_id: UUID) -> PurgeImp
             "chunk_assets": asset_count,
             "chunk_embeddings": embedding_count,
             "actual_bid_parse_tasks": parse_task_count,
+            "knowledge_blueprints": blueprint_count,
         },
     )
 
@@ -316,6 +330,8 @@ def purge_file_import(
             payload_summary={"file_name": file_name},
         )
     )
+    # Persist audit row while file_imports still exists (FK on import_id).
+    db.flush()
 
     for iid in import_ids:
         document_ids = [
