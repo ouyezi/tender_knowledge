@@ -104,6 +104,7 @@ export default function FileImportCenterPage() {
   const [operationLogImportId, setOperationLogImportId] = useState<string>();
   const [purgingAll, setPurgingAll] = useState(false);
   const [deleteImpactLoading, setDeleteImpactLoading] = useState(false);
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!selectedKbId) {
@@ -152,6 +153,7 @@ export default function FileImportCenterPage() {
         return;
       }
       setDeleteImpactLoading(true);
+      setDeletingImportId(record.import_id);
       let impactText = "将删除导入文件、解析数据及已录入知识，不可恢复。";
       try {
         const impact = await getFileImportPurgeImpact(selectedKbId, record.import_id);
@@ -168,6 +170,7 @@ export default function FileImportCenterPage() {
         return;
       } finally {
         setDeleteImpactLoading(false);
+        setDeletingImportId(null);
       }
       Modal.confirm({
         title: "确定删除该导入记录？",
@@ -300,7 +303,7 @@ export default function FileImportCenterPage() {
             <Button
               size="small"
               danger
-              loading={deleteImpactLoading && pendingDeleteImport?.import_id === record.import_id}
+              loading={deleteImpactLoading && deletingImportId === record.import_id}
               onClick={(event) => {
                 event.stopPropagation();
                 void handleDeleteClick(record);
@@ -312,7 +315,7 @@ export default function FileImportCenterPage() {
         ),
       },
     ],
-    [deleteImpactLoading, handleDeleteClick, handleRetryParse, pendingDeleteImport?.import_id, retryingParseImportIds, loadData, selectedKbId],
+    [deleteImpactLoading, deletingImportId, handleDeleteClick, handleRetryParse, retryingParseImportIds, loadData, selectedKbId],
   );
 
   if (!selectedKbId) {
