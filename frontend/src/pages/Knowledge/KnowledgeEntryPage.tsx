@@ -165,7 +165,12 @@ export default function KnowledgeEntryPage() {
     [selectedNodeId, treeNodes],
   );
   const selectedNodeIsLeaf = Boolean(selectedTreeNode && !(selectedTreeNode.children?.length));
-  const canShowExtractBlueprint = Boolean(selectedDocument && treeNodes.length > 0);
+  const canShowExtractBlueprint = Boolean(
+    selectedDocument &&
+      (selectedDocument.parse_status === "parse_ready" ||
+        selectedDocument.parse_status === "parse_confirmed" ||
+        treeNodes.length > 0),
+  );
   const extractBlueprintDisabled = readOnly || blueprintLoading || !selectedNodeId || selectedNodeIsLeaf;
   const emptyBlueprintDraft = useMemo<BlueprintDraft>(
     () => ({
@@ -649,7 +654,7 @@ export default function KnowledgeEntryPage() {
                   }}
                 >
                   <Button block disabled={extractBlueprintDisabled} loading={blueprintLoading}>
-                    提取目录蓝图
+                    【提取目录蓝图】
                   </Button>
                 </div>
               ) : null}
