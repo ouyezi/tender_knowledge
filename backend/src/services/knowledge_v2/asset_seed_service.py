@@ -54,6 +54,41 @@ def _chunk_fallback_range(chunk_payload: dict[str, Any]) -> tuple[int | None, in
     return (None, None)
 
 
+def _load_blocks_table_refs(workspace: Path) -> dict[int, str]:
+    payload = _load_json(workspace / "content.blocks.json") or {}
+    mapping: dict[int, str] = {}
+    for block in payload.get("blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        table_ref = block.get("table_ref")
+        block_index = block.get("block_index")
+        if table_ref and isinstance(block_index, int):
+            mapping[block_index] = str(table_ref)
+    return mapping
+
+
+def _load_table_sidecar(workspace: Path, table_ref: str) -> dict[str, Any] | None:
+    return _load_json(workspace / table_ref)
+
+
+def _table_asset_fields(sidecar: dict[str, Any]) -> dict[str, Any]:
+    logical_rows = sidecar.get("logical_rows") or []
+    headers = logical_rows[0] if logical_rows else None
+    body_rows = logical_rows[1:] if len(logical_rows) > 1 else []
+    return {
+        "raw_markdown": sidecar.get("markdown"),
+        "table_summary": sidecar.get("llm_text"),
+        "table_schema": {
+            "schema_version": sidecar.get("schema_version"),
+            "layout_type": sidecar.get("layout_type"),
+            "grid_width": sidecar.get("grid_width"),
+            "record_groups": sidecar.get("record_groups") or [],
+        },
+        "table_headers": headers,
+        "table_rows": body_rows,
+    }
+
+
 def _lookup_image_storage(
     db: Session,
     *,
@@ -97,6 +132,7 @@ def seed_chunk_assets_from_workspace(
     workspace = Path(workspace_path)
     image_ref_map = image_ref_map or {}
     media_storage_cache: dict[UUID, str | None] = {}
+    blocks_table_refs = _load_blocks_table_refs(workspace)
     next_id = db.query(func.max(ChunkAsset.id)).scalar() or 0
 
     images_manifest = _load_json(workspace / "images" / "manifest.json") or {}
@@ -143,6 +179,17 @@ def seed_chunk_assets_from_workspace(
             if char_start is None or char_end is None:
                 continue
             markdown = str(block.get("text") or block.get("markdown") or "").strip()
+            table_ref = block.get("table_ref")
+            if not table_ref:
+                block_index = block.get("block_index")
+                if isinstance(block_index, int):
+                    table_ref = blocks_table_refs.get(block_index)
+            sidecar = _load_table_sidecar(workspace, str(table_ref)) if table_ref else None
+            fields = (
+                _table_asset_fields(sidecar)
+                if sidecar
+                else {"raw_markdown": markdown or None}
+            )
             next_id += 1
             db.add(
                 ChunkAsset(
@@ -153,7 +200,7 @@ def seed_chunk_assets_from_workspace(
                     asset_type="table",
                     char_start=char_start,
                     char_end=char_end,
-                    raw_markdown=markdown or None,
+                    **fields,
                 )
             )
             created += 1

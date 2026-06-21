@@ -103,7 +103,7 @@ def test_seed_chunk_assets_from_workspace_tables(db_session, seeded_kb, tmp_path
         },
         {
             "type": "table",
-            "text": "|C|D|\n|---|---|\n|3|4|",
+            "block_index": 3,
             "char_start": 50,
             "char_end": 70,
         },
@@ -136,4 +136,9 @@ def test_seed_chunk_assets_from_workspace_tables(db_session, seeded_kb, tmp_path
     assert rows[0].raw_markdown == "|A|B|\n|---|---|\n|1|2|"
     assert rows[1].char_start == 50
     assert rows[1].char_end == 70
-    assert rows[1].raw_markdown == "|C|D|\n|---|---|\n|3|4|"
+    assert rows[1].table_schema is not None
+    assert rows[1].table_schema.get("layout_type") == "simple"
+    assert rows[1].raw_markdown == "|列A|列B|\n|---|---|\n|1|2|"
+    assert rows[1].table_summary == "【表格:示例】列A=1; 列B=2"
+    assert rows[1].table_headers == ["列A", "列B"]
+    assert rows[1].table_rows == [["1", "2"]]
