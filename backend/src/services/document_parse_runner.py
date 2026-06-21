@@ -79,14 +79,20 @@ def enqueue_document_parse(
     )
     if record is None:
         raise DocumentParseServiceError("File import not found", code="NOT_FOUND", status_code=404)
-    if record.status != FileImportStatus.confirmed:
-        raise DocumentParseServiceError(
-            "Import must be confirmed", code="IMPORT_NOT_CONFIRMED", status_code=422
-        )
     if record.file_purpose not in {FilePurpose.actual_bid, FilePurpose.template_file}:
         raise DocumentParseServiceError(
             "Unsupported file purpose", code="VALIDATION", status_code=422
         )
+
+    allowed_statuses = {FileImportStatus.confirmed}
+    if force_reparse:
+        allowed_statuses |= {FileImportStatus.failed, FileImportStatus.completed}
+    if record.status not in allowed_statuses:
+        raise DocumentParseServiceError(
+            "Import must be confirmed", code="IMPORT_NOT_CONFIRMED", status_code=422
+        )
+    if force_reparse and record.status in {FileImportStatus.failed, FileImportStatus.completed}:
+        record.status = FileImportStatus.confirmed
 
     active = (
         db.query(ActualBidParseTask)
@@ -135,16 +141,41 @@ def enqueue_document_parse(
     return task
 
 
+def _parse_task_id_from_entry(entry: DownstreamTaskEntry) -> uuid.UUID | None:
+    raw = entry.payload.get("parse_task_id")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except ValueError:
+        return None
+
+
+def _fail_entry(db: Session, entry: DownstreamTaskEntry) -> None:
+    entry.status = DownstreamTaskStatus.failed
+    db.commit()
+
+
 def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
     file_import = db.get(FileImport, entry.import_id)
     if file_import is None:
         entry.status = DownstreamTaskStatus.failed
+        db.commit()
         return
 
-    parse_task_id = uuid.UUID(entry.payload.get("parse_task_id", ""))
+    parse_task_id = _parse_task_id_from_entry(entry)
+    if parse_task_id is None:
+        logger.warning(
+            "document_parse entry missing parse_task_id entry_id=%s import_id=%s",
+            entry.entry_id,
+            entry.import_id,
+        )
+        _fail_entry(db, entry)
+        return
+
     task = db.get(ActualBidParseTask, parse_task_id)
     if task is None:
-        entry.status = DownstreamTaskStatus.failed
+        _fail_entry(db, entry)
         return
 
     task.status = ActualBidParseTaskStatus.running
@@ -198,7 +229,7 @@ def _run_entry(db: Session, entry: DownstreamTaskEntry) -> None:
         )
 
         task.document_id = result.document_id
-        task.status = ActualBidParseTaskStatus.completed
+        task.status = ActualBidParseTaskStatus.ready
         task.finished_at = _now()
         task.task_phase = ActualBidParseTaskPhase.document_parse
         entry.status = DownstreamTaskStatus.completed

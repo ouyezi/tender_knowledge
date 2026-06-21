@@ -168,12 +168,7 @@ def confirm_import(
             },
         )
     )
-    created_downstream_entries = create_downstream_entries(
-        db,
-        record=record,
-        operator_id=operator_id,
-        trace_id=trace_id,
-    )
+    created_downstream_entries: list[dict] = []
     parse_task_id: str | None = None
     if enter_parsing:
         parse_task = enqueue_document_parse(
@@ -184,6 +179,13 @@ def confirm_import(
             trace_id=trace_id,
         )
         parse_task_id = str(parse_task.parse_task_id)
+    else:
+        created_downstream_entries = create_downstream_entries(
+            db,
+            record=record,
+            operator_id=operator_id,
+            trace_id=trace_id,
+        )
     db.commit()
     db.refresh(record)
     payload = _build_confirm_payload(record)
