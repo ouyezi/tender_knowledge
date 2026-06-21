@@ -73,7 +73,7 @@ function ParseStatusCell({
     <Space size="small">
       <Tag color={tagMeta.color}>{tagMeta.label}</Tag>
       {importStatus === "completed" && documentId ? (
-        <Link to={`/knowledge-v2/entry?docId=${documentId}`}>前往知识录入</Link>
+        <Link to={`/knowledge/entry?docId=${documentId}`}>前往知识录入</Link>
       ) : null}
       {canRetryParse ? (
         <Button type="link" size="small" loading={retrying} onClick={onRetry}>

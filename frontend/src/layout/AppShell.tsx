@@ -9,8 +9,8 @@ const { Text } = Typography;
 const NAV_ITEMS = [
   { key: "/", label: <Link to="/">知识库</Link> },
   { key: "/file-imports", label: <Link to="/file-imports">来源导入</Link> },
-  { key: "/knowledge-v2/entry", label: <Link to="/knowledge-v2/entry">知识录入 V2</Link> },
-  { key: "/knowledge-v2/browse", label: <Link to="/knowledge-v2/browse">知识浏览 V2</Link> },
+  { key: "/knowledge/entry", label: <Link to="/knowledge/entry">知识录入</Link> },
+  { key: "/knowledge/browse", label: <Link to="/knowledge/browse">知识浏览</Link> },
 ];
 
 export default function AppShell() {

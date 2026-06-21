@@ -20,9 +20,9 @@ from src.db.session import SessionLocal, get_db
 from src.models.chunk_asset import ChunkAsset
 from src.models.knowledge_base import KnowledgeBase
 from src.models.knowledge_chunk import KnowledgeChunk
-from src.services.knowledge_v2.chunk_service import ChunkConflictError, create_knowledge_chunk
-from src.services.knowledge_v2.embedding_task import embed_knowledge_chunk, get_embedding_status
-from src.services.knowledge_v2.entry_content_service import (
+from src.services.knowledge.chunk_service import ChunkConflictError, create_knowledge_chunk
+from src.services.knowledge.embedding_task import embed_knowledge_chunk, get_embedding_status
+from src.services.knowledge.entry_content_service import (
     ContentNotAvailableError,
     DocumentNotFoundError,
     NodeNotFoundError,
@@ -31,11 +31,11 @@ from src.services.knowledge_v2.entry_content_service import (
     knowledge_source_type_for_document,
     list_entry_documents,
 )
-from src.services.knowledge_v2.media_url_service import (
+from src.services.knowledge.media_url_service import (
     load_image_ref_map_payload,
     resolve_storage_path_to_media_url,
 )
-from src.services.knowledge_v2.prefill_service import prefill_knowledge_attributes
+from src.services.knowledge.prefill_service import prefill_knowledge_attributes
 
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/knowledge-chunks",

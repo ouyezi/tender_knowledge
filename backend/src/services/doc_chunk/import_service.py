@@ -14,7 +14,7 @@ from src.services.doc_chunk.mappers.enrich_document_tree import enrich_document_
 from src.services.doc_chunk.mappers.media_assets import import_media_assets
 from src.services.doc_chunk.types import DocChunkImportError, ImportContext, ImportResult
 from src.services.doc_chunk.workspace_loader import load_workspace
-from src.services.knowledge_v2.asset_seed_service import seed_chunk_assets_from_workspace
+from src.services.knowledge.asset_seed_service import seed_chunk_assets_from_workspace
 
 _KNOWLEDGE_ENTRY_PURPOSES = frozenset({FilePurpose.actual_bid, FilePurpose.template_file})
 
