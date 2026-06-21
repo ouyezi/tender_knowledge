@@ -11,14 +11,7 @@ from src.db.session import Base
 
 class DownstreamTaskType(str, enum.Enum):
     document_parse = "document_parse"
-    bid_outline_extract = "bid_outline_extract"
-    candidate_knowledge_generate = "candidate_knowledge_generate"
-    template_file_parse = "template_file_parse"
-    manual_asset_candidate = "manual_asset_candidate"
-    template_material_ingest = "template_material_ingest"
-    wiki_candidate = "wiki_candidate"
     none = "none"
-    attachment_only = "attachment_only"
 
 
 class DownstreamTaskStatus(str, enum.Enum):

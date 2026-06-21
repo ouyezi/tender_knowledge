@@ -1,13 +1,5 @@
-from unittest.mock import MagicMock
-
-from src.db.init_db import _sync_missing_columns
+from src.db.init_db import init_db
 
 
-def test_sync_missing_columns_adds_llm_progress():
-    conn = MagicMock()
-    _sync_missing_columns(conn)
-    conn.execute.assert_called_once()
-    sql = str(conn.execute.call_args[0][0])
-    assert "template_parse_tasks" in sql
-    assert "llm_progress" in sql
-    assert "IF NOT EXISTS" in sql
+def test_init_db_runs_without_error():
+    init_db()

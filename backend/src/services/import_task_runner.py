@@ -11,7 +11,33 @@ from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.import_audit_log import ImportAuditAction, ImportAuditLog
 from src.models.import_task import ImportTask, ImportTaskStatus, ImportTaskType
 from src.services.file_hash import sha256_stream
-from src.services.purpose_suggestion import suggest_from_filename
+
+
+class _SuggestionPayload:
+    def __init__(self, suggested_purpose, purpose_confidence, suggestion_source, rationale):
+        self.suggested_purpose = suggested_purpose
+        self.purpose_confidence = purpose_confidence
+        self.suggestion_source = suggestion_source
+        self.rationale = rationale
+
+
+def _suggest_from_filename(file_import: FileImport) -> _SuggestionPayload:
+    from src.models.file_import import FilePurpose
+    from src.models.file_purpose_suggestion import SuggestionSource
+
+    lower_name = file_import.file_name.lower()
+    if "模板" in lower_name or "template" in lower_name:
+        purpose = FilePurpose.template_file
+        rationale = "文件名命中模板关键词"
+    else:
+        purpose = FilePurpose.actual_bid
+        rationale = "默认归类为投标文件"
+    return _SuggestionPayload(
+        suggested_purpose=purpose,
+        purpose_confidence=0.6,
+        suggestion_source=SuggestionSource.rule,
+        rationale=f"{rationale} (type={file_import.file_type.value})",
+    )
 
 
 def _now() -> datetime:
@@ -82,7 +108,7 @@ def run_post_upload(db: Session, import_id: UUID) -> None:
         file_import.hash_status = HashStatus.computed
         _finish_task(hash_task, "文件哈希计算完成")
 
-        suggestion = suggest_from_filename(file_import.file_name, file_import.file_type.value)
+        suggestion = _suggest_from_filename(file_import)
         exists = (
             db.query(FilePurposeSuggestion)
             .filter(FilePurposeSuggestion.import_id == file_import.import_id)

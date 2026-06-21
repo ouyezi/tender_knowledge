@@ -42,16 +42,14 @@ class DocumentTreeNode(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
     content_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
     content_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
-    chapter_taxonomy_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("chapter_taxonomies.taxonomy_id"), nullable=True
-    )
+    chapter_taxonomy_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     product_category_ids: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     is_outline_node: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     candidate_template_chapter_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("template_chapters.template_chapter_id"), nullable=True
+        Uuid(as_uuid=True), nullable=True
     )
     candidate_pattern_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("chapter_patterns.pattern_id"), nullable=True
+        Uuid(as_uuid=True), nullable=True
     )
     needs_manual_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tree_version: Mapped[int] = mapped_column(Integer, nullable=False)

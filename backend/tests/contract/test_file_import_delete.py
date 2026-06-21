@@ -1,116 +1,86 @@
-from uuid import uuid4
-
-from src.models.document import Document, DocumentSourceType
-from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
-from src.models.knowledge_unit import KnowledgeUnit, KnowledgeUnitStatus
+from src.models.file_import import FileImportStatus, FilePurpose, FileType
+from src.services.file_import_purge_service import purge_file_import
 
 
-def _seed_import(db_session, kb_id):
-    imp = FileImport(
-        kb_id=kb_id,
-        file_name="del-test.docx",
-        file_type=FileType.docx,
-        file_size=100,
-        storage_path="/tmp/del-test.docx",
-        status=FileImportStatus.completed,
-        file_purpose=FilePurpose.actual_bid,
-        created_by="tester",
-    )
-    db_session.add(imp)
-    db_session.flush()
-    return imp
+def test_delete_file_import_returns_deleted_counts(client, seeded_kb, db_session):
+    from tests.conftest import _seed_file_import
 
-
-def test_delete_import_without_published_assets(client, seeded_kb, db_session):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
-    db_session.add(
-        Document(
-            kb_id=seeded_kb.kb_id,
-            import_id=imp.import_id,
-            source_type=DocumentSourceType.actual_bid,
-            document_name="del-test.docx",
-            created_by="tester",
-        )
-    )
+    imp = _seed_file_import(db_session, seeded_kb.kb_id, name="delete-me.docx")
     db_session.commit()
 
     resp = client.delete(
         f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports/{imp.import_id}",
-        headers={"X-Operator-Id": "tester"},
+        headers={"X-Operator-Id": "admin"},
     )
     assert resp.status_code == 200
     body = resp.json()["data"]
     assert body["status"] == "deleted"
-    db_session.expire_all()
-    assert db_session.get(FileImport, imp.import_id).status == FileImportStatus.deleted
+    assert body["deleted_counts"]["file_imports"] >= 1
 
-    listed = client.get(
-        f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports",
-        headers={"X-Operator-Id": "tester"},
+    listed = client.get(f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports")
+    assert listed.status_code == 200
+    assert all(item["import_id"] != str(imp.import_id) for item in listed.json()["data"]["items"])
+
+
+def test_purge_impact_returns_knowledge_chunk_counts(client, seeded_kb, db_session):
+    from uuid import uuid4
+
+    from src.models.document import Document, DocumentParseStatus, DocumentSourceType
+    from src.models.file_import import FileImport
+    from src.models.knowledge_chunk import KnowledgeChunk
+
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="impact.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/impact.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
     )
-    ids = [item["import_id"] for item in listed.json()["data"]["items"]]
-    assert str(imp.import_id) not in ids
-
-
-def test_delete_import_with_published_ku_returns_409(client, seeded_kb, db_session):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
+    db_session.add(imp)
+    doc = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="impact.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
+    )
+    db_session.add(doc)
+    db_session.flush()
     db_session.add(
-        KnowledgeUnit(
+        KnowledgeChunk(
+            id=1,
             kb_id=seeded_kb.kb_id,
-            title="Published KU",
-            content="body",
-            knowledge_type="solution",
-            product_category_ids=[],
-            import_id=imp.import_id,
-            candidate_id=uuid4(),
-            published_by="tester",
-            status=KnowledgeUnitStatus.published,
+            knowledge_code="K-002",
+            version="1.0",
+            title="t",
+            content="c",
+            knowledge_type="fact",
+            doc_id=doc.document_id,
+            source_type="bid",
+            catalog_path=[],
+            primary_node_id=str(uuid4()),
+            category="technical",
+            tags=[],
+            products=[],
+            industries=[],
+            customer_types=[],
+            regions=[],
+            content_hash="abc123",
+            token_count=1,
         )
     )
     db_session.commit()
 
-    resp = client.delete(
-        f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports/{imp.import_id}",
-        headers={"X-Operator-Id": "tester"},
-    )
-    assert resp.status_code == 409
-    assert resp.json()["error"]["code"] == "PUBLISHED_ASSETS_EXIST"
-    assert resp.json()["error"]["details"]["published_counts"]["ku"] == 1
-
-
-def test_delete_import_deprecates_published_ku(client, seeded_kb, db_session):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
-    ku = KnowledgeUnit(
-        kb_id=seeded_kb.kb_id,
-        title="Published KU",
-        content="body",
-        knowledge_type="solution",
-        product_category_ids=[],
-        import_id=imp.import_id,
-        candidate_id=uuid4(),
-        published_by="tester",
-        status=KnowledgeUnitStatus.published,
-    )
-    db_session.add(ku)
-    db_session.commit()
-
-    resp = client.delete(
-        f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports/{imp.import_id}?deprecate_published=true",
-        headers={"X-Operator-Id": "tester"},
-    )
-    assert resp.status_code == 200
-    db_session.refresh(ku)
-    assert ku.status == KnowledgeUnitStatus.deprecated
-
-
-def test_purge_impact_returns_counts(client, seeded_kb, db_session):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
-    db_session.commit()
-
     resp = client.get(
-        f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports/{imp.import_id}/purge-impact",
-        headers={"X-Operator-Id": "tester"},
+        f"/api/v1/kbs/{seeded_kb.kb_id}/file-imports/{import_id}/purge-impact",
+        headers={"X-Operator-Id": "admin"},
     )
     assert resp.status_code == 200
-    assert resp.json()["data"]["import_id"] == str(imp.import_id)
-    assert resp.json()["data"]["has_published_assets"] is False
+    counts = resp.json()["data"]["intermediate_counts"]
+    assert counts["knowledge_chunks"] >= 1

@@ -1,180 +1,247 @@
 from uuid import uuid4
 
-import pytest
-
-from src.models.candidate_knowledge import CandidateKnowledge, CandidateKnowledgeStatus, CandidateKnowledgeType
-from src.models.document import Document, DocumentSourceType
+from src.models.actual_bid_parse_task import ActualBidParseTask, ActualBidParseTaskStatus
+from src.models.document import Document, DocumentParseStatus, DocumentSourceType
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
-from src.models.knowledge_unit import KnowledgeUnit, KnowledgeUnitStatus
-from src.services.file_import_purge_service import (
-    FileImportPurgeServiceError,
-    check_purge_impact,
-    purge_file_import,
-)
+from src.models.knowledge_chunk import KnowledgeChunk
+from src.services.file_import_purge_service import check_purge_impact, purge_file_import
 
 
-def _seed_import(db_session, kb_id):
+def _seed_import_with_chunk(db_session, seeded_kb):
+    import_id = uuid4()
     imp = FileImport(
-        kb_id=kb_id,
-        file_name="test.docx",
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="a.docx",
         file_type=FileType.docx,
-        file_size=100,
-        storage_path="/tmp/test.docx",
-        status=FileImportStatus.completed,
+        file_size=1,
+        storage_path="x/a.docx",
         file_purpose=FilePurpose.actual_bid,
-        created_by="tester",
+        status=FileImportStatus.completed,
+        created_by="admin",
     )
     db_session.add(imp)
-    db_session.flush()
-    return imp
-
-
-def test_check_purge_impact_counts_published_ku(db_session, seeded_kb):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
     doc = Document(
         kb_id=seeded_kb.kb_id,
-        import_id=imp.import_id,
+        import_id=import_id,
         source_type=DocumentSourceType.actual_bid,
-        document_name="test.docx",
-        created_by="tester",
+        document_name="a.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
     )
     db_session.add(doc)
     db_session.flush()
-    node = DocumentTreeNode(
-        kb_id=seeded_kb.kb_id,
-        document_id=doc.document_id,
-        node_type=DocumentTreeNodeType.heading,
-        title="section",
-        level=1,
-        sort_order=0,
-        tree_version=1,
-    )
-    db_session.add(node)
-    db_session.flush()
     db_session.add(
-        KnowledgeUnit(
+        KnowledgeChunk(
+            id=1,
             kb_id=seeded_kb.kb_id,
-            title="KU",
-            content="body",
-            knowledge_type="solution",
-            product_category_ids=[],
-            import_id=imp.import_id,
-            candidate_id=uuid4(),
-            published_by="tester",
-            status=KnowledgeUnitStatus.published,
-            source_doc_id=doc.document_id,
-        )
-    )
-    db_session.add(
-        CandidateKnowledge(
-            kb_id=seeded_kb.kb_id,
-            import_id=imp.import_id,
-            source_doc_id=doc.document_id,
-            source_node_id=node.node_id,
-            candidate_type=CandidateKnowledgeType.ku,
-            title="cand",
+            knowledge_code="K-001",
+            version="1.0",
+            title="t",
             content="c",
-            status=CandidateKnowledgeStatus.pending,
+            knowledge_type="fact",
+            doc_id=doc.document_id,
+            source_type="bid",
+            catalog_path=[],
+            primary_node_id=str(uuid4()),
+            category="technical",
+            tags=[],
+            products=[],
+            industries=[],
+            customer_types=[],
+            regions=[],
+            content_hash="abc123",
+            token_count=1,
         )
     )
     db_session.commit()
-
-    report = check_purge_impact(db_session, kb_id=seeded_kb.kb_id, import_id=imp.import_id)
-    assert report.has_published_assets is True
-    assert report.published_counts["ku"] == 1
-    assert report.published_total == 1
-    assert report.intermediate_counts["candidate_knowledges"] == 1
-    assert report.intermediate_counts["documents"] == 1
+    return import_id, doc
 
 
-def test_purge_without_published_soft_deletes_import(db_session, seeded_kb):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
+def test_check_purge_impact_counts_knowledge_chunks(db_session, seeded_kb):
+    import_id, _doc = _seed_import_with_chunk(db_session, seeded_kb)
+
+    report = check_purge_impact(db_session, kb_id=seeded_kb.kb_id, import_id=import_id)
+    assert report.intermediate_counts["knowledge_chunks"] >= 1
+    assert report.has_published_assets is False
+
+
+def test_purge_file_import_hard_deletes_row(db_session, seeded_kb):
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="b.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/b.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
+    db_session.commit()
+
+    summary = purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert summary.status == "deleted"
+    assert db_session.get(FileImport, import_id) is None
+    assert summary.deleted_counts.get("file_imports") == 1
+
+
+def test_purge_file_import_deletes_knowledge_chunks(db_session, seeded_kb):
+    import_id, doc = _seed_import_with_chunk(db_session, seeded_kb)
+    doc_id = doc.document_id
+
+    purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert db_session.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc_id).count() == 0
+
+
+def test_purge_file_import_deletes_parse_task_before_document(db_session, seeded_kb):
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="parse-task.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/parse-task.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
     doc = Document(
         kb_id=seeded_kb.kb_id,
-        import_id=imp.import_id,
+        import_id=import_id,
         source_type=DocumentSourceType.actual_bid,
-        document_name="test.docx",
-        created_by="tester",
+        document_name="parse-task.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
+    )
+    db_session.add(doc)
+    db_session.flush()
+    parent_node_id = uuid4()
+    child_node_id = uuid4()
+    db_session.add_all(
+        [
+            DocumentTreeNode(
+                node_id=parent_node_id,
+                kb_id=seeded_kb.kb_id,
+                document_id=doc.document_id,
+                node_type=DocumentTreeNodeType.heading,
+                title="Root",
+                sort_order=0,
+                tree_version=1,
+            ),
+            DocumentTreeNode(
+                node_id=child_node_id,
+                kb_id=seeded_kb.kb_id,
+                document_id=doc.document_id,
+                parent_id=parent_node_id,
+                node_type=DocumentTreeNodeType.paragraph,
+                title="Child",
+                sort_order=1,
+                tree_version=1,
+            ),
+            ActualBidParseTask(
+                kb_id=seeded_kb.kb_id,
+                import_id=import_id,
+                document_id=doc.document_id,
+                status=ActualBidParseTaskStatus.ready,
+                created_by="admin",
+            ),
+        ]
+    )
+    db_session.commit()
+    doc_id = doc.document_id
+
+    purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert db_session.get(FileImport, import_id) is None
+    assert db_session.query(Document).filter(Document.import_id == import_id).count() == 0
+    assert (
+        db_session.query(ActualBidParseTask)
+        .filter(ActualBidParseTask.import_id == import_id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(DocumentTreeNode)
+        .filter(DocumentTreeNode.document_id == doc_id)
+        .count()
+        == 0
+    )
+
+
+def test_purge_file_import_removes_storage_dirs(db_session, seeded_kb, tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "uploads"))
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="c.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/c.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
+    doc = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="c.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
     )
     db_session.add(doc)
     db_session.commit()
 
-    summary = purge_file_import(
+    storage_root = tmp_path / "uploads"
+    import_dir = storage_root / str(seeded_kb.kb_id) / str(import_id)
+    import_dir.mkdir(parents=True)
+    (import_dir / "upload.docx").write_bytes(b"x")
+    doc_dir = storage_root / "documents" / str(doc.document_id)
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "content.md").write_text("# hi", encoding="utf-8")
+    workspace_dir = storage_root / "doc_chunk_workspaces" / str(seeded_kb.kb_id) / str(import_id)
+    workspace_dir.mkdir(parents=True)
+
+    purge_file_import(
         db_session,
         kb_id=seeded_kb.kb_id,
-        import_id=imp.import_id,
-        operator_id="tester",
+        import_id=import_id,
+        operator_id="admin",
         trace_id=None,
-        deprecate_published=False,
     )
     db_session.commit()
 
-    refreshed = db_session.get(FileImport, imp.import_id)
-    assert refreshed is not None
-    assert refreshed.status == FileImportStatus.deleted
-    assert summary.deleted_counts.get("documents") == 1
-    assert db_session.query(Document).filter(Document.import_id == imp.import_id).count() == 0
-
-
-def test_purge_with_published_ku_raises_without_flag(db_session, seeded_kb):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
-    db_session.add(
-        KnowledgeUnit(
-            kb_id=seeded_kb.kb_id,
-            title="KU",
-            content="body",
-            knowledge_type="solution",
-            product_category_ids=[],
-            import_id=imp.import_id,
-            candidate_id=uuid4(),
-            published_by="tester",
-            status=KnowledgeUnitStatus.published,
-        )
-    )
-    db_session.commit()
-
-    with pytest.raises(FileImportPurgeServiceError) as exc:
-        purge_file_import(
-            db_session,
-            kb_id=seeded_kb.kb_id,
-            import_id=imp.import_id,
-            operator_id="tester",
-            trace_id=None,
-            deprecate_published=False,
-        )
-    assert exc.value.code == "PUBLISHED_ASSETS_EXIST"
-    assert exc.value.status_code == 409
-
-
-def test_purge_with_published_ku_deprecates_when_confirmed(db_session, seeded_kb):
-    imp = _seed_import(db_session, seeded_kb.kb_id)
-    ku = KnowledgeUnit(
-        kb_id=seeded_kb.kb_id,
-        title="KU",
-        content="body",
-        knowledge_type="solution",
-        product_category_ids=[],
-        import_id=imp.import_id,
-        candidate_id=uuid4(),
-        published_by="tester",
-        status=KnowledgeUnitStatus.published,
-    )
-    db_session.add(ku)
-    db_session.commit()
-
-    summary = purge_file_import(
-        db_session,
-        kb_id=seeded_kb.kb_id,
-        import_id=imp.import_id,
-        operator_id="tester",
-        trace_id=None,
-        deprecate_published=True,
-    )
-    db_session.commit()
-    db_session.refresh(ku)
-
-    assert ku.status == KnowledgeUnitStatus.deprecated
-    assert ku.deprecated_at is not None
-    assert summary.deprecated_counts.get("ku") == 1
-    assert db_session.get(FileImport, imp.import_id).status == FileImportStatus.deleted
+    assert not import_dir.exists()
+    assert not doc_dir.exists()
+    assert not workspace_dir.exists()

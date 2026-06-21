@@ -46,9 +46,7 @@ class ActualBidParseTask(Base):
     document_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("documents.document_id"), nullable=True
     )
-    bid_outline_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("bid_outlines.bid_outline_id"), nullable=True
-    )
+    bid_outline_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     task_phase: Mapped[ActualBidParseTaskPhase] = mapped_column(
         Enum(ActualBidParseTaskPhase),
         nullable=False,

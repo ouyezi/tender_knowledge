@@ -7,19 +7,16 @@ import {
   Select,
   Space,
   Switch,
-  TreeSelect,
   message,
 } from "antd";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../../services/apiClient";
-import { getChapterTaxonomyTree, type ChapterTaxonomyNode } from "../../services/chapterTaxonomyApi";
 import {
   confirmFileImport,
   getFileImport,
   ignoreFileImport,
   type FileImportDetail,
 } from "../../services/fileImports";
-import { getProductCategoryTree, type ProductCategoryNode } from "../../services/productCategoryApi";
 
 interface ConfirmDrawerProps {
   open: boolean;
@@ -31,56 +28,19 @@ interface ConfirmDrawerProps {
 
 interface ConfirmFormValues {
   file_purpose: string;
-  product_category_ids: string[];
-  chapter_taxonomy_id?: string;
   enter_parsing: boolean;
 }
 
 const FILE_PURPOSE_OPTIONS = [
-  "actual_bid",
-  "template_file",
-  "qualification",
-  "ppt_material",
-  "cover_guide",
-  "writing_guide",
-  "wiki_source",
-  "other",
-].map((value) => ({ label: value, value }));
-
-function mapProductCategoryTree(nodes: ProductCategoryNode[]): Array<Record<string, unknown>> {
-  return nodes.map((node) => ({
-    title: node.category_name,
-    value: node.category_id,
-    key: node.category_id,
-    children: mapProductCategoryTree(node.children),
-  }));
-}
-
-function mapChapterTaxonomyTree(nodes: ChapterTaxonomyNode[]): Array<Record<string, unknown>> {
-  return nodes.map((node) => ({
-    title: node.standard_name,
-    value: node.taxonomy_id,
-    key: node.taxonomy_id,
-    children: mapChapterTaxonomyTree(node.children),
-  }));
-}
+  { label: "实际标书", value: "actual_bid" },
+  { label: "模板文件", value: "template_file" },
+];
 
 export default function ConfirmDrawer({ open, kbId, importId, onClose, onSaved }: ConfirmDrawerProps) {
   const [form] = Form.useForm<ConfirmFormValues>();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [detail, setDetail] = useState<FileImportDetail>();
-  const [categoryNodes, setCategoryNodes] = useState<ProductCategoryNode[]>([]);
-  const [taxonomyNodes, setTaxonomyNodes] = useState<ChapterTaxonomyNode[]>([]);
-
-  const productCategoryTreeData = useMemo(
-    () => mapProductCategoryTree(categoryNodes),
-    [categoryNodes],
-  );
-  const chapterTaxonomyTreeData = useMemo(
-    () => mapChapterTaxonomyTree(taxonomyNodes),
-    [taxonomyNodes],
-  );
 
   const refreshDetail = useCallback(async () => {
     if (!kbId || !importId) {
@@ -90,12 +50,6 @@ export default function ConfirmDrawer({ open, kbId, importId, onClose, onSaved }
     setDetail(next);
     form.setFieldsValue({
       file_purpose: next.file_purpose ?? next.suggestion?.suggested_purpose ?? undefined,
-      product_category_ids:
-        next.product_category_ids?.length > 0
-          ? next.product_category_ids
-          : (next.suggestion?.suggested_product_category_ids ?? []),
-      chapter_taxonomy_id:
-        next.chapter_taxonomy_id ?? next.suggestion?.suggested_chapter_taxonomy_id ?? undefined,
       enter_parsing: next.enter_parsing ?? true,
     });
   }, [form, importId, kbId]);
@@ -105,15 +59,7 @@ export default function ConfirmDrawer({ open, kbId, importId, onClose, onSaved }
       return;
     }
     setLoading(true);
-    Promise.all([
-      refreshDetail(),
-      getProductCategoryTree(kbId),
-      getChapterTaxonomyTree(kbId),
-    ])
-      .then(([_, categories, taxonomies]) => {
-        setCategoryNodes(categories);
-        setTaxonomyNodes(taxonomies);
-      })
+    refreshDetail()
       .catch((error: unknown) => {
         message.error((error as Error).message);
       })
@@ -132,8 +78,6 @@ export default function ConfirmDrawer({ open, kbId, importId, onClose, onSaved }
       await confirmFileImport(kbId, importId, {
         expected_version: detail.version,
         file_purpose: values.file_purpose,
-        product_category_ids: values.product_category_ids ?? [],
-        chapter_taxonomy_id: values.chapter_taxonomy_id ?? null,
         enter_parsing: values.enter_parsing,
       });
       message.success("确认成功");
@@ -221,26 +165,6 @@ export default function ConfirmDrawer({ open, kbId, importId, onClose, onSaved }
           rules={[{ required: true, message: "请选择文件用途" }]}
         >
           <Select options={FILE_PURPOSE_OPTIONS} placeholder="请选择文件用途" />
-        </Form.Item>
-
-        <Form.Item label="产品分类" name="product_category_ids">
-          <TreeSelect
-            treeData={productCategoryTreeData}
-            treeCheckable
-            showSearch
-            treeDefaultExpandAll
-            placeholder="可多选产品分类"
-          />
-        </Form.Item>
-
-        <Form.Item label="章节类型" name="chapter_taxonomy_id">
-          <TreeSelect
-            treeData={chapterTaxonomyTreeData}
-            showSearch
-            treeDefaultExpandAll
-            allowClear
-            placeholder="可选章节类型"
-          />
         </Form.Item>
 
         <Form.Item label="进入解析" name="enter_parsing" valuePropName="checked">
