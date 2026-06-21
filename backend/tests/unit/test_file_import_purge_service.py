@@ -1,6 +1,8 @@
 from uuid import uuid4
 
+from src.models.actual_bid_parse_task import ActualBidParseTask, ActualBidParseTaskStatus
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType
+from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.file_import_purge_service import check_purge_impact, purge_file_import
@@ -109,6 +111,90 @@ def test_purge_file_import_deletes_knowledge_chunks(db_session, seeded_kb):
     db_session.commit()
 
     assert db_session.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc_id).count() == 0
+
+
+def test_purge_file_import_deletes_parse_task_before_document(db_session, seeded_kb):
+    import_id = uuid4()
+    imp = FileImport(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        file_name="parse-task.docx",
+        file_type=FileType.docx,
+        file_size=1,
+        storage_path="x/parse-task.docx",
+        file_purpose=FilePurpose.actual_bid,
+        status=FileImportStatus.completed,
+        created_by="admin",
+    )
+    db_session.add(imp)
+    doc = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        source_type=DocumentSourceType.actual_bid,
+        document_name="parse-task.docx",
+        parse_status=DocumentParseStatus.ready,
+        created_by="admin",
+    )
+    db_session.add(doc)
+    db_session.flush()
+    parent_node_id = uuid4()
+    child_node_id = uuid4()
+    db_session.add_all(
+        [
+            DocumentTreeNode(
+                node_id=parent_node_id,
+                kb_id=seeded_kb.kb_id,
+                document_id=doc.document_id,
+                node_type=DocumentTreeNodeType.heading,
+                title="Root",
+                sort_order=0,
+                tree_version=1,
+            ),
+            DocumentTreeNode(
+                node_id=child_node_id,
+                kb_id=seeded_kb.kb_id,
+                document_id=doc.document_id,
+                parent_id=parent_node_id,
+                node_type=DocumentTreeNodeType.paragraph,
+                title="Child",
+                sort_order=1,
+                tree_version=1,
+            ),
+            ActualBidParseTask(
+                kb_id=seeded_kb.kb_id,
+                import_id=import_id,
+                document_id=doc.document_id,
+                status=ActualBidParseTaskStatus.ready,
+                created_by="admin",
+            ),
+        ]
+    )
+    db_session.commit()
+    doc_id = doc.document_id
+
+    purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    assert db_session.get(FileImport, import_id) is None
+    assert db_session.query(Document).filter(Document.import_id == import_id).count() == 0
+    assert (
+        db_session.query(ActualBidParseTask)
+        .filter(ActualBidParseTask.import_id == import_id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(DocumentTreeNode)
+        .filter(DocumentTreeNode.document_id == doc_id)
+        .count()
+        == 0
+    )
 
 
 def test_purge_file_import_removes_storage_dirs(db_session, seeded_kb, tmp_path, monkeypatch):

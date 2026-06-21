@@ -137,6 +137,24 @@ def _embedding_count_for_documents(db: Session, document_ids: list[UUID]) -> int
     return db.query(ChunkEmbedding).filter(or_(*filters)).count()
 
 
+def _purge_document_tree_nodes(
+    db: Session, *, document_ids: list[UUID], counts: dict[str, int]
+) -> None:
+    if not document_ids:
+        return
+    db.query(DocumentTreeNode).filter(DocumentTreeNode.document_id.in_(document_ids)).update(
+        {DocumentTreeNode.parent_id: None},
+        synchronize_session=False,
+    )
+    _inc(
+        counts,
+        "document_tree_nodes",
+        db.query(DocumentTreeNode)
+        .filter(DocumentTreeNode.document_id.in_(document_ids))
+        .delete(synchronize_session=False),
+    )
+
+
 def _purge_documents_for_import(
     db: Session, *, document_ids: list[UUID], counts: dict[str, int]
 ) -> None:
@@ -186,13 +204,7 @@ def _purge_documents_for_import(
         .filter(DocumentParseSuggestion.document_id.in_(document_ids))
         .delete(synchronize_session=False),
     )
-    _inc(
-        counts,
-        "document_tree_nodes",
-        db.query(DocumentTreeNode)
-        .filter(DocumentTreeNode.document_id.in_(document_ids))
-        .delete(synchronize_session=False),
-    )
+    _purge_document_tree_nodes(db, document_ids=document_ids, counts=counts)
     _inc(
         counts,
         "document_media_assets",
@@ -200,6 +212,23 @@ def _purge_documents_for_import(
         .filter(DocumentMediaAsset.document_id.in_(document_ids))
         .delete(synchronize_session=False),
     )
+
+
+def _purge_parse_tasks_for_import(
+    db: Session, *, kb_id: UUID, import_id: UUID, counts: dict[str, int]
+) -> None:
+    _inc(
+        counts,
+        "actual_bid_parse_tasks",
+        db.query(ActualBidParseTask)
+        .filter(ActualBidParseTask.kb_id == kb_id, ActualBidParseTask.import_id == import_id)
+        .delete(synchronize_session=False),
+    )
+
+
+def _purge_documents(db: Session, *, document_ids: list[UUID], counts: dict[str, int]) -> None:
+    if not document_ids:
+        return
     _inc(
         counts,
         "documents",
@@ -293,13 +322,8 @@ def purge_file_import(
             row.document_id for row in db.query(Document).filter(Document.import_id == iid).all()
         ]
         _purge_documents_for_import(db, document_ids=document_ids, counts=counts)
-        _inc(
-            counts,
-            "actual_bid_parse_tasks",
-            db.query(ActualBidParseTask)
-            .filter(ActualBidParseTask.import_id == iid)
-            .delete(synchronize_session=False),
-        )
+        _purge_parse_tasks_for_import(db, kb_id=kb_id, import_id=iid, counts=counts)
+        _purge_documents(db, document_ids=document_ids, counts=counts)
         _inc(
             counts,
             "downstream_task_entries",
