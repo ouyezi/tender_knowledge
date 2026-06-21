@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.middleware.audit import AuditMiddleware
+from src.api.routes.blueprints import router as blueprints_router
 from src.api.routes.file_imports import router as file_imports_router
 from src.api.routes.knowledge_bases import router as kb_router
 from src.api.routes.knowledge_chunks import router as knowledge_chunks_router
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(kb_router)
 app.include_router(file_imports_router)
 app.include_router(knowledge_chunks_router)
+app.include_router(blueprints_router)
 app.include_router(media_router)
 
 
