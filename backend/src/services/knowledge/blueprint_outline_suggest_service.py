@@ -25,13 +25,19 @@ MAX_NODE_TEXT_CONTEXT = 200
 MAX_SUGGEST_DEPTH = 4
 
 _SYSTEM_PROMPT = (
-    "你是标书目录顾问。根据目录蓝图经验与用户目录需求，输出全新有序目录建议 JSON。\n"
+    "你是标书目录顾问。目录蓝图是已验证的推荐目录模板，参考权重最高。\n"
+    "任务：以蓝图骨架为主，结合用户目录需求，输出有序目录建议 JSON。\n"
     "规则：\n"
-    "1. 生成独立新大纲，非蓝图节点镜像。\n"
-    "2. 标题不含序号前缀。\n"
-    "3. 有 children 时填 split_reason，叶子节点填 no_split_reason，二者互斥。\n"
-    "4. importance 取值 required | recommended | optional。\n"
-    "5. 只返回 JSON，不要 markdown 包裹。\n"
+    "1. 【骨架优先】以蓝图的 suggested_structure_md 与 nodes 树为主骨架："
+    "保留其主要模块名称、层级顺序与拆分粒度；"
+    "content_suggestion 应继承蓝图节点 cd/tr 要点，并按用户需求微调表述。\n"
+    "2. 【审慎调整】默认不重组顶层模块、不合并蓝图已有子目录。"
+    "仅当用户需求明确要求，或某蓝图模块对当前项目明显不适用时，才可增删改；"
+    "须在 split_reason/no_split_reason 说明与蓝图的差异原因。\n"
+    "3. 标题去掉原有序号前缀（如 1.、第一章）。\n"
+    "4. 有 children 时填 split_reason，叶子节点填 no_split_reason，二者互斥。\n"
+    "5. importance 优先沿用蓝图 imp，取值 required | recommended | optional。\n"
+    "6. 只返回 JSON，不要 markdown 包裹。\n"
     "Schema：\n"
     '{"outline_title":"标题","summary":"整体说明","nodes":[{"title":"章节",'
     '"content_suggestion":"内容建议","importance":"required",'
@@ -55,6 +61,7 @@ def compact_blueprint_detail(detail: dict[str, Any]) -> dict[str, Any]:
     return {
         "name": detail.get("name") or "",
         "description": detail.get("description") or "",
+        "source_chapter": detail.get("source_chapter_title") or "",
         "scenario_tags": detail.get("scenario_tags") or [],
         "product_tags": detail.get("product_tags") or [],
         "industry_tags": detail.get("industry_tags") or [],
@@ -79,7 +86,14 @@ def _compact_node(node: dict[str, Any]) -> dict[str, Any]:
 
 def build_suggest_user_prompt(*, blueprints: list[dict[str, Any]], requirement: str) -> str:
     payload = json.dumps(blueprints, ensure_ascii=False, separators=(",", ":"))
-    return f"【目录蓝图经验】\n{payload}\n\n【用户目录需求】\n{requirement.strip()}"
+    return (
+        "以下目录蓝图为推荐模板，请以其结构为主骨架生成建议目录。\n"
+        "suggested_structure_md 描述建议模块组织；nodes 树含章节标题(t)、"
+        "重要程度(imp)、内容要点(cd)、应标线索(tr)。\n"
+        f"【目录蓝图经验】\n{payload}\n\n"
+        f"【用户目录需求】\n{requirement.strip()}\n\n"
+        "输出应与蓝图骨架高度一致：保留主要模块与层级；仅在必要时调整并说明理由。"
+    )
 
 
 def validate_suggest_nodes(nodes: Any) -> list[dict[str, Any]]:
