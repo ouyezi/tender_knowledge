@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import BlueprintEditor from "../../components/Blueprint/BlueprintEditor";
 import BlueprintNodeDetailPanel from "../../components/Blueprint/BlueprintNodeDetailPanel";
+import BlueprintOutlineSuggestDrawer from "../../components/Blueprint/BlueprintOutlineSuggestDrawer";
 import BlueprintOutlineTreeReadonly from "../../components/Blueprint/BlueprintOutlineTreeReadonly";
 import { useKBContext } from "../../layout/KBContext";
 import {
@@ -69,6 +70,7 @@ export default function BlueprintDetailPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string>();
   const [draft, setDraft] = useState<BlueprintDraft>();
 
@@ -167,6 +169,7 @@ export default function BlueprintDetailPage() {
         title={`目录蓝图：${draft.name || "-"}`}
         extra={
           <Space>
+            <Button onClick={() => setSuggestOpen(true)}>目录建议</Button>
             <Button onClick={() => navigate("/knowledge/blueprints")}>返回列表</Button>
             {editing ? (
               <Button onClick={() => setEditing(false)} disabled={saving}>
@@ -262,6 +265,12 @@ export default function BlueprintDetailPage() {
           </Col>
         </Row>
       )}
+      <BlueprintOutlineSuggestDrawer
+        open={suggestOpen}
+        kbId={selectedKbId}
+        blueprintId={id}
+        onClose={() => setSuggestOpen(false)}
+      />
     </Space>
   );
 }

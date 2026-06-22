@@ -31,6 +31,26 @@ export interface BlueprintDraft {
   nodes: BlueprintNode[];
 }
 
+export interface SuggestOutlineRequest {
+  blueprint_ids: string[];
+  requirement_description: string;
+}
+
+export interface SuggestOutlineNode {
+  title: string;
+  content_suggestion: string;
+  importance: ImportanceLevel;
+  split_reason: string | null;
+  no_split_reason: string | null;
+  children: SuggestOutlineNode[];
+}
+
+export interface SuggestOutlineResult {
+  outline_title: string;
+  summary: string;
+  nodes: SuggestOutlineNode[];
+}
+
 export interface BlueprintListItem {
   blueprint_id: string;
   kb_id: string;
@@ -150,5 +170,15 @@ export async function deleteBlueprint(
 ): Promise<DeleteBlueprintResult> {
   return apiRequest<DeleteBlueprintResult>(`/api/v1/kbs/${kbId}/blueprints/${id}`, {
     method: "DELETE",
+  });
+}
+
+export async function suggestBlueprintOutline(
+  kbId: string,
+  body: SuggestOutlineRequest,
+): Promise<SuggestOutlineResult> {
+  return apiRequest<SuggestOutlineResult>(`/api/v1/kbs/${kbId}/blueprints/suggest-outline`, {
+    method: "POST",
+    body,
   });
 }
