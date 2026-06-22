@@ -1,5 +1,5 @@
-import { Collapse, Form, Input, Radio, Select, Space, Typography } from "antd";
-import { CONTENT_TYPE_OPTIONS, IMPORTANCE_LEVEL_OPTIONS } from "../../constants/blueprintMeta";
+import { Form, Input, Radio, Typography } from "antd";
+import { IMPORTANCE_LEVEL_OPTIONS } from "../../constants/blueprintMeta";
 import type { BlueprintNode } from "../../services/blueprints";
 
 const { Text } = Typography;
@@ -47,20 +47,7 @@ export default function BlueprintNodeDetailPanel({
         />
       </Form.Item>
 
-      <Form.Item label="内容类型">
-        <Select
-          allowClear
-          placeholder="请选择内容类型"
-          options={CONTENT_TYPE_OPTIONS}
-          value={node.content_type ?? undefined}
-          disabled={readOnly}
-          onChange={(next) => patch({ content_type: next ?? null })}
-        />
-      </Form.Item>
-
-      <Text strong>生成指导</Text>
-
-      <Form.Item label="内容描述" style={{ marginTop: 8 }}>
+      <Form.Item label="内容描述">
         <Input.TextArea
           rows={2}
           value={node.content_description ?? ""}
@@ -79,61 +66,6 @@ export default function BlueprintNodeDetailPanel({
           placeholder="从历史章节推断，遇则填写，可留空"
         />
       </Form.Item>
-
-      <Collapse
-        ghost
-        items={[
-          {
-            key: "writing-strategy",
-            label: "写作策略",
-            children: (
-              <>
-                <Form.Item label="编写目的">
-                  <Input.TextArea
-                    rows={3}
-                    value={node.purpose ?? ""}
-                    readOnly={readOnly}
-                    onChange={(event) => patch({ purpose: event.target.value || null })}
-                  />
-                </Form.Item>
-
-                <Form.Item label="写作目标">
-                  <Input.TextArea
-                    rows={3}
-                    value={node.writing_goal ?? ""}
-                    readOnly={readOnly}
-                    onChange={(event) => patch({ writing_goal: event.target.value || null })}
-                  />
-                </Form.Item>
-
-                <Form.Item label="写作提示">
-                  <Input.TextArea
-                    rows={4}
-                    value={node.writing_hint ?? ""}
-                    readOnly={readOnly}
-                    onChange={(event) => patch({ writing_hint: event.target.value || null })}
-                  />
-                </Form.Item>
-              </>
-            ),
-          },
-        ]}
-      />
-
-      <Form.Item label="关键词提示">
-        <Select
-          mode="tags"
-          value={node.keyword_hint ?? []}
-          disabled={readOnly}
-          onChange={(next) => patch({ keyword_hint: next })}
-        />
-      </Form.Item>
-
-      {!readOnly ? (
-        <Space>
-          <Text type="secondary">提示：左侧可编辑章节标题与层级，右侧编辑节点细节。</Text>
-        </Space>
-      ) : null}
     </Form>
   );
 }

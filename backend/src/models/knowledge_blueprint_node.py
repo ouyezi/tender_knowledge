@@ -3,10 +3,8 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, Uuid
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.session import Base
@@ -42,16 +40,11 @@ class KnowledgeBlueprintNode(Base):
     node_title: Mapped[str] = mapped_column(String(200), nullable=False)
     node_level: Mapped[int] = mapped_column(Integer, nullable=False)
     node_order: Mapped[int] = mapped_column(Integer, nullable=False)
-    purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
-    writing_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
-    writing_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tender_response_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
     importance_level: Mapped[ImportanceLevel] = mapped_column(
         Enum(ImportanceLevel, native_enum=False, length=20), nullable=False
     )
-    content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
-    keyword_hint: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )

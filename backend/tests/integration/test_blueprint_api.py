@@ -11,17 +11,14 @@ from src.models.file_import import FileImport, FileImportStatus, FilePurpose, Fi
 
 MOCK_LLM_JSON = """
 {
-  "outline_title": "供应链方案通用大纲",
-  "overall_strategy": "强调仓配能力",
-  "usual_page_range": "5-8页",
-  "related_regulations": ["ISO9001"],
-  "common_mistakes": "忽视应急预案",
-  "template_style": "formal",
+  "title": "供应链方案通用大纲",
+  "desc": "供应链模块概要",
   "nodes": [{
-    "node_title": "总体设计", "node_level": 1, "children": [],
-    "purpose": "p", "writing_goal": "g", "writing_hint": "h",
-    "required_flag": true, "recommended_flag": false,
-    "content_type": "text", "keyword_hint": ["供应链"]
+    "t": "总体设计",
+    "imp": "required",
+    "cd": "描述总体设计思路。",
+    "tr": "响应评分点。",
+    "children": []
   }]
 }
 """.strip()
@@ -104,11 +101,6 @@ def _build_manual_payload(doc_id, node_id, *, name: str, description: str):
         "industry_tags": ["ind-a"],
         "scenario_tags": ["scene-a"],
         "applicable_project_type": ["type-a"],
-        "related_regulations": ["ISO9001"],
-        "overall_strategy": "强调仓配能力",
-        "common_mistakes": "忽视应急预案",
-        "template_style": "formal",
-        "usual_page_range": "5-8页",
         "status": "active",
         "nodes": [
             {
@@ -116,11 +108,8 @@ def _build_manual_payload(doc_id, node_id, *, name: str, description: str):
                 "node_level": 1,
                 "node_order": 1,
                 "importance_level": "required",
-                "purpose": "p",
-                "writing_goal": "g",
-                "writing_hint": "h",
-                "content_type": "text",
-                "keyword_hint": ["供应链"],
+                "content_description": "写总体设计思路。",
+                "tender_response_hint": "响应评分点。",
                 "children": [],
             }
         ],
@@ -129,16 +118,15 @@ def _build_manual_payload(doc_id, node_id, *, name: str, description: str):
 
 MOCK_LLM_JSON_V11 = """
 {
-  "outline_title": "供应链方案通用大纲",
-  "overall_strategy": "强调仓配能力",
-  "suggested_structure_md": "## 技术模块\\n- 总体设计",
+  "title": "供应链方案通用大纲",
+  "desc": "供应链模块概要",
+  "structure_md": "## 技术模块\\n- 总体设计",
   "nodes": [{
-    "node_title": "总体设计", "node_level": 1, "children": [],
-    "purpose": "p", "writing_goal": "g", "writing_hint": "h",
-    "content_description": "写总体设计思路。",
-    "tender_response_hint": "响应评分点。",
-    "required_flag": true, "recommended_flag": false,
-    "content_type": "text", "keyword_hint": ["供应链"]
+    "t": "总体设计",
+    "imp": "required",
+    "cd": "写总体设计思路。",
+    "tr": "响应评分点。",
+    "children": []
   }]
 }
 """.strip()
