@@ -19,16 +19,26 @@ from src.config import settings
 from src.models.document import Document, DocumentParseStatus
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.services.knowledge.blueprint_tree_utils import assign_node_codes, map_llm_flags_to_importance
+from src.services.knowledge.blueprint_field_utils import (
+    CONTENT_DESCRIPTION_MAX,
+    CONTENT_SUMMARY_MAX,
+    SUGGESTED_STRUCTURE_MD_MAX,
+    TENDER_RESPONSE_HINT_MAX,
+    truncate_blueprint_field,
+)
 from src.services.llm_client import truncate_for_llm
 
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
-    "你是标书大纲蓝图助手。基于给定目录子树，输出 JSON 对象。"
+    "你是标书大纲蓝图助手。基于给定目录子树（含 content_summary），输出 JSON 对象。"
     "顶层字段：outline_title, description, overall_strategy, usual_page_range, "
-    "related_regulations, common_mistakes, template_style, nodes。"
+    "related_regulations, common_mistakes, template_style, suggested_structure_md, nodes。"
+    "suggested_structure_md 按逻辑模块用 Markdown 分段描述建议目录组织，可引用源章节标题。"
     "nodes 为树结构，每个节点包含：node_title, node_level, purpose, writing_goal, "
-    "writing_hint, required_flag, recommended_flag, content_type, keyword_hint, children。"
+    "writing_hint, content_description, tender_response_hint, required_flag, recommended_flag, "
+    "content_type, keyword_hint, children。"
+    "content_description 与 tender_response_hint 各 1-2 句；tender_response_hint 无线索可省略。"
     "写作字段保持简洁（每项 1-2 句）。只返回 JSON，不要解释。"
 )
 
@@ -140,8 +150,38 @@ def generate_blueprint_draft(
         "common_mistakes": _as_optional_text(parsed.get("common_mistakes")),
         "template_style": _as_optional_text(parsed.get("template_style")),
         "usual_page_range": _as_optional_text(parsed.get("usual_page_range")),
+        "suggested_structure_md": truncate_blueprint_field(
+            _as_optional_text(parsed.get("suggested_structure_md")),
+            max_len=SUGGESTED_STRUCTURE_MD_MAX,
+        ),
         "nodes": wrapped_nodes,
     }
+
+
+def aggregate_content_summary(
+    nodes: list[DocumentTreeNode],
+    *,
+    root_id: UUID,
+) -> str:
+    """Collect non-heading content_preview under a heading subtree."""
+    children_by_parent: dict[UUID | None, list[DocumentTreeNode]] = defaultdict(list)
+    for node in nodes:
+        children_by_parent[node.parent_id].append(node)
+
+    parts: list[str] = []
+
+    def walk(node_id: UUID) -> None:
+        for child in sorted(children_by_parent.get(node_id, []), key=lambda item: item.sort_order):
+            if child.node_type != DocumentTreeNodeType.heading:
+                preview = (child.content_preview or "").strip()
+                if preview:
+                    parts.append(preview)
+            else:
+                walk(child.node_id)
+
+    walk(root_id)
+    joined = "\n".join(parts).strip()
+    return truncate_blueprint_field(joined, max_len=CONTENT_SUMMARY_MAX) or ""
 
 
 def collect_subtree_outline(
@@ -164,11 +204,10 @@ def collect_subtree_outline(
         .filter(
             DocumentTreeNode.kb_id == kb_id,
             DocumentTreeNode.document_id == doc_id,
-            DocumentTreeNode.node_type == DocumentTreeNodeType.heading,
         )
         .order_by(
             DocumentTreeNode.sort_order.asc(),
-            DocumentTreeNode.level.asc(),
+            DocumentTreeNode.level.asc().nulls_last(),
             DocumentTreeNode.created_at.asc(),
         )
         .all()
@@ -183,10 +222,16 @@ def collect_subtree_outline(
         children_by_parent[node.parent_id].append(node)
 
     def build(node: DocumentTreeNode) -> dict[str, Any]:
+        child_headings = [
+            child
+            for child in children_by_parent.get(node.node_id, [])
+            if child.node_type == DocumentTreeNodeType.heading
+        ]
         return {
             "node_title": node.title or "",
             "node_level": int(node.level or 1),
-            "children": [build(child) for child in children_by_parent.get(node.node_id, [])],
+            "content_summary": aggregate_content_summary(nodes, root_id=node.node_id),
+            "children": [build(child) for child in child_headings],
         }
 
     return build(root)
@@ -194,7 +239,7 @@ def collect_subtree_outline(
 
 def _estimate_max_tokens(*, subtree_node_count: int) -> int:
     """Scale output budget with subtree size; cap at blueprint_generate_max_tokens."""
-    per_node = 280
+    per_node = 380
     base = 512
     estimated = base + subtree_node_count * per_node
     return min(settings.blueprint_generate_max_tokens, max(1024, estimated))
@@ -319,7 +364,7 @@ def _parse_llm_json(content: str) -> dict[str, Any] | None:
 
 def _build_user_prompt(subtree: dict[str, Any]) -> str:
     outline_json = json.dumps(subtree, ensure_ascii=False, separators=(",", ":"))
-    return truncate_for_llm(f"目录子树：\n{outline_json}")
+    return truncate_for_llm(f"目录子树（含 content_summary）：\n{outline_json}")
 
 
 def _wrap_nodes_with_source_root(
@@ -334,6 +379,8 @@ def _wrap_nodes_with_source_root(
         "purpose": None,
         "writing_goal": None,
         "writing_hint": None,
+        "content_description": None,
+        "tender_response_hint": None,
         "importance_level": "required",
         "content_type": None,
         "keyword_hint": [],
@@ -345,6 +392,8 @@ def _wrap_nodes_with_source_root(
             "purpose": matched.get("purpose"),
             "writing_goal": matched.get("writing_goal"),
             "writing_hint": matched.get("writing_hint"),
+            "content_description": matched.get("content_description"),
+            "tender_response_hint": matched.get("tender_response_hint"),
             "importance_level": matched.get("importance_level") or "required",
             "content_type": matched.get("content_type"),
             "keyword_hint": matched.get("keyword_hint") or [],
@@ -392,6 +441,14 @@ def _normalize_nodes(raw_nodes: Any) -> list[dict[str, Any]]:
                 "purpose": _as_optional_text(node.get("purpose")),
                 "writing_goal": _as_optional_text(node.get("writing_goal")),
                 "writing_hint": _as_optional_text(node.get("writing_hint")),
+                "content_description": truncate_blueprint_field(
+                    _as_optional_text(node.get("content_description")),
+                    max_len=CONTENT_DESCRIPTION_MAX,
+                ),
+                "tender_response_hint": truncate_blueprint_field(
+                    _as_optional_text(node.get("tender_response_hint")),
+                    max_len=TENDER_RESPONSE_HINT_MAX,
+                ),
                 "importance_level": map_llm_flags_to_importance(
                     _as_bool(node.get("required_flag")),
                     _as_bool(node.get("recommended_flag")),
