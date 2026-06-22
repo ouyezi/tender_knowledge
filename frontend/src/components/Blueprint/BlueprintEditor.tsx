@@ -2,6 +2,7 @@ import { Alert, Button, Card, Col, Divider, Row, Skeleton, Space, Typography } f
 import { useMemo, useState } from "react";
 import BlueprintMetaForm from "./BlueprintMetaForm";
 import BlueprintNodeDetailPanel from "./BlueprintNodeDetailPanel";
+import BlueprintSuggestedStructure from "./BlueprintSuggestedStructure";
 import BlueprintOutlineTree from "./BlueprintOutlineTree";
 import BlueprintOutlineTreeReadonly from "./BlueprintOutlineTreeReadonly";
 import type { BlueprintDraft, BlueprintNode } from "../../services/blueprints";
@@ -110,6 +111,8 @@ export default function BlueprintEditor({
       <Card title={mode === "draft" ? "目录蓝图草稿" : "目录蓝图编辑"}>
         <BlueprintMetaForm value={value} readOnly={readOnly} onChange={handleMetaChange} />
       </Card>
+
+      <BlueprintSuggestedStructure value={value} readOnly={readOnly} onChange={onChange} />
 
       <Row gutter={12}>
         <Col xs={24} lg={11}>

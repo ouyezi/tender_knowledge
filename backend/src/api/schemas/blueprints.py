@@ -13,6 +13,8 @@ class BlueprintNodeInput(BaseModel):
     purpose: str | None = None
     writing_goal: str | None = None
     writing_hint: str | None = None
+    content_description: str | None = None
+    tender_response_hint: str | None = None
     importance_level: str = "optional"
     content_type: str | None = None
     keyword_hint: list[str] = Field(default_factory=list)
@@ -42,6 +44,7 @@ class SaveBlueprintRequest(BaseModel):
     common_mistakes: str | None = None
     template_style: str | None = None
     usual_page_range: str | None = None
+    suggested_structure_md: str | None = None
     status: str = "active"
     version: int | None = None
     nodes: list[BlueprintNodeInput] = Field(default_factory=list)

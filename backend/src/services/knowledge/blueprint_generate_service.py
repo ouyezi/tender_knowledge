@@ -19,17 +19,63 @@ from src.config import settings
 from src.models.document import Document, DocumentParseStatus
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.services.knowledge.blueprint_tree_utils import assign_node_codes, map_llm_flags_to_importance
+from src.services.knowledge.blueprint_field_utils import (
+    CONTENT_DESCRIPTION_MAX,
+    CONTENT_SUMMARY_MAX,
+    SUGGESTED_STRUCTURE_MD_MAX,
+    TENDER_RESPONSE_HINT_MAX,
+    truncate_blueprint_field,
+)
 from src.services.llm_client import truncate_for_llm
 
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (
-    "你是标书大纲蓝图助手。基于给定目录子树，输出 JSON 对象。"
-    "顶层字段：outline_title, description, overall_strategy, usual_page_range, "
-    "related_regulations, common_mistakes, template_style, nodes。"
-    "nodes 为树结构，每个节点包含：node_title, node_level, purpose, writing_goal, "
-    "writing_hint, required_flag, recommended_flag, content_type, keyword_hint, children。"
-    "写作字段保持简洁（每项 1-2 句）。只返回 JSON，不要解释。"
+    """
+    # Role
+    你是一位精通中国招投标流程、政府采购法及各类复杂标书（如 IT、工程、供应链服务等）架构的**标书大纲蓝图专家**。
+
+    # Task
+    请根据输入的“标书目录子树（包含 content_summary）”，进行深度的逻辑梳理、合规性评估与编写策略分析，最终输出一个结构化的、用于指导后续标书编写的 JSON 蓝图对象。
+
+    # Constraints
+    1. **清洗目录序号（核心）**：在生成 `suggested_structure_md` 以及所有 `node_title` 时，**必须彻底剥离原始目录自带的所有序号前缀**（例如：删掉 “1.”、“1.1”、“第一章”、“（一）”等），仅保留纯文本标题名称。Markdown 的结构层级**仅**通过 `#`、`##` 等符号进行体现。
+    2. **严格精炼**：所有编写相关的文本字段（如 purpose, writing_goal, writing_hint 等）必须保持极其精炼，每项严格控制在 **1-2 句**内。
+    3. **长度约束**：`content_description` 和 `tender_response_hint` 同样保持 **1-2 句**。
+    4. **动态省略**：若某个节点完全没有明确的控标、应标线索，`tender_response_hint` 字段必须设为 `""`（空字符串）或不输出。
+    5. **纯净输出**：只返回标准的 JSON 字符串，用 ```json ... ``` 包裹。**绝对不要**包含任何前言、后记、Markdown 解释性文本或旁白。
+
+    # Output Format (JSON Schema)
+    请严格按照以下 JSON 格式结构进行输出，不得擅自修改、减少或增加顶层及节点字段：
+
+    {
+    "outline_title": "大纲标题/标书模块名称（不带序号）",
+    "description": "该目录子树的核心内容概要与编制背景说明",
+    "overall_strategy": "针对此模块的整体控标与应标策略",
+    "usual_page_range": "建议的合理页数范围（如：10-15页）",
+    "related_regulations": ["相关的法律法规、行业标准或规范性文件清单"],
+    "common_mistakes": ["此模块编写时常见的扣分项、废标陷阱或漏项"],
+    "template_style": "建议的排版风格、图表配置偏好（如：多用流程图、表格量化）",
+    "suggested_structure_md": "Markdown 格式的建议目录组织逻辑描述（彻底去除原数字/汉字序号，纯靠 #, ## 符号表达层级）",
+    "nodes": [
+        {
+        "node_title": "节点/章节名称（彻底去除原数字/汉字序号，仅留纯文本标题）",
+        "node_level": 1, 
+        "purpose": "本章节在标书中的核心存在价值（1-2句）",
+        "writing_goal": "期望达达到编写效果或得分点目标（1-2句）",
+        "writing_hint": "具体的编写切入点与技巧提示（1-2句）",
+        "content_description": "该节点应包含的核心内容要点（1-2句）",
+        "tender_response_hint": "核心应标/控标线索提示（1-2句，无则留空）",
+        "required_flag": true, 
+        "recommended_flag": false, 
+        "content_type": "内容呈现类型（如：纯文本/图表结合/案例证明/资质证书）",
+        "keyword_hint": ["建议覆盖的高频词/得分点关键词"],
+        "children": [] 
+        }
+    ]
+    }
+
+    """
 )
 
 
@@ -140,8 +186,38 @@ def generate_blueprint_draft(
         "common_mistakes": _as_optional_text(parsed.get("common_mistakes")),
         "template_style": _as_optional_text(parsed.get("template_style")),
         "usual_page_range": _as_optional_text(parsed.get("usual_page_range")),
+        "suggested_structure_md": truncate_blueprint_field(
+            _as_optional_text(parsed.get("suggested_structure_md")),
+            max_len=SUGGESTED_STRUCTURE_MD_MAX,
+        ),
         "nodes": wrapped_nodes,
     }
+
+
+def aggregate_content_summary(
+    nodes: list[DocumentTreeNode],
+    *,
+    root_id: UUID,
+) -> str:
+    """Collect non-heading content_preview under a heading subtree."""
+    children_by_parent: dict[UUID | None, list[DocumentTreeNode]] = defaultdict(list)
+    for node in nodes:
+        children_by_parent[node.parent_id].append(node)
+
+    parts: list[str] = []
+
+    def walk(node_id: UUID) -> None:
+        for child in sorted(children_by_parent.get(node_id, []), key=lambda item: item.sort_order):
+            if child.node_type != DocumentTreeNodeType.heading:
+                preview = (child.content_preview or "").strip()
+                if preview:
+                    parts.append(preview)
+            else:
+                walk(child.node_id)
+
+    walk(root_id)
+    joined = "\n".join(parts).strip()
+    return truncate_blueprint_field(joined, max_len=CONTENT_SUMMARY_MAX) or ""
 
 
 def collect_subtree_outline(
@@ -164,11 +240,10 @@ def collect_subtree_outline(
         .filter(
             DocumentTreeNode.kb_id == kb_id,
             DocumentTreeNode.document_id == doc_id,
-            DocumentTreeNode.node_type == DocumentTreeNodeType.heading,
         )
         .order_by(
             DocumentTreeNode.sort_order.asc(),
-            DocumentTreeNode.level.asc(),
+            DocumentTreeNode.level.asc().nulls_last(),
             DocumentTreeNode.created_at.asc(),
         )
         .all()
@@ -183,10 +258,16 @@ def collect_subtree_outline(
         children_by_parent[node.parent_id].append(node)
 
     def build(node: DocumentTreeNode) -> dict[str, Any]:
+        child_headings = [
+            child
+            for child in children_by_parent.get(node.node_id, [])
+            if child.node_type == DocumentTreeNodeType.heading
+        ]
         return {
             "node_title": node.title or "",
             "node_level": int(node.level or 1),
-            "children": [build(child) for child in children_by_parent.get(node.node_id, [])],
+            "content_summary": aggregate_content_summary(nodes, root_id=node.node_id),
+            "children": [build(child) for child in child_headings],
         }
 
     return build(root)
@@ -194,7 +275,7 @@ def collect_subtree_outline(
 
 def _estimate_max_tokens(*, subtree_node_count: int) -> int:
     """Scale output budget with subtree size; cap at blueprint_generate_max_tokens."""
-    per_node = 280
+    per_node = 380
     base = 512
     estimated = base + subtree_node_count * per_node
     return min(settings.blueprint_generate_max_tokens, max(1024, estimated))
@@ -319,7 +400,7 @@ def _parse_llm_json(content: str) -> dict[str, Any] | None:
 
 def _build_user_prompt(subtree: dict[str, Any]) -> str:
     outline_json = json.dumps(subtree, ensure_ascii=False, separators=(",", ":"))
-    return truncate_for_llm(f"目录子树：\n{outline_json}")
+    return truncate_for_llm(f"目录子树（含 content_summary）：\n{outline_json}")
 
 
 def _wrap_nodes_with_source_root(
@@ -334,6 +415,8 @@ def _wrap_nodes_with_source_root(
         "purpose": None,
         "writing_goal": None,
         "writing_hint": None,
+        "content_description": None,
+        "tender_response_hint": None,
         "importance_level": "required",
         "content_type": None,
         "keyword_hint": [],
@@ -345,6 +428,8 @@ def _wrap_nodes_with_source_root(
             "purpose": matched.get("purpose"),
             "writing_goal": matched.get("writing_goal"),
             "writing_hint": matched.get("writing_hint"),
+            "content_description": matched.get("content_description"),
+            "tender_response_hint": matched.get("tender_response_hint"),
             "importance_level": matched.get("importance_level") or "required",
             "content_type": matched.get("content_type"),
             "keyword_hint": matched.get("keyword_hint") or [],
@@ -392,6 +477,14 @@ def _normalize_nodes(raw_nodes: Any) -> list[dict[str, Any]]:
                 "purpose": _as_optional_text(node.get("purpose")),
                 "writing_goal": _as_optional_text(node.get("writing_goal")),
                 "writing_hint": _as_optional_text(node.get("writing_hint")),
+                "content_description": truncate_blueprint_field(
+                    _as_optional_text(node.get("content_description")),
+                    max_len=CONTENT_DESCRIPTION_MAX,
+                ),
+                "tender_response_hint": truncate_blueprint_field(
+                    _as_optional_text(node.get("tender_response_hint")),
+                    max_len=TENDER_RESPONSE_HINT_MAX,
+                ),
                 "importance_level": map_llm_flags_to_importance(
                     _as_bool(node.get("required_flag")),
                     _as_bool(node.get("recommended_flag")),

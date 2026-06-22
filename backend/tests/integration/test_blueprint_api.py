@@ -127,6 +127,49 @@ def _build_manual_payload(doc_id, node_id, *, name: str, description: str):
     }
 
 
+MOCK_LLM_JSON_V11 = """
+{
+  "outline_title": "供应链方案通用大纲",
+  "overall_strategy": "强调仓配能力",
+  "suggested_structure_md": "## 技术模块\\n- 总体设计",
+  "nodes": [{
+    "node_title": "总体设计", "node_level": 1, "children": [],
+    "purpose": "p", "writing_goal": "g", "writing_hint": "h",
+    "content_description": "写总体设计思路。",
+    "tender_response_hint": "响应评分点。",
+    "required_flag": true, "recommended_flag": false,
+    "content_type": "text", "keyword_hint": ["供应链"]
+  }]
+}
+""".strip()
+
+
+def test_generate_create_get_includes_v11_fields(client, db_session, seeded_kb, monkeypatch):
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    monkeypatch.setattr(
+        "src.services.knowledge.blueprint_generate_service._chat_with_timeout",
+        lambda **_: MOCK_LLM_JSON_V11,
+    )
+
+    generate_resp = client.post(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/blueprints/generate",
+        json={"doc_id": str(document.document_id), "node_id": str(parent.node_id)},
+    )
+    assert generate_resp.status_code == 200
+    draft = generate_resp.json()["data"]
+    assert draft["suggested_structure_md"].startswith("## 技术模块")
+    assert draft["nodes"][0]["children"][0]["content_description"] == "写总体设计思路。"
+
+    create_resp = client.post(f"/api/v1/kbs/{seeded_kb.kb_id}/blueprints", json=draft)
+    assert create_resp.status_code == 201
+    blueprint_id = create_resp.json()["data"]["blueprint_id"]
+
+    detail_resp = client.get(f"/api/v1/kbs/{seeded_kb.kb_id}/blueprints/{blueprint_id}")
+    detail = detail_resp.json()["data"]
+    assert detail["suggested_structure_md"].startswith("## 技术模块")
+    assert detail["nodes"][0]["children"][0]["tender_response_hint"] == "响应评分点。"
+
+
 def test_generate_create_get_flow(client, db_session, seeded_kb, monkeypatch):
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     monkeypatch.setattr(

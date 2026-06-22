@@ -9,6 +9,12 @@ from sqlalchemy.orm import Session
 
 from src.models.knowledge_blueprint import BlueprintStatus, KnowledgeBlueprint
 from src.models.knowledge_blueprint_node import ImportanceLevel, KnowledgeBlueprintNode
+from src.services.knowledge.blueprint_field_utils import (
+    CONTENT_DESCRIPTION_MAX,
+    SUGGESTED_STRUCTURE_MD_MAX,
+    TENDER_RESPONSE_HINT_MAX,
+    truncate_blueprint_field,
+)
 from src.services.knowledge.blueprint_tree_utils import assign_node_codes, flatten_tree, nest_tree
 
 
@@ -47,6 +53,10 @@ def create_blueprint(db: Session, *, kb_id: UUID, payload: dict[str, Any]) -> Kn
         common_mistakes=payload.get("common_mistakes"),
         template_style=payload.get("template_style"),
         usual_page_range=payload.get("usual_page_range"),
+        suggested_structure_md=truncate_blueprint_field(
+            payload.get("suggested_structure_md"),
+            max_len=SUGGESTED_STRUCTURE_MD_MAX,
+        ),
         status=BlueprintStatus(payload.get("status") or BlueprintStatus.active.value),
         version=int(payload.get("version") or 1),
     )
@@ -99,6 +109,11 @@ def update_blueprint(
     blueprint.common_mistakes = payload.get("common_mistakes", blueprint.common_mistakes)
     blueprint.template_style = payload.get("template_style", blueprint.template_style)
     blueprint.usual_page_range = payload.get("usual_page_range", blueprint.usual_page_range)
+    if "suggested_structure_md" in payload:
+        blueprint.suggested_structure_md = truncate_blueprint_field(
+            payload.get("suggested_structure_md"),
+            max_len=SUGGESTED_STRUCTURE_MD_MAX,
+        )
     if "status" in payload and payload.get("status") is not None:
         blueprint.status = BlueprintStatus(str(payload.get("status")))
     if "version" in payload and payload.get("version") is not None:
@@ -136,6 +151,14 @@ def replace_nodes(db: Session, *, blueprint_id: UUID, flat_nodes: list[dict[str,
                 purpose=node.get("purpose"),
                 writing_goal=node.get("writing_goal"),
                 writing_hint=node.get("writing_hint"),
+                content_description=truncate_blueprint_field(
+                    node.get("content_description"),
+                    max_len=CONTENT_DESCRIPTION_MAX,
+                ),
+                tender_response_hint=truncate_blueprint_field(
+                    node.get("tender_response_hint"),
+                    max_len=TENDER_RESPONSE_HINT_MAX,
+                ),
                 importance_level=_coerce_importance_level(importance),
                 content_type=node.get("content_type"),
                 keyword_hint=list(node.get("keyword_hint") or []),
@@ -186,6 +209,8 @@ def get_blueprint_detail(db: Session, *, kb_id: UUID, blueprint_id: UUID) -> dic
             "purpose": node.purpose,
             "writing_goal": node.writing_goal,
             "writing_hint": node.writing_hint,
+            "content_description": node.content_description,
+            "tender_response_hint": node.tender_response_hint,
             "importance_level": node.importance_level.value,
             "content_type": node.content_type,
             "keyword_hint": node.keyword_hint or [],
@@ -209,6 +234,7 @@ def get_blueprint_detail(db: Session, *, kb_id: UUID, blueprint_id: UUID) -> dic
         "common_mistakes": blueprint.common_mistakes,
         "template_style": blueprint.template_style,
         "usual_page_range": blueprint.usual_page_range,
+        "suggested_structure_md": blueprint.suggested_structure_md,
         "status": blueprint.status.value,
         "version": blueprint.version,
         "nodes": nest_tree(flat_nodes),

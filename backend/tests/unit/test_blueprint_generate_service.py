@@ -135,8 +135,43 @@ def test_generate_maps_importance_and_node_code(db_session, seeded_kb, monkeypat
 
 
 def test_estimate_max_tokens_scales_with_subtree_size():
-    assert _estimate_max_tokens(subtree_node_count=6) == 2192
-    assert _estimate_max_tokens(subtree_node_count=100) == 20480
+    assert _estimate_max_tokens(subtree_node_count=6) == 2792
+    assert _estimate_max_tokens(subtree_node_count=100) == 38512
+    assert _estimate_max_tokens(subtree_node_count=200) == 65536
+
+
+MOCK_LLM_JSON_V11 = {
+    **MOCK_LLM_JSON,
+    "suggested_structure_md": "## 技术方案模块\n- 映射：1.1 技术方案",
+    "nodes": [
+        {
+            **MOCK_LLM_JSON["nodes"][0],
+            "content_description": "描述总体架构与部署方式。",
+            "tender_response_hint": "需响应技术规格书中的架构要求。",
+        }
+    ],
+}
+
+
+def test_generate_returns_generation_extraction_fields(db_session, seeded_kb, monkeypatch):
+    document, root, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    monkeypatch.setattr(
+        "src.services.knowledge.blueprint_generate_service._chat_with_timeout",
+        lambda **kw: json.dumps(MOCK_LLM_JSON_V11, ensure_ascii=False),
+    )
+
+    result = generate_blueprint_draft(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=document.document_id,
+        node_id=root.node_id,
+    )
+
+    assert result["suggested_structure_md"].startswith("## 技术方案")
+    root_node = result["nodes"][0]
+    child = root_node["children"][0]
+    assert child["content_description"] == "描述总体架构与部署方式。"
+    assert child["tender_response_hint"] == "需响应技术规格书中的架构要求。"
 
 
 def test_wraps_mid_level_llm_nodes_under_source_root(db_session, seeded_kb, monkeypatch):
