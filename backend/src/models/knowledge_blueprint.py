@@ -42,6 +42,7 @@ class KnowledgeBlueprint(Base):
     common_mistakes: Mapped[str | None] = mapped_column(Text, nullable=True)
     template_style: Mapped[str | None] = mapped_column(Text, nullable=True)
     usual_page_range: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suggested_structure_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[BlueprintStatus] = mapped_column(
         Enum(BlueprintStatus, native_enum=False, length=20),
         nullable=False,

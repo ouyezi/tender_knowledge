@@ -45,6 +45,8 @@ class KnowledgeBlueprintNode(Base):
     purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
     writing_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     writing_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tender_response_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
     importance_level: Mapped[ImportanceLevel] = mapped_column(
         Enum(ImportanceLevel, native_enum=False, length=20), nullable=False
     )
