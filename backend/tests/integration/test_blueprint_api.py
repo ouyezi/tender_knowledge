@@ -281,3 +281,74 @@ def test_document_tree_includes_has_blueprint(client, db_session, seeded_kb):
     assert len(tree[0]["children"]) == 1
     assert tree[0]["children"][0]["node_id"] == str(child.node_id)
     assert tree[0]["children"][0]["has_blueprint"] is False
+
+
+MOCK_SUGGEST_JSON = """
+{
+  "outline_title": "供应链建议目录",
+  "summary": "按需求组织章节",
+  "nodes": [{
+    "title": "总体设计",
+    "content_suggestion": "写总体设计思路。",
+    "importance": "required",
+    "split_reason": null,
+    "no_split_reason": "单章覆盖即可。",
+    "children": []
+  }]
+}
+""".strip()
+
+
+def _create_blueprint_for_suggest(client, kb_id, db_session):
+    document, parent, _ = _seed_document_tree(db_session, kb_id)
+    payload = _build_manual_payload(
+        document.document_id,
+        parent.node_id,
+        name="建议测试蓝图",
+        description="用于 suggest-outline",
+    )
+    create_resp = client.post(f"/api/v1/kbs/{kb_id}/blueprints", json=payload)
+    assert create_resp.status_code == 201
+    return create_resp.json()["data"]["blueprint_id"]
+
+
+def test_suggest_outline_happy_path(client, db_session, seeded_kb, monkeypatch):
+    blueprint_id = _create_blueprint_for_suggest(client, seeded_kb.kb_id, db_session)
+    monkeypatch.setattr(
+        "src.services.knowledge.blueprint_outline_suggest_service._chat_with_timeout",
+        lambda **_: MOCK_SUGGEST_JSON,
+    )
+    resp = client.post(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/blueprints/suggest-outline",
+        json={
+            "blueprint_ids": [blueprint_id],
+            "requirement_description": "需要突出供应链安全与实施计划",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["outline_title"] == "供应链建议目录"
+    assert data["nodes"][0]["no_split_reason"] == "单章覆盖即可。"
+
+
+def test_suggest_outline_empty_requirement(client, db_session, seeded_kb):
+    blueprint_id = _create_blueprint_for_suggest(client, seeded_kb.kb_id, db_session)
+    resp = client.post(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/blueprints/suggest-outline",
+        json={"blueprint_ids": [blueprint_id], "requirement_description": "   "},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "invalid_request"
+
+
+def test_suggest_outline_blueprint_not_found(client, seeded_kb):
+    missing_id = str(uuid4())
+    resp = client.post(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/blueprints/suggest-outline",
+        json={
+            "blueprint_ids": [missing_id],
+            "requirement_description": "测试需求",
+        },
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "blueprint_not_found"

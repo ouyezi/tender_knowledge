@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     blueprint_generate_model: str = "qwen3.6-flash"
     blueprint_generate_timeout_sec: int = 120
     blueprint_generate_max_tokens: int = 16384
+    blueprint_suggest_model: str = "qwen3.6-flash"
+    blueprint_suggest_timeout_sec: int = 120
+    blueprint_suggest_max_tokens: int = 8192
+    blueprint_suggest_max_blueprints: int = 5
+    blueprint_suggest_requirement_max: int = 2000
     embedding_model: str = "text-embedding-v2"
 
     model_config = SettingsConfigDict(env_file=_discover_env_files(), extra="ignore")

@@ -14,7 +14,9 @@ from src.api.schemas.blueprints import (
     BlueprintListFilters,
     GenerateBlueprintRequest,
     SaveBlueprintRequest,
+    SuggestOutlineRequest,
 )
+from src.config import settings
 from src.db.session import get_db
 from src.models.knowledge_base import KnowledgeBase
 from src.models.knowledge_blueprint import KnowledgeBlueprint
@@ -23,6 +25,11 @@ from src.services.knowledge.blueprint_generate_service import (
     BlueprintGenerateTimeoutError,
     NoChildNodesError,
     generate_blueprint_draft,
+)
+from src.services.knowledge.blueprint_outline_suggest_service import (
+    OutlineSuggestFailedError,
+    OutlineSuggestTimeoutError,
+    suggest_outline,
 )
 from src.services.knowledge.blueprint_service import (
     BlueprintConflictError,
@@ -107,6 +114,80 @@ def generate_blueprint_draft_api(
             ),
         )
     return success(draft, trace_id=get_trace_id())
+
+
+@router.post("/suggest-outline")
+def suggest_outline_api(
+    kb_id: UUID,
+    body: SuggestOutlineRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    requirement = body.requirement_description.strip()
+    if not requirement:
+        return JSONResponse(
+            status_code=400,
+            content=error(
+                "invalid_request",
+                "requirement_description is required",
+                trace_id=get_trace_id(),
+            ),
+        )
+    if len(requirement) > settings.blueprint_suggest_requirement_max:
+        return JSONResponse(
+            status_code=400,
+            content=error(
+                "invalid_request",
+                "requirement_description too long",
+                trace_id=get_trace_id(),
+            ),
+        )
+    if len(body.blueprint_ids) > settings.blueprint_suggest_max_blueprints:
+        return JSONResponse(
+            status_code=400,
+            content=error("invalid_request", "too many blueprint_ids", trace_id=get_trace_id()),
+        )
+
+    try:
+        result = suggest_outline(
+            db,
+            kb_id=kb_id,
+            blueprint_ids=body.blueprint_ids,
+            requirement_description=requirement,
+        )
+    except BlueprintNotFoundError:
+        return JSONResponse(
+            status_code=404,
+            content=error("blueprint_not_found", "Blueprint not found", trace_id=get_trace_id()),
+        )
+    except OutlineSuggestTimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content=error("outline_suggest_timeout", "Outline suggest timed out", trace_id=get_trace_id()),
+        )
+    except OutlineSuggestFailedError as exc:
+        message = str(exc)
+        if message == "llm not configured":
+            return JSONResponse(
+                status_code=503,
+                content=error("llm_not_configured", "LLM is not configured", trace_id=get_trace_id()),
+            )
+        if message in {
+            "requirement_description empty",
+            "requirement_description too long",
+            "blueprint_ids empty",
+            "too many blueprint_ids",
+        }:
+            return JSONResponse(
+                status_code=400,
+                content=error("invalid_request", message, trace_id=get_trace_id()),
+            )
+        logger.warning("outline suggest failed kb_id=%s reason=%s", kb_id, exc)
+        return JSONResponse(
+            status_code=502,
+            content=error("outline_suggest_failed", "Outline suggest failed", trace_id=get_trace_id()),
+        )
+    return success(result, trace_id=get_trace_id())
 
 
 @router.get("/by-source")
