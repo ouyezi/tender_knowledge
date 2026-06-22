@@ -1,4 +1,4 @@
-import { Form, Input, Radio, Select, Space, Typography } from "antd";
+import { Collapse, Form, Input, Radio, Select, Space, Typography } from "antd";
 import { CONTENT_TYPE_OPTIONS, IMPORTANCE_LEVEL_OPTIONS } from "../../constants/blueprintMeta";
 import type { BlueprintNode } from "../../services/blueprints";
 
@@ -58,32 +58,67 @@ export default function BlueprintNodeDetailPanel({
         />
       </Form.Item>
 
-      <Form.Item label="编写目的">
+      <Text strong>生成指导</Text>
+
+      <Form.Item label="内容描述" style={{ marginTop: 8 }}>
         <Input.TextArea
-          rows={3}
-          value={node.purpose ?? ""}
+          rows={2}
+          value={node.content_description ?? ""}
           readOnly={readOnly}
-          onChange={(event) => patch({ purpose: event.target.value || null })}
+          onChange={(event) => patch({ content_description: event.target.value || null })}
+          placeholder="本章应写什么（1-2 句）"
         />
       </Form.Item>
 
-      <Form.Item label="写作目标">
+      <Form.Item label="应标/得分/应答提示">
         <Input.TextArea
-          rows={3}
-          value={node.writing_goal ?? ""}
+          rows={2}
+          value={node.tender_response_hint ?? ""}
           readOnly={readOnly}
-          onChange={(event) => patch({ writing_goal: event.target.value || null })}
+          onChange={(event) => patch({ tender_response_hint: event.target.value || null })}
+          placeholder="从历史章节推断，遇则填写，可留空"
         />
       </Form.Item>
 
-      <Form.Item label="写作提示">
-        <Input.TextArea
-          rows={4}
-          value={node.writing_hint ?? ""}
-          readOnly={readOnly}
-          onChange={(event) => patch({ writing_hint: event.target.value || null })}
-        />
-      </Form.Item>
+      <Collapse
+        ghost
+        items={[
+          {
+            key: "writing-strategy",
+            label: "写作策略",
+            children: (
+              <>
+                <Form.Item label="编写目的">
+                  <Input.TextArea
+                    rows={3}
+                    value={node.purpose ?? ""}
+                    readOnly={readOnly}
+                    onChange={(event) => patch({ purpose: event.target.value || null })}
+                  />
+                </Form.Item>
+
+                <Form.Item label="写作目标">
+                  <Input.TextArea
+                    rows={3}
+                    value={node.writing_goal ?? ""}
+                    readOnly={readOnly}
+                    onChange={(event) => patch({ writing_goal: event.target.value || null })}
+                  />
+                </Form.Item>
+
+                <Form.Item label="写作提示">
+                  <Input.TextArea
+                    rows={4}
+                    value={node.writing_hint ?? ""}
+                    readOnly={readOnly}
+                    onChange={(event) => patch({ writing_hint: event.target.value || null })}
+                  />
+                </Form.Item>
+              </>
+            ),
+          },
+        ]}
+      />
 
       <Form.Item label="关键词提示">
         <Select

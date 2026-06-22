@@ -12,6 +12,8 @@ export interface BlueprintNode {
   purpose?: string | null;
   writing_goal?: string | null;
   writing_hint?: string | null;
+  content_description?: string | null;
+  tender_response_hint?: string | null;
   content_type?: string | null;
   keyword_hint?: string[];
   children?: BlueprintNode[];
@@ -33,6 +35,7 @@ export interface BlueprintDraft {
   common_mistakes?: string | null;
   template_style?: string | null;
   usual_page_range?: string | null;
+  suggested_structure_md?: string | null;
   status?: string;
   version?: number;
   nodes: BlueprintNode[];

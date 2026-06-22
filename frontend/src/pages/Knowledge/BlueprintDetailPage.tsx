@@ -229,6 +229,15 @@ export default function BlueprintDetailPage() {
           <Descriptions.Item label="常见问题/错误" span={2}>
             <Paragraph style={{ marginBottom: 0 }}>{draft.common_mistakes || "-"}</Paragraph>
           </Descriptions.Item>
+          <Descriptions.Item label="建议目录结构" span={2}>
+            {draft.suggested_structure_md?.trim() ? (
+              <Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
+                {draft.suggested_structure_md}
+              </Paragraph>
+            ) : (
+              "—"
+            )}
+          </Descriptions.Item>
         </Descriptions>
       </Card>
 
