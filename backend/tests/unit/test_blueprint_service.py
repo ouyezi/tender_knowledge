@@ -12,6 +12,7 @@ from src.services.knowledge.blueprint_service import (
     create_blueprint,
     delete_blueprints_by_doc_id,
     get_blueprint_by_source,
+    get_blueprint_detail,
     update_blueprint,
 )
 
@@ -171,3 +172,30 @@ def test_delete_blueprints_by_doc_id(db_session, seeded_kb):
 
     assert deleted == 2
     assert db_session.get(type(keep), keep.blueprint_id) is not None
+
+
+def test_create_persists_generation_extraction_fields(db_session, seeded_kb):
+    payload = _payload()
+    payload["suggested_structure_md"] = "## 模块\n- 技术方案"
+    payload["nodes"] = [
+        {
+            "node_title": "章节一",
+            "node_level": 1,
+            "node_order": 1,
+            "importance_level": "required",
+            "content_description": "写架构设计。",
+            "tender_response_hint": "响应星号条款。",
+            "children": [],
+        }
+    ]
+    blueprint = create_blueprint(db_session, kb_id=seeded_kb.kb_id, payload=payload)
+    db_session.commit()
+
+    detail = get_blueprint_detail(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        blueprint_id=blueprint.blueprint_id,
+    )
+    assert detail["suggested_structure_md"] == "## 模块\n- 技术方案"
+    assert detail["nodes"][0]["content_description"] == "写架构设计。"
+    assert detail["nodes"][0]["tender_response_hint"] == "响应星号条款。"
