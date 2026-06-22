@@ -136,7 +136,8 @@ def test_generate_maps_importance_and_node_code(db_session, seeded_kb, monkeypat
 
 def test_estimate_max_tokens_scales_with_subtree_size():
     assert _estimate_max_tokens(subtree_node_count=6) == 2792
-    assert _estimate_max_tokens(subtree_node_count=100) == 20480
+    assert _estimate_max_tokens(subtree_node_count=100) == 38512
+    assert _estimate_max_tokens(subtree_node_count=200) == 65536
 
 
 MOCK_LLM_JSON_V11 = {
