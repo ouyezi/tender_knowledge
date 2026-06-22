@@ -48,11 +48,6 @@ def create_blueprint(db: Session, *, kb_id: UUID, payload: dict[str, Any]) -> Kn
         industry_tags=list(payload.get("industry_tags") or []),
         scenario_tags=list(payload.get("scenario_tags") or []),
         applicable_project_type=list(payload.get("applicable_project_type") or []),
-        related_regulations=list(payload.get("related_regulations") or []),
-        overall_strategy=payload.get("overall_strategy"),
-        common_mistakes=payload.get("common_mistakes"),
-        template_style=payload.get("template_style"),
-        usual_page_range=payload.get("usual_page_range"),
         suggested_structure_md=truncate_blueprint_field(
             payload.get("suggested_structure_md"),
             max_len=SUGGESTED_STRUCTURE_MD_MAX,
@@ -102,13 +97,6 @@ def update_blueprint(
     blueprint.applicable_project_type = list(
         payload.get("applicable_project_type", blueprint.applicable_project_type) or []
     )
-    blueprint.related_regulations = list(
-        payload.get("related_regulations", blueprint.related_regulations) or []
-    )
-    blueprint.overall_strategy = payload.get("overall_strategy", blueprint.overall_strategy)
-    blueprint.common_mistakes = payload.get("common_mistakes", blueprint.common_mistakes)
-    blueprint.template_style = payload.get("template_style", blueprint.template_style)
-    blueprint.usual_page_range = payload.get("usual_page_range", blueprint.usual_page_range)
     if "suggested_structure_md" in payload:
         blueprint.suggested_structure_md = truncate_blueprint_field(
             payload.get("suggested_structure_md"),
@@ -148,9 +136,6 @@ def replace_nodes(db: Session, *, blueprint_id: UUID, flat_nodes: list[dict[str,
                 node_title=str(node.get("node_title") or ""),
                 node_level=int(node.get("node_level") or 1),
                 node_order=int(node.get("node_order") if node.get("node_order") is not None else index + 1),
-                purpose=node.get("purpose"),
-                writing_goal=node.get("writing_goal"),
-                writing_hint=node.get("writing_hint"),
                 content_description=truncate_blueprint_field(
                     node.get("content_description"),
                     max_len=CONTENT_DESCRIPTION_MAX,
@@ -160,8 +145,6 @@ def replace_nodes(db: Session, *, blueprint_id: UUID, flat_nodes: list[dict[str,
                     max_len=TENDER_RESPONSE_HINT_MAX,
                 ),
                 importance_level=_coerce_importance_level(importance),
-                content_type=node.get("content_type"),
-                keyword_hint=list(node.get("keyword_hint") or []),
             )
         )
 
@@ -206,14 +189,9 @@ def get_blueprint_detail(db: Session, *, kb_id: UUID, blueprint_id: UUID) -> dic
             "node_title": node.node_title,
             "node_level": node.node_level,
             "node_order": node.node_order,
-            "purpose": node.purpose,
-            "writing_goal": node.writing_goal,
-            "writing_hint": node.writing_hint,
             "content_description": node.content_description,
             "tender_response_hint": node.tender_response_hint,
             "importance_level": node.importance_level.value,
-            "content_type": node.content_type,
-            "keyword_hint": node.keyword_hint or [],
         }
         for node in node_rows
     ]
@@ -229,11 +207,6 @@ def get_blueprint_detail(db: Session, *, kb_id: UUID, blueprint_id: UUID) -> dic
         "industry_tags": blueprint.industry_tags or [],
         "scenario_tags": blueprint.scenario_tags or [],
         "applicable_project_type": blueprint.applicable_project_type or [],
-        "related_regulations": blueprint.related_regulations or [],
-        "overall_strategy": blueprint.overall_strategy,
-        "common_mistakes": blueprint.common_mistakes,
-        "template_style": blueprint.template_style,
-        "usual_page_range": blueprint.usual_page_range,
         "suggested_structure_md": blueprint.suggested_structure_md,
         "status": blueprint.status.value,
         "version": blueprint.version,

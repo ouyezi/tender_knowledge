@@ -25,24 +25,15 @@ def _compile_jsonb_sqlite(_type, _compiler, **_kw):
     return "JSON"
 
 MOCK_LLM_JSON = {
-    "outline_title": "供应链方案通用大纲",
-    "overall_strategy": "强调仓配能力",
-    "usual_page_range": "5-8页",
-    "related_regulations": ["ISO9001"],
-    "common_mistakes": "忽视应急预案",
-    "template_style": "formal",
+    "title": "供应链方案通用大纲",
+    "desc": "供应链模块概要",
     "nodes": [
         {
-            "node_title": "总体设计",
-            "node_level": 1,
+            "t": "总体设计",
+            "imp": "required",
+            "cd": "描述总体设计思路。",
+            "tr": "响应评分点。",
             "children": [],
-            "purpose": "p",
-            "writing_goal": "g",
-            "writing_hint": "h",
-            "required_flag": True,
-            "recommended_flag": False,
-            "content_type": "text",
-            "keyword_hint": ["供应链"],
         }
     ],
 }
@@ -135,19 +126,19 @@ def test_generate_maps_importance_and_node_code(db_session, seeded_kb, monkeypat
 
 
 def test_estimate_max_tokens_scales_with_subtree_size():
-    assert _estimate_max_tokens(subtree_node_count=6) == 2792
-    assert _estimate_max_tokens(subtree_node_count=100) == 38512
-    assert _estimate_max_tokens(subtree_node_count=200) == 65536
+    assert _estimate_max_tokens(subtree_node_count=6) == 1704
+    assert _estimate_max_tokens(subtree_node_count=100) == 16384
+    assert _estimate_max_tokens(subtree_node_count=200) == 16384
 
 
 MOCK_LLM_JSON_V11 = {
     **MOCK_LLM_JSON,
-    "suggested_structure_md": "## 技术方案模块\n- 映射：1.1 技术方案",
+    "structure_md": "## 技术方案模块\n- 映射：1.1 技术方案",
     "nodes": [
         {
             **MOCK_LLM_JSON["nodes"][0],
-            "content_description": "描述总体架构与部署方式。",
-            "tender_response_hint": "需响应技术规格书中的架构要求。",
+            "cd": "描述总体架构与部署方式。",
+            "tr": "需响应技术规格书中的架构要求。",
         }
     ],
 }

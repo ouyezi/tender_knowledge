@@ -9,13 +9,8 @@ export interface BlueprintNode {
   node_level: number;
   node_order?: number;
   importance_level: ImportanceLevel;
-  purpose?: string | null;
-  writing_goal?: string | null;
-  writing_hint?: string | null;
   content_description?: string | null;
   tender_response_hint?: string | null;
-  content_type?: string | null;
-  keyword_hint?: string[];
   children?: BlueprintNode[];
 }
 
@@ -30,11 +25,6 @@ export interface BlueprintDraft {
   industry_tags?: string[];
   scenario_tags?: string[];
   applicable_project_type?: string[];
-  related_regulations?: string[];
-  overall_strategy?: string | null;
-  common_mistakes?: string | null;
-  template_style?: string | null;
-  usual_page_range?: string | null;
   suggested_structure_md?: string | null;
   status?: string;
   version?: number;

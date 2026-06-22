@@ -10,14 +10,9 @@ class BlueprintNodeInput(BaseModel):
     node_title: str
     node_level: int = 1
     node_order: int | None = None
-    purpose: str | None = None
-    writing_goal: str | None = None
-    writing_hint: str | None = None
     content_description: str | None = None
     tender_response_hint: str | None = None
     importance_level: str = "optional"
-    content_type: str | None = None
-    keyword_hint: list[str] = Field(default_factory=list)
     children: list["BlueprintNodeInput"] = Field(default_factory=list)
 
 
@@ -39,11 +34,6 @@ class SaveBlueprintRequest(BaseModel):
     industry_tags: list[str] = Field(default_factory=list)
     scenario_tags: list[str] = Field(default_factory=list)
     applicable_project_type: list[str] = Field(default_factory=list)
-    related_regulations: list[str] = Field(default_factory=list)
-    overall_strategy: str | None = None
-    common_mistakes: str | None = None
-    template_style: str | None = None
-    usual_page_range: str | None = None
     suggested_structure_md: str | None = None
     status: str = "active"
     version: int | None = None

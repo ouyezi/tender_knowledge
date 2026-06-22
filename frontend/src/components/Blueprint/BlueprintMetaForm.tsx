@@ -1,5 +1,4 @@
 import { Col, Form, Input, InputNumber, Row, Select } from "antd";
-import { TEMPLATE_STYLE_OPTIONS } from "../../constants/blueprintMeta";
 import type { BlueprintDraft } from "../../services/blueprints";
 
 interface BlueprintMetaFormProps {
@@ -95,58 +94,6 @@ export default function BlueprintMetaForm({ value, readOnly, onChange }: Bluepri
           </Form.Item>
         </Col>
       </Row>
-
-      <Row gutter={12}>
-        <Col xs={24} md={12}>
-          <Form.Item label="模板风格">
-            <Select
-              allowClear
-              placeholder="请选择模板风格"
-              options={TEMPLATE_STYLE_OPTIONS}
-              value={value.template_style ?? undefined}
-              disabled={readOnly}
-              onChange={(next) => patch({ template_style: next ?? null })}
-            />
-          </Form.Item>
-        </Col>
-        <Col xs={24} md={12}>
-          <Form.Item label="常见篇幅范围">
-            <Input
-              value={value.usual_page_range ?? ""}
-              placeholder="例如：30-50页"
-              readOnly={readOnly}
-              onChange={(event) => patch({ usual_page_range: event.target.value || null })}
-            />
-          </Form.Item>
-        </Col>
-      </Row>
-
-      <Form.Item label="整体编写策略">
-        <Input.TextArea
-          rows={3}
-          value={value.overall_strategy ?? ""}
-          readOnly={readOnly}
-          onChange={(event) => patch({ overall_strategy: event.target.value || null })}
-        />
-      </Form.Item>
-
-      <Form.Item label="相关法规/标准">
-        <Select
-          mode="tags"
-          value={nextArrayValue(value.related_regulations)}
-          disabled={readOnly}
-          onChange={(next) => patch({ related_regulations: next })}
-        />
-      </Form.Item>
-
-      <Form.Item label="常见问题/错误">
-        <Input.TextArea
-          rows={3}
-          value={value.common_mistakes ?? ""}
-          readOnly={readOnly}
-          onChange={(event) => patch({ common_mistakes: event.target.value || null })}
-        />
-      </Form.Item>
     </Form>
   );
 }

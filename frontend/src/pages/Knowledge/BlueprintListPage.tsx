@@ -1,6 +1,6 @@
-import { Alert, Button, Card, Form, Input, Popconfirm, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Form, Input, Popconfirm, Select, Space, Table, Tag, Tooltip, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { useKBContext } from "../../layout/KBContext";
 import {
@@ -35,6 +35,12 @@ function formatDateTime(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
+const SMALL_TAG_STYLE: CSSProperties = {
+  fontSize: 12,
+  lineHeight: "18px",
+  paddingInline: 4,
+};
+
 function renderTags(tags?: string[]) {
   if (!tags?.length) {
     return "-";
@@ -42,7 +48,9 @@ function renderTags(tags?: string[]) {
   return (
     <Space size={[4, 4]} wrap>
       {tags.map((tag) => (
-        <Tag key={tag}>{tag}</Tag>
+        <Tag key={tag} style={SMALL_TAG_STYLE}>
+          {tag}
+        </Tag>
       ))}
     </Space>
   );
@@ -123,17 +131,34 @@ export default function BlueprintListPage() {
         title: "蓝图名称",
         dataIndex: "name",
         key: "name",
+        width: 260,
         ellipsis: true,
         render: (_value, record) => (
-          <Button type="link" size="small" onClick={() => navigate(`/knowledge/blueprints/${record.blueprint_id}`)}>
-            {record.name || "-"}
-          </Button>
+          <Tooltip title={record.name || "-"}>
+            <Button
+              type="link"
+              size="small"
+              style={{
+                maxWidth: "100%",
+                padding: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                display: "inline-block",
+                verticalAlign: "bottom",
+              }}
+              onClick={() => navigate(`/knowledge/blueprints/${record.blueprint_id}`)}
+            >
+              {record.name || "-"}
+            </Button>
+          </Tooltip>
         ),
       },
       {
         title: "来源章节",
         dataIndex: "source_chapter_title",
         key: "source_chapter_title",
+        width: 180,
         ellipsis: true,
         render: (value: string | null) => value || "-",
       },
@@ -141,35 +166,38 @@ export default function BlueprintListPage() {
         title: "产品标签",
         dataIndex: "product_tags",
         key: "product_tags",
-        width: 220,
+        width: 140,
         render: (value: string[]) => renderTags(value),
       },
       {
         title: "行业标签",
         dataIndex: "industry_tags",
         key: "industry_tags",
-        width: 220,
+        width: 140,
         render: (value: string[]) => renderTags(value),
       },
       {
         title: "场景标签",
         dataIndex: "scenario_tags",
         key: "scenario_tags",
-        width: 220,
+        width: 140,
         render: (value: string[]) => renderTags(value),
       },
       {
         title: "状态",
         dataIndex: "status",
         key: "status",
-        width: 110,
-        render: (value: string) => <Tag>{value || "-"}</Tag>,
+        width: 80,
+        render: (value: string) => (
+          <Tag style={SMALL_TAG_STYLE}>{value || "-"}</Tag>
+        ),
       },
       {
         title: "版本",
         dataIndex: "version",
         key: "version",
-        width: 90,
+        width: 64,
+        align: "center",
       },
       {
         title: "更新时间",

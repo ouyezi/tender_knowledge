@@ -139,11 +139,6 @@ def test_purge_deletes_blueprints_for_document(db_session, seeded_kb):
             "industry_tags": ["ind-a"],
             "scenario_tags": ["scene-a"],
             "applicable_project_type": ["type-a"],
-            "related_regulations": ["reg-a"],
-            "overall_strategy": "先总后分",
-            "common_mistakes": "避免空泛描述",
-            "template_style": "formal",
-            "usual_page_range": "10-20",
             "status": "active",
             "nodes": [
                 {

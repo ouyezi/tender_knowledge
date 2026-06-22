@@ -53,11 +53,6 @@ def _payload(source_doc_id=None, source_node_id=None, *, name: str = "蓝图A") 
         "industry_tags": ["ind-a"],
         "scenario_tags": ["scene-a"],
         "applicable_project_type": ["type-a"],
-        "related_regulations": ["reg-a"],
-        "overall_strategy": "先总后分",
-        "common_mistakes": "避免空泛描述",
-        "template_style": "formal",
-        "usual_page_range": "10-20",
         "status": "active",
         "nodes": _nodes(),
     }

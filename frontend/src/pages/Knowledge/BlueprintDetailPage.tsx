@@ -218,17 +218,6 @@ export default function BlueprintDetailPage() {
           <Descriptions.Item label="适用项目类型" span={2}>
             {renderTagList(draft.applicable_project_type)}
           </Descriptions.Item>
-          <Descriptions.Item label="相关法规/标准" span={2}>
-            {renderTagList(draft.related_regulations)}
-          </Descriptions.Item>
-          <Descriptions.Item label="模板风格">{draft.template_style || "-"}</Descriptions.Item>
-          <Descriptions.Item label="常见篇幅范围">{draft.usual_page_range || "-"}</Descriptions.Item>
-          <Descriptions.Item label="整体编写策略" span={2}>
-            <Paragraph style={{ marginBottom: 0 }}>{draft.overall_strategy || "-"}</Paragraph>
-          </Descriptions.Item>
-          <Descriptions.Item label="常见问题/错误" span={2}>
-            <Paragraph style={{ marginBottom: 0 }}>{draft.common_mistakes || "-"}</Paragraph>
-          </Descriptions.Item>
           <Descriptions.Item label="建议目录结构" span={2}>
             {draft.suggested_structure_md?.trim() ? (
               <Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
