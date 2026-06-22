@@ -65,6 +65,7 @@ export interface BlueprintListItem {
   status: string;
   version: number;
   updated_at: string | null;
+  embedding_status?: string;
 }
 
 export interface ListBlueprintsParams {
@@ -181,4 +182,82 @@ export async function suggestBlueprintOutline(
     method: "POST",
     body,
   });
+}
+
+export interface ParseSearchQueryRequest {
+  query: string;
+}
+
+export interface ParseSearchQueryResult {
+  semantic_query: string;
+  keyword: string;
+  product_tags: string[];
+  industry_tags: string[];
+  scenario_tags: string[];
+}
+
+export interface BlueprintSearchParams {
+  semantic_query?: string;
+  keyword?: string;
+  product_tags?: string[];
+  industry_tags?: string[];
+  scenario_tags?: string[];
+  vector_weight?: number;
+  keyword_weight?: number;
+  top_k?: number;
+}
+
+export interface BlueprintSearchHighlight {
+  field: string;
+  snippet: string;
+}
+
+export interface BlueprintSearchItem extends BlueprintListItem {
+  score: number;
+  score_detail: {
+    vector_score: number;
+    keyword_score: number;
+    vector_weight: number;
+    keyword_weight: number;
+  };
+  highlights: BlueprintSearchHighlight[];
+}
+
+export interface BlueprintSearchResult {
+  items: BlueprintSearchItem[];
+  total: number;
+  search_meta: {
+    vector_enabled: boolean;
+    keyword_enabled: boolean;
+    candidates_scanned: number;
+  };
+}
+
+export async function parseBlueprintSearchQuery(
+  kbId: string,
+  body: ParseSearchQueryRequest,
+): Promise<ParseSearchQueryResult> {
+  return apiRequest<ParseSearchQueryResult>(
+    `/api/v1/kbs/${kbId}/blueprints/parse-search-query`,
+    { method: "POST", body },
+  );
+}
+
+export async function searchBlueprints(
+  kbId: string,
+  body: BlueprintSearchParams,
+): Promise<BlueprintSearchResult> {
+  return apiRequest<BlueprintSearchResult>(`/api/v1/kbs/${kbId}/blueprints/search`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function rebuildBlueprintIndex(
+  kbId: string,
+): Promise<{ queued: number; message: string }> {
+  return apiRequest<{ queued: number; message: string }>(
+    `/api/v1/kbs/${kbId}/blueprints/index/rebuild`,
+    { method: "POST" },
+  );
 }

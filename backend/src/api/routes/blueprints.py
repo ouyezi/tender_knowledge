@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -12,14 +12,20 @@ from src.api.envelope import error, success
 from src.api.middleware.audit import get_trace_id
 from src.api.schemas.blueprints import (
     BlueprintListFilters,
+    BlueprintSearchRequest,
     GenerateBlueprintRequest,
+    ParseSearchQueryRequest,
     SaveBlueprintRequest,
     SuggestOutlineRequest,
 )
 from src.config import settings
 from src.db.session import get_db
 from src.models.knowledge_base import KnowledgeBase
-from src.models.knowledge_blueprint import KnowledgeBlueprint
+from src.models.knowledge_blueprint import BlueprintStatus, KnowledgeBlueprint
+from src.services.knowledge.blueprint_embedding_task import (
+    get_blueprint_embedding_status,
+    rebuild_blueprints_for_kb,
+)
 from src.services.knowledge.blueprint_generate_service import (
     BlueprintGenerateFailedError,
     BlueprintGenerateTimeoutError,
@@ -30,6 +36,15 @@ from src.services.knowledge.blueprint_outline_suggest_service import (
     OutlineSuggestFailedError,
     OutlineSuggestTimeoutError,
     suggest_outline,
+)
+from src.services.knowledge.blueprint_query_parse_service import (
+    SearchParseFailedError,
+    SearchParseTimeoutError,
+    parse_search_query,
+)
+from src.services.knowledge.blueprint_search_service import (
+    BlueprintSearchValidationError,
+    search_blueprints,
 )
 from src.services.knowledge.blueprint_service import (
     BlueprintConflictError,
@@ -42,6 +57,7 @@ from src.services.knowledge.blueprint_service import (
     list_blueprints,
     update_blueprint,
 )
+from src.services.knowledge.embedding_client import EmbeddingClient
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +67,29 @@ router = APIRouter(
 )
 
 
-def _serialize_blueprint_item(row: KnowledgeBlueprint) -> dict[str, object]:
-    return {
+def _embed_blueprint_in_background(blueprint_id: UUID) -> None:
+    from src.db.session import SessionLocal
+    from src.services.knowledge.blueprint_embedding_task import embed_blueprint
+
+    db = SessionLocal()
+    try:
+        embed_blueprint(db, blueprint_id)
+    finally:
+        db.close()
+
+
+def _rebuild_blueprints_in_background(kb_id: UUID) -> None:
+    from src.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        rebuild_blueprints_for_kb(db, kb_id=kb_id)
+    finally:
+        db.close()
+
+
+def _serialize_blueprint_item(row: KnowledgeBlueprint, db: Session | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {
         "blueprint_id": str(row.blueprint_id),
         "kb_id": str(row.kb_id),
         "name": row.name,
@@ -67,6 +104,9 @@ def _serialize_blueprint_item(row: KnowledgeBlueprint) -> dict[str, object]:
         "version": row.version,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
+    if db is not None:
+        payload["embedding_status"] = get_blueprint_embedding_status(db, row.blueprint_id)
+    return payload
 
 
 @router.post("/generate")
@@ -190,6 +230,118 @@ def suggest_outline_api(
     return success(result, trace_id=get_trace_id())
 
 
+@router.post("/parse-search-query")
+def parse_search_query_api(
+    kb_id: UUID,
+    body: ParseSearchQueryRequest,
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    query = body.query.strip()
+    if not query:
+        return JSONResponse(
+            status_code=400,
+            content=error("invalid_request", "query is required", trace_id=get_trace_id()),
+        )
+    if len(query) > settings.blueprint_search_parse_query_max:
+        return JSONResponse(
+            status_code=400,
+            content=error("invalid_request", "query too long", trace_id=get_trace_id()),
+        )
+    try:
+        result = parse_search_query(query=query)
+    except SearchParseTimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content=error("search_parse_timeout", "Search parse timed out", trace_id=get_trace_id()),
+        )
+    except SearchParseFailedError as exc:
+        message = str(exc)
+        if message == "llm not configured":
+            return JSONResponse(
+                status_code=503,
+                content=error("llm_not_configured", "LLM is not configured", trace_id=get_trace_id()),
+            )
+        if message in {"query empty", "query too long"}:
+            return JSONResponse(
+                status_code=400,
+                content=error("invalid_request", message, trace_id=get_trace_id()),
+            )
+        logger.warning("search parse failed kb_id=%s reason=%s", kb_id, exc)
+        return JSONResponse(
+            status_code=502,
+            content=error("search_parse_failed", "Search parse failed", trace_id=get_trace_id()),
+        )
+    return success(result, trace_id=get_trace_id())
+
+
+@router.post("/search")
+def search_blueprints_api(
+    kb_id: UUID,
+    body: BlueprintSearchRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    semantic = body.semantic_query.strip()
+    keyword = body.keyword.strip()
+    if not semantic and not keyword:
+        return JSONResponse(
+            status_code=400,
+            content=error(
+                "invalid_request",
+                "semantic_query and keyword cannot both be empty",
+                trace_id=get_trace_id(),
+            ),
+        )
+
+    query_vector: list[float] | None = None
+    if semantic:
+        client = EmbeddingClient(model=settings.embedding_model)
+        if client.is_configured:
+            result = client.embed_text(semantic)
+            if result.vector is not None:
+                query_vector = result.vector
+
+    try:
+        payload = search_blueprints(
+            db,
+            kb_id=kb_id,
+            semantic_query=semantic,
+            keyword=keyword,
+            product_tags=body.product_tags,
+            industry_tags=body.industry_tags,
+            scenario_tags=body.scenario_tags,
+            vector_weight=body.vector_weight,
+            keyword_weight=body.keyword_weight,
+            top_k=body.top_k,
+            query_vector=query_vector,
+        )
+    except BlueprintSearchValidationError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=error("invalid_request", str(exc), trace_id=get_trace_id()),
+        )
+    return success(payload, trace_id=get_trace_id())
+
+
+@router.post("/index/rebuild")
+def rebuild_blueprint_index_api(
+    kb_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    queued = (
+        db.query(KnowledgeBlueprint)
+        .filter(
+            KnowledgeBlueprint.kb_id == kb_id,
+            KnowledgeBlueprint.status == BlueprintStatus.active,
+        )
+        .count()
+    )
+    background_tasks.add_task(_rebuild_blueprints_in_background, kb_id)
+    return success({"queued": queued, "message": "rebuild started"}, trace_id=get_trace_id())
+
+
 @router.get("/by-source")
 def get_blueprint_by_source_api(
     kb_id: UUID,
@@ -201,13 +353,14 @@ def get_blueprint_by_source_api(
     row = get_blueprint_by_source(db, kb_id=kb_id, source_node_id=node_id)
     if row is None or row.source_doc_id != doc_id:
         return success(None, trace_id=get_trace_id())
-    return success(_serialize_blueprint_item(row), trace_id=get_trace_id())
+    return success(_serialize_blueprint_item(row, db), trace_id=get_trace_id())
 
 
 @router.post("", status_code=201)
 def create_blueprint_api(
     kb_id: UUID,
     body: SaveBlueprintRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(get_kb_or_404),
 ):
@@ -230,7 +383,8 @@ def create_blueprint_api(
             status_code=422,
             content=error("validation_error", str(exc), trace_id=get_trace_id()),
         )
-    return success(_serialize_blueprint_item(row), trace_id=get_trace_id())
+    background_tasks.add_task(_embed_blueprint_in_background, row.blueprint_id)
+    return success(_serialize_blueprint_item(row, db), trace_id=get_trace_id())
 
 
 @router.put("/{blueprint_id}")
@@ -238,6 +392,7 @@ def update_blueprint_api(
     kb_id: UUID,
     blueprint_id: UUID,
     body: SaveBlueprintRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(get_kb_or_404),
 ):
@@ -256,7 +411,8 @@ def update_blueprint_api(
             status_code=422,
             content=error("validation_error", str(exc), trace_id=get_trace_id()),
         )
-    return success(_serialize_blueprint_item(row), trace_id=get_trace_id())
+    background_tasks.add_task(_embed_blueprint_in_background, row.blueprint_id)
+    return success(_serialize_blueprint_item(row, db), trace_id=get_trace_id())
 
 
 @router.get("")
@@ -282,7 +438,7 @@ def list_blueprints_api(
     rows, total = list_blueprints(db, kb_id=kb_id, **filters.to_service_kwargs())
     return success(
         {
-            "items": [_serialize_blueprint_item(item) for item in rows],
+            "items": [_serialize_blueprint_item(item, db) for item in rows],
             "total": total,
             "page": filters.page,
             "page_size": filters.page_size,

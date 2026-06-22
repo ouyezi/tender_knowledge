@@ -6,7 +6,10 @@ import { useKBContext } from "../../layout/KBContext";
 import {
   deleteBlueprint,
   listBlueprints,
+  parseBlueprintSearchQuery,
+  searchBlueprints,
   type BlueprintListItem,
+  type BlueprintSearchItem,
   type ListBlueprintsParams,
 } from "../../services/blueprints";
 
@@ -41,6 +44,13 @@ const SMALL_TAG_STYLE: CSSProperties = {
   paddingInline: 4,
 };
 
+const EMBEDDING_STATUS_LABEL: Record<string, string> = {
+  pending: "待处理",
+  ready: "已完成",
+  failed: "失败",
+  skipped: "跳过",
+};
+
 function renderTags(tags?: string[]) {
   if (!tags?.length) {
     return "-";
@@ -56,6 +66,15 @@ function renderTags(tags?: string[]) {
   );
 }
 
+function formatScoreDetail(item: BlueprintSearchItem): string {
+  const detail = item.score_detail;
+  return [
+    `综合分 ${item.score.toFixed(2)}`,
+    `向量 ${detail.vector_score.toFixed(2)} (权重 ${detail.vector_weight})`,
+    `关键词 ${detail.keyword_score.toFixed(2)} (权重 ${detail.keyword_weight})`,
+  ].join("\n");
+}
+
 export default function BlueprintListPage() {
   const { selectedKbId, readOnly } = useKBContext();
   const [form] = Form.useForm<FilterFormValues>();
@@ -67,6 +86,9 @@ export default function BlueprintListPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const [semanticMode, setSemanticMode] = useState(false);
+  const [semanticQuery, setSemanticQuery] = useState("");
+  const [searchItems, setSearchItems] = useState<BlueprintSearchItem[]>([]);
 
   const refreshList = useCallback(async () => {
     if (!selectedKbId) {
@@ -91,20 +113,56 @@ export default function BlueprintListPage() {
   }, [filters, page, pageSize, selectedKbId]);
 
   useEffect(() => {
-    void refreshList();
-  }, [refreshList]);
+    if (!semanticMode) {
+      void refreshList();
+    }
+  }, [refreshList, semanticMode]);
 
   const applyFilters = useCallback(() => {
     const values = form.getFieldsValue();
     setFilters(toListParams(values));
     setPage(1);
+    setSemanticMode(false);
+    setSearchItems([]);
   }, [form]);
 
   const resetFilters = useCallback(() => {
     form.resetFields();
     setFilters({});
     setPage(1);
+    setSemanticMode(false);
+    setSearchItems([]);
   }, [form]);
+
+  const handleSemanticSearch = useCallback(async () => {
+    if (!selectedKbId || !semanticQuery.trim()) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const parsed = await parseBlueprintSearchQuery(selectedKbId, {
+        query: semanticQuery.trim(),
+      });
+      const result = await searchBlueprints(selectedKbId, {
+        ...parsed,
+        vector_weight: 0.6,
+        keyword_weight: 0.4,
+        top_k: 10,
+      });
+      setSearchItems(result.items);
+      setSemanticMode(true);
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedKbId, semanticQuery]);
+
+  const handleExitSemanticSearch = useCallback(() => {
+    setSemanticMode(false);
+    setSearchItems([]);
+    void refreshList();
+  }, [refreshList]);
 
   const handleDelete = useCallback(
     async (blueprintId: string) => {
@@ -115,17 +173,21 @@ export default function BlueprintListPage() {
       try {
         await deleteBlueprint(selectedKbId, blueprintId);
         message.success("目录蓝图已删除");
-        await refreshList();
+        if (semanticMode) {
+          setSearchItems((prev) => prev.filter((item) => item.blueprint_id !== blueprintId));
+        } else {
+          await refreshList();
+        }
       } catch (error) {
         message.error((error as Error).message);
       } finally {
         setDeletingId(undefined);
       }
     },
-    [refreshList, selectedKbId],
+    [refreshList, selectedKbId, semanticMode],
   );
 
-  const columns: ColumnsType<BlueprintListItem> = useMemo(
+  const baseColumns: ColumnsType<BlueprintListItem> = useMemo(
     () => [
       {
         title: "蓝图名称",
@@ -188,8 +250,15 @@ export default function BlueprintListPage() {
         dataIndex: "status",
         key: "status",
         width: 80,
-        render: (value: string) => (
-          <Tag style={SMALL_TAG_STYLE}>{value || "-"}</Tag>
+        render: (value: string) => <Tag style={SMALL_TAG_STYLE}>{value || "-"}</Tag>,
+      },
+      {
+        title: "向量状态",
+        dataIndex: "embedding_status",
+        key: "embedding_status",
+        width: 88,
+        render: (value?: string) => (
+          <Tag style={SMALL_TAG_STYLE}>{EMBEDDING_STATUS_LABEL[value ?? "pending"] ?? value ?? "-"}</Tag>
         ),
       },
       {
@@ -233,12 +302,63 @@ export default function BlueprintListPage() {
     [deletingId, handleDelete, navigate, readOnly],
   );
 
+  const semanticColumns = useMemo((): ColumnsType<BlueprintSearchItem> => {
+    const nameColumn = baseColumns[0] as ColumnsType<BlueprintSearchItem>[number];
+    const restColumns = baseColumns
+      .slice(1)
+      .filter((col) => col.key !== "embedding_status") as ColumnsType<BlueprintSearchItem>;
+    return [
+      nameColumn,
+      {
+        title: "匹配分",
+        dataIndex: "score",
+        key: "score",
+        width: 88,
+        align: "center",
+        render: (value: number, record) => (
+          <Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{formatScoreDetail(record)}</span>}>
+            <span>{value.toFixed(2)}</span>
+          </Tooltip>
+        ),
+      },
+      {
+        title: "匹配摘要",
+        key: "highlight",
+        width: 220,
+        ellipsis: true,
+        render: (_value, record) => {
+          const snippet = record.highlights?.[0]?.snippet;
+          if (!snippet) {
+            return "-";
+          }
+          return <span dangerouslySetInnerHTML={{ __html: snippet }} />;
+        },
+      },
+      ...restColumns,
+    ];
+  }, [baseColumns]);
+
   if (!selectedKbId) {
     return <Alert message="请先选择知识库" type="info" showIcon />;
   }
 
   return (
     <Card title="目录蓝图">
+      <Space style={{ width: "100%", marginBottom: 16 }} wrap>
+        <Input
+          style={{ minWidth: 360 }}
+          value={semanticQuery}
+          onChange={(event) => setSemanticQuery(event.target.value)}
+          placeholder="用自然语言描述，如：政务云技术架构章节的正式风格蓝图"
+          allowClear
+          onPressEnter={() => void handleSemanticSearch()}
+        />
+        <Button type="primary" onClick={() => void handleSemanticSearch()} loading={loading}>
+          语义搜索
+        </Button>
+        {semanticMode ? <Button onClick={handleExitSemanticSearch}>返回列表</Button> : null}
+      </Space>
+
       <Form form={form} layout="vertical">
         <Space style={{ width: "100%" }} align="end" wrap>
           <Form.Item name="keyword" label="关键词" style={{ minWidth: 240, marginBottom: 12 }}>
@@ -266,19 +386,26 @@ export default function BlueprintListPage() {
         rowKey="blueprint_id"
         size="small"
         loading={loading}
-        columns={columns}
-        dataSource={items}
-        pagination={{
-          current: page,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (count) => `共 ${count} 条`,
-          onChange: (nextPage, nextPageSize) => {
-            setPage(nextPage);
-            setPageSize(nextPageSize);
-          },
+        columns={(semanticMode ? semanticColumns : baseColumns) as ColumnsType<BlueprintListItem>}
+        dataSource={semanticMode ? searchItems : items}
+        locale={{
+          emptyText: semanticMode ? "未找到匹配的目录蓝图" : undefined,
         }}
+        pagination={
+          semanticMode
+            ? false
+            : {
+                current: page,
+                pageSize,
+                total,
+                showSizeChanger: true,
+                showTotal: (count) => `共 ${count} 条`,
+                onChange: (nextPage, nextPageSize) => {
+                  setPage(nextPage);
+                  setPageSize(nextPageSize);
+                },
+              }
+        }
       />
     </Card>
   );
