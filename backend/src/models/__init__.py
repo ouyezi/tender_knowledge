@@ -12,7 +12,7 @@ from src.models.downstream_task_entry import DownstreamTaskEntry
 from src.models.file_import import FileImport
 from src.models.file_purpose_suggestion import FilePurposeSuggestion
 from src.models.import_audit_log import ImportAuditLog
-from src.models.import_task import ImportTask
+from src.models.image_extraction_cache import ImageExtractionCache
 from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.models.knowledge_blueprint_node import KnowledgeBlueprintNode
 from src.models.knowledge_chunk import KnowledgeChunk
@@ -32,6 +32,7 @@ __all__ = [
     "FileImport",
     "FilePurposeSuggestion",
     "ImportAuditLog",
+    "ImageExtractionCache",
     "ImportTask",
     "KnowledgeBlueprint",
     "KnowledgeBlueprintNode",

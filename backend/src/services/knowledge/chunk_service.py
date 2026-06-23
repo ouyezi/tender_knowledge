@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.knowledge.asset_link_service import link_assets_to_chunk
+from src.services.knowledge.chunk_image_assets import ensure_image_assets_for_chunk
 from src.services.knowledge.entry_content_service import build_catalog_path
 from src.services.knowledge.token_counter import count_tokens
 
@@ -128,6 +129,7 @@ def create_knowledge_chunk(
         char_start=chunk.char_start,
         char_end=chunk.char_end,
     )
+    ensure_image_assets_for_chunk(db, chunk)
     db.flush()
     return chunk
 

@@ -67,6 +67,21 @@ class Settings(BaseSettings):
     blueprint_search_body_keyword_weight: float = 1.0
     blueprint_search_vector_min_similarity: float = 0.10
     blueprint_search_exact_match_boost: float = 0.35
+    knowledge_vision_model: str = "qwen-vl-max"
+    knowledge_vision_timeout_sec: int = 60
+    knowledge_vision_max_images: int = 20
+    knowledge_index_summary_model: str = "qwen3-max"
+    knowledge_index_summary_timeout_sec: int = 30
+    chunk_search_parse_model: str = "qwen3.6-flash"
+    chunk_search_parse_timeout_sec: int = 30
+    chunk_search_parse_query_max: int = 500
+    chunk_search_title_keyword_weight: float = 3.0
+    chunk_search_body_keyword_weight: float = 1.0
+    chunk_search_vector_min_similarity: float = 0.10
+    chunk_search_exact_match_boost: float = 0.35
+    chunk_search_default_title_vector_weight: float = 0.25
+    chunk_search_default_summary_vector_weight: float = 0.35
+    chunk_search_default_content_vector_weight: float = 0.40
     embedding_model: str = "text-embedding-v4"
     embedding_dimensions: int = 1024
     # Optional overrides; when unset, embedding uses the same Qwen/OpenAI-compatible endpoint as LLM.

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { KnowledgeAssetLike } from "./buildContentBlocks";
+import KnowledgeImageWithExtraction from "./KnowledgeImageWithExtraction";
 import { toAbsoluteMediaUrl } from "./resolveKnowledgeImageUrl";
 
 export function parseMarkdownTable(raw?: string | null): { headers: string[]; rows: string[][] } | null {
@@ -25,11 +26,15 @@ export function parseMarkdownTable(raw?: string | null): { headers: string[]; ro
   return { headers, rows };
 }
 
-export function renderKnowledgeAsset(asset: KnowledgeAssetLike): ReactNode {
+export function renderKnowledgeAsset(asset: KnowledgeAssetLike, options?: { showExtraction?: boolean }): ReactNode {
   if (asset.asset_type === "image" && asset.image_storage_url) {
+    const src = toAbsoluteMediaUrl(asset.image_storage_url);
+    if (options?.showExtraction) {
+      return <KnowledgeImageWithExtraction src={src} alt={asset.asset_code ?? `image-${asset.id}`} asset={asset} />;
+    }
     return (
       <img
-        src={toAbsoluteMediaUrl(asset.image_storage_url)}
+        src={src}
         alt={asset.asset_code ?? `image-${asset.id}`}
         style={{ maxWidth: "100%", border: "1px solid #f0f0f0", borderRadius: 6 }}
       />

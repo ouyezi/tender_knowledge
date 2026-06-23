@@ -87,6 +87,8 @@ class KnowledgeChunk(Base):
     edit_distance_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    embedding_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     has_children: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     children_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     create_time: Mapped[datetime] = mapped_column(

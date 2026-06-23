@@ -161,17 +161,7 @@ def test_get_embedding_status_pending(db_session, seeded_kb, monkeypatch):
 
 def test_get_embedding_status_ready(db_session, seeded_kb, monkeypatch):
     chunk = _seed_chunk(db_session, seeded_kb.kb_id)
-    monkeypatch.setenv("EMBEDDING_API_BASE", "https://embedding.test")
-    monkeypatch.setenv("EMBEDDING_API_KEY", "test-key")
-    db_session.add(
-        ChunkEmbedding(
-            id=1,
-            object_type="chunk",
-            object_id=chunk.id,
-            content_embedding=[0.1, 0.2],
-            summary_embedding=[0.3, 0.4],
-        )
-    )
+    chunk.embedding_status = "ready"
     db_session.commit()
 
     assert get_embedding_status(db_session, chunk.id) == "ready"
@@ -179,17 +169,7 @@ def test_get_embedding_status_ready(db_session, seeded_kb, monkeypatch):
 
 def test_get_embedding_status_failed(db_session, seeded_kb, monkeypatch):
     chunk = _seed_chunk(db_session, seeded_kb.kb_id)
-    monkeypatch.setenv("EMBEDDING_API_BASE", "https://embedding.test")
-    monkeypatch.setenv("EMBEDDING_API_KEY", "test-key")
-    db_session.add(
-        ChunkEmbedding(
-            id=1,
-            object_type="chunk",
-            object_id=chunk.id,
-            content_embedding=None,
-            summary_embedding=None,
-        )
-    )
+    chunk.embedding_status = "failed"
     db_session.commit()
 
     assert get_embedding_status(db_session, chunk.id) == "failed"

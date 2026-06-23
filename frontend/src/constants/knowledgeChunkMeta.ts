@@ -65,6 +65,7 @@ export const FIELD_LABELS: Record<string, string> = {
   position_hint: "位置提示",
   image_caption: "图片说明",
   image_ocr_text: "图片 OCR",
+  extracted_facts: "图片结构化事实",
   llm_summary: "LLM 摘要",
   table_summary: "表格摘要",
   table_schema: "表格结构",
@@ -119,7 +120,7 @@ export const ENUM_LABELS: Record<string, Record<string, string>> = {
     service_plan: "服务方案",
     quotation: "报价",
   },
-  embedding_status: { pending: "待处理", ready: "已完成", failed: "失败" },
+  embedding_status: { pending: "待索引", indexing: "索引中", ready: "已索引", failed: "索引失败", skipped: "已跳过" },
 };
 
 export const ASSET_TYPE_LABELS: Record<string, string> = {

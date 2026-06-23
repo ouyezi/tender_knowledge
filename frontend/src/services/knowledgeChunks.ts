@@ -107,8 +107,28 @@ export interface KnowledgeChunkListItem {
   category: string;
   knowledge_type: string;
   status: string;
+  embedding_status?: string;
+  indexed_at?: string | null;
   token_count: number;
   update_time: string | null;
+}
+
+export interface KnowledgeChunkSearchItem extends KnowledgeChunkListItem {
+  summary?: string | null;
+  score: number;
+  score_detail: Record<string, number>;
+  highlights: Array<{ field: string; snippet: string }>;
+}
+
+export interface ChunkSearchParams {
+  semantic_query?: string;
+  keyword?: string;
+  vector_weight?: number;
+  keyword_weight?: number;
+  title_vector_weight?: number;
+  summary_vector_weight?: number;
+  content_vector_weight?: number;
+  top_k?: number;
 }
 
 export interface ChunkAssetDetail {
@@ -132,6 +152,7 @@ export interface ChunkAssetDetail {
   image_storage_url: string | null;
   image_caption: string | null;
   image_ocr_text: string | null;
+  extracted_facts?: Record<string, unknown> | null;
   required_with_text: boolean | null;
   position_hint: string | null;
 }
@@ -362,5 +383,64 @@ export async function getKnowledgeChunk(
 ): Promise<KnowledgeChunkDetail | null> {
   return apiRequest<KnowledgeChunkDetail | null>(
     `/api/v1/kbs/${kbId}/knowledge-chunks/${chunkId}`,
+  );
+}
+
+const TERMINAL_EMBEDDING_STATUSES = new Set(["ready", "failed", "skipped"]);
+
+export async function waitForChunkIndexComplete(
+  kbId: string,
+  chunkId: number,
+  options?: { intervalMs?: number; maxAttempts?: number },
+): Promise<KnowledgeChunkDetail | null> {
+  const intervalMs = options?.intervalMs ?? 2000;
+  const maxAttempts = options?.maxAttempts ?? 90;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const detail = await getKnowledgeChunk(kbId, chunkId);
+    if (!detail || TERMINAL_EMBEDDING_STATUSES.has(detail.embedding_status)) {
+      return detail;
+    }
+  }
+  return getKnowledgeChunk(kbId, chunkId);
+}
+
+export async function indexKnowledgeChunk(
+  kbId: string,
+  chunkId: number,
+  force = false,
+): Promise<{ chunk_id: number; embedding_status: string }> {
+  return apiRequest<{ chunk_id: number; embedding_status: string }>(
+    `/api/v1/kbs/${kbId}/knowledge-chunks/${chunkId}/index`,
+    {
+      method: "POST",
+      body: { force },
+    },
+  );
+}
+
+export async function parseChunkSearchQuery(
+  kbId: string,
+  body: { query: string },
+): Promise<{ semantic_query: string; keyword: string }> {
+  return apiRequest<{ semantic_query: string; keyword: string }>(
+    `/api/v1/kbs/${kbId}/knowledge-chunks/parse-search-query`,
+    {
+      method: "POST",
+      body,
+    },
+  );
+}
+
+export async function searchKnowledgeChunks(
+  kbId: string,
+  body: ChunkSearchParams,
+): Promise<{ items: KnowledgeChunkSearchItem[]; total: number }> {
+  return apiRequest<{ items: KnowledgeChunkSearchItem[]; total: number }>(
+    `/api/v1/kbs/${kbId}/knowledge-chunks/search`,
+    {
+      method: "POST",
+      body,
+    },
   );
 }

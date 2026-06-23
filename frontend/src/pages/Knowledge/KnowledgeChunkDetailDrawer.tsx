@@ -1,6 +1,7 @@
 import { Button, Card, Descriptions, Drawer, Empty, Space, Spin, Tag, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
+import KnowledgeSummarySection from "../../components/Knowledge/KnowledgeSummarySection";
 import { renderKnowledgeAsset } from "../../components/Knowledge/renderKnowledgeAsset";
 import {
   formatBoolean,
@@ -16,14 +17,17 @@ interface KnowledgeChunkDetailDrawerProps {
   kbId: string;
   chunkId?: number;
   open: boolean;
+  reloadKey?: number;
   onClose: () => void;
   onOpenChunk: (chunkId: number) => void;
 }
 
 const EMBEDDING_STATUS_COLORS: Record<string, string> = {
   pending: "warning",
+  indexing: "processing",
   ready: "success",
   failed: "error",
+  skipped: "default",
 };
 
 function formatDateTime(value?: string | null) {
@@ -68,7 +72,12 @@ function BaseInfo({ detail, onOpenChunk }: { detail: KnowledgeChunkDetail; onOpe
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("is_latest")}>{formatBoolean(detail.is_latest)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("title")}>{detail.title || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("summary")}>{detail.summary || "-"}</Descriptions.Item>
+      <Descriptions.Item label={getFieldLabel("summary")} span={2}>
+        <KnowledgeSummarySection
+          summary={detail.summary}
+          imageAssets={detail.assets.filter((asset) => asset.asset_type === "image")}
+        />
+      </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("knowledge_type")}>
         {getEnumLabel("knowledge_type", detail.knowledge_type)}
       </Descriptions.Item>
@@ -145,6 +154,7 @@ export default function KnowledgeChunkDetailDrawer({
   kbId,
   chunkId,
   open,
+  reloadKey = 0,
   onClose,
   onOpenChunk,
 }: KnowledgeChunkDetailDrawerProps) {
@@ -176,7 +186,17 @@ export default function KnowledgeChunkDetailDrawer({
       return;
     }
     void loadDetail(chunkId);
-  }, [chunkId, loadDetail, open]);
+  }, [chunkId, loadDetail, open, reloadKey]);
+
+  useEffect(() => {
+    if (!open || !detail || detail.embedding_status !== "indexing") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadDetail(chunkId);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [chunkId, detail?.embedding_status, loadDetail, open]);
 
   const catalogPathText = useMemo(() => JSON.stringify(detail?.catalog_path ?? [], null, 2), [detail?.catalog_path]);
   const variablesText = useMemo(() => JSON.stringify(detail?.variables ?? [], null, 2), [detail?.variables]);
@@ -212,6 +232,7 @@ export default function KnowledgeChunkDetailDrawer({
               sectionCharStart={detail.char_start}
               kbId={kbId}
               imageRefMap={detail.image_ref_map}
+              showImageExtraction
             />
           </Card>
 
@@ -271,6 +292,9 @@ export default function KnowledgeChunkDetailDrawer({
                     <Descriptions.Item label={getFieldLabel("image_ocr_text")} span={2}>
                       {asset.image_ocr_text || "-"}
                     </Descriptions.Item>
+                    <Descriptions.Item label={getFieldLabel("extracted_facts")} span={2}>
+                      {renderPrimitive(asset.extracted_facts)}
+                    </Descriptions.Item>
                     <Descriptions.Item label={getFieldLabel("llm_summary")} span={2}>
                       {asset.llm_summary || "-"}
                     </Descriptions.Item>
@@ -287,7 +311,7 @@ export default function KnowledgeChunkDetailDrawer({
                       {renderPrimitive(asset.table_rows)}
                     </Descriptions.Item>
                   </Descriptions>
-                  {renderKnowledgeAsset(asset)}
+                  {renderKnowledgeAsset(asset, { showExtraction: true })}
                 </Card>
               ))}
               {!detail.assets.length ? <Empty description="暂无关联资产" /> : null}

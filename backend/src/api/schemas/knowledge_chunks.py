@@ -56,6 +56,25 @@ class CreateKnowledgeChunkRequest(BaseModel):
     force: bool = False
 
 
+class IndexKnowledgeChunkRequest(BaseModel):
+    force: bool = False
+
+
+class ParseChunkSearchQueryRequest(BaseModel):
+    query: str
+
+
+class ChunkSearchRequest(BaseModel):
+    semantic_query: str = ""
+    keyword: str = ""
+    vector_weight: float = 0.6
+    keyword_weight: float = 0.4
+    title_vector_weight: float = 0.25
+    summary_vector_weight: float = 0.35
+    content_vector_weight: float = 0.4
+    top_k: int = Field(default=10, ge=1, le=50)
+
+
 class KnowledgeChunkListFilters(BaseModel):
     category: str | None = None
     knowledge_type: str | None = None

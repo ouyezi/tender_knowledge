@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -12,16 +13,30 @@ from src.api.deps import get_kb_or_404
 from src.api.envelope import error, success
 from src.api.middleware.audit import get_trace_id
 from src.api.schemas.knowledge_chunks import (
+    ChunkSearchRequest,
     CreateKnowledgeChunkRequest,
+    IndexKnowledgeChunkRequest,
     KnowledgeChunkListFilters,
+    ParseChunkSearchQueryRequest,
     PrefillRequest,
 )
+from src.config import settings
 from src.db.session import SessionLocal, get_db
 from src.models.chunk_asset import ChunkAsset
 from src.models.knowledge_base import KnowledgeBase
 from src.models.knowledge_chunk import KnowledgeChunk
+from src.services.knowledge.chunk_index_task import index_knowledge_chunk
+from src.services.knowledge.chunk_query_parse_service import (
+    SearchParseFailedError,
+    SearchParseTimeoutError,
+    parse_search_query,
+)
+from src.services.knowledge.chunk_search_service import (
+    ChunkSearchValidationError,
+    search_knowledge_chunks,
+)
 from src.services.knowledge.chunk_service import ChunkConflictError, create_knowledge_chunk
-from src.services.knowledge.embedding_task import embed_knowledge_chunk, get_embedding_status
+from src.services.knowledge.embedding_client import embedding_client_from_settings
 from src.services.knowledge.entry_content_service import (
     ContentNotAvailableError,
     DocumentNotFoundError,
@@ -37,16 +52,18 @@ from src.services.knowledge.media_url_service import (
 )
 from src.services.knowledge.prefill_service import prefill_knowledge_attributes
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/api/v1/kbs/{kb_id}/knowledge-chunks",
     tags=["knowledge-chunks"],
 )
 
 
-def _embed_chunk_in_background(chunk_id: int) -> None:
+def _index_chunk_in_background(chunk_id: int) -> None:
     db = SessionLocal()
     try:
-        embed_knowledge_chunk(db, chunk_id)
+        index_knowledge_chunk(db, chunk_id)
     finally:
         db.close()
 
@@ -77,9 +94,10 @@ def _serialize_asset(asset: ChunkAsset, db: Session, *, kb_id: UUID) -> dict:
         "table_type": asset.table_type,
         "allow_row_filter": asset.allow_row_filter,
         "image_type": asset.image_type,
-        "image_storage_url": asset.image_storage_url,
+        "image_storage_url": image_storage_url,
         "image_caption": asset.image_caption,
         "image_ocr_text": asset.image_ocr_text,
+        "extracted_facts": asset.extracted_facts,
         "required_with_text": asset.required_with_text,
         "position_hint": asset.position_hint,
     }
@@ -93,6 +111,8 @@ def _serialize_chunk_list_item(row: KnowledgeChunk) -> dict:
         "category": row.category,
         "knowledge_type": row.knowledge_type,
         "status": row.status,
+        "embedding_status": row.embedding_status,
+        "indexed_at": row.indexed_at.isoformat() if row.indexed_at else None,
         "token_count": row.token_count,
         "update_time": row.update_time.isoformat() if row.update_time else None,
     }
@@ -273,7 +293,6 @@ def prefill_knowledge_attributes_api(
 def create_knowledge_chunk_api(
     kb_id: UUID,
     body: CreateKnowledgeChunkRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(get_kb_or_404),
 ):
@@ -303,7 +322,6 @@ def create_knowledge_chunk_api(
         )
 
     db.commit()
-    background_tasks.add_task(_embed_chunk_in_background, chunk.id)
     return success(
         {
             "id": chunk.id,
@@ -417,6 +435,95 @@ def list_knowledge_chunks_api(
     )
 
 
+@router.post("/parse-search-query")
+def parse_chunk_search_query_api(
+    kb_id: UUID,
+    body: ParseChunkSearchQueryRequest,
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    _ = kb_id
+    query = body.query.strip()
+    if not query:
+        return JSONResponse(
+            status_code=400,
+            content=error("invalid_request", "query empty", trace_id=get_trace_id()),
+        )
+    try:
+        result = parse_search_query(query=query)
+    except SearchParseTimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content=error("search_parse_timeout", "Search parse timed out", trace_id=get_trace_id()),
+        )
+    except SearchParseFailedError as exc:
+        message = str(exc)
+        if message == "llm not configured":
+            return JSONResponse(
+                status_code=503,
+                content=error("llm_not_configured", "LLM is not configured", trace_id=get_trace_id()),
+            )
+        if message in {"query empty", "query too long"}:
+            return JSONResponse(
+                status_code=400,
+                content=error("invalid_request", message, trace_id=get_trace_id()),
+            )
+        logger.warning("chunk search parse failed kb_id=%s reason=%s", kb_id, exc)
+        return JSONResponse(
+            status_code=502,
+            content=error("search_parse_failed", "Search parse failed", trace_id=get_trace_id()),
+        )
+    return success(result, trace_id=get_trace_id())
+
+
+@router.post("/search")
+def search_knowledge_chunks_api(
+    kb_id: UUID,
+    body: ChunkSearchRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    semantic = body.semantic_query.strip()
+    keyword = body.keyword.strip()
+    if not semantic and not keyword:
+        return JSONResponse(
+            status_code=400,
+            content=error(
+                "invalid_request",
+                "semantic_query and keyword cannot both be empty",
+                trace_id=get_trace_id(),
+            ),
+        )
+
+    query_vector: list[float] | None = None
+    if semantic:
+        client = embedding_client_from_settings(model=settings.embedding_model)
+        if client.is_configured:
+            result = client.embed_text(semantic)
+            if result.vector is not None:
+                query_vector = result.vector
+
+    try:
+        payload = search_knowledge_chunks(
+            db,
+            kb_id=kb_id,
+            semantic_query=semantic,
+            keyword=keyword,
+            vector_weight=body.vector_weight,
+            keyword_weight=body.keyword_weight,
+            title_vector_weight=body.title_vector_weight,
+            summary_vector_weight=body.summary_vector_weight,
+            content_vector_weight=body.content_vector_weight,
+            top_k=body.top_k,
+            query_vector=query_vector,
+        )
+    except ChunkSearchValidationError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=error("invalid_request", str(exc), trace_id=get_trace_id()),
+        )
+    return success(payload, trace_id=get_trace_id())
+
+
 @router.get("/chunk-assets")
 def list_chunk_assets_api(
     kb_id: UUID,
@@ -439,6 +546,40 @@ def list_chunk_assets_api(
     assets = query.order_by(ChunkAsset.char_start.asc(), ChunkAsset.id.asc()).all()
     return success(
         {"items": [_serialize_asset(asset, db, kb_id=kb_id) for asset in assets]},
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/{chunk_id}/index")
+def index_knowledge_chunk_api(
+    kb_id: UUID,
+    chunk_id: int,
+    body: IndexKnowledgeChunkRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    _ = body
+    row = (
+        db.query(KnowledgeChunk)
+        .filter(KnowledgeChunk.kb_id == kb_id, KnowledgeChunk.id == chunk_id)
+        .one_or_none()
+    )
+    if row is None:
+        return JSONResponse(
+            status_code=404,
+            content=error("CHUNK_NOT_FOUND", "Knowledge chunk not found", trace_id=get_trace_id()),
+        )
+    if row.embedding_status == "indexing":
+        return JSONResponse(
+            status_code=409,
+            content=error("INDEX_IN_PROGRESS", "Index already in progress", trace_id=get_trace_id()),
+        )
+    row.embedding_status = "indexing"
+    db.commit()
+    background_tasks.add_task(_index_chunk_in_background, chunk_id)
+    return success(
+        {"chunk_id": chunk_id, "embedding_status": "indexing"},
         trace_id=get_trace_id(),
     )
 
@@ -471,7 +612,7 @@ def get_knowledge_chunk_api(
         .order_by(ChunkAsset.char_start.asc(), ChunkAsset.id.asc())
         .all()
     )
-    status = get_embedding_status(db, row.id)
+    status = row.embedding_status
     payload = _serialize_chunk_detail(row, embedding_status=status)
     payload["previous_version"] = _serialize_previous_version(previous)
     payload["assets"] = [_serialize_asset(asset, db, kb_id=kb_id) for asset in assets]

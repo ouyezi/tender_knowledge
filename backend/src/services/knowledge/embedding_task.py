@@ -117,16 +117,10 @@ def embed_knowledge_chunk(db: Session, chunk_id: int) -> str:
 
 
 def get_embedding_status(db: Session, chunk_id: int) -> str:
-    client = _embedding_client()
-    if not client.is_configured:
-        return "skipped"
-
-    row = _get_embedding_row(db, object_type=OBJECT_TYPE_CHUNK, object_id=chunk_id)
-    if row is None:
-        return "pending"
-    if row.content_embedding is not None:
-        return "ready"
-    return "failed"
+    chunk = db.get(KnowledgeChunk, chunk_id)
+    if chunk is None:
+        return "failed"
+    return chunk.embedding_status
 
 
 def _is_sqlite(db: Session) -> bool:
