@@ -80,3 +80,53 @@ class SuggestOutlineResponse(BaseModel):
     outline_title: str
     summary: str
     nodes: list[SuggestOutlineNode] = Field(default_factory=list)
+
+
+class ParseSearchQueryRequest(BaseModel):
+    query: str = Field(min_length=1)
+
+
+class ParseSearchQueryResponse(BaseModel):
+    semantic_query: str
+    keyword: str
+    product_tags: list[str] = Field(default_factory=list)
+    industry_tags: list[str] = Field(default_factory=list)
+    scenario_tags: list[str] = Field(default_factory=list)
+
+
+class BlueprintSearchRequest(BaseModel):
+    semantic_query: str = ""
+    keyword: str = ""
+    product_tags: list[str] = Field(default_factory=list)
+    industry_tags: list[str] = Field(default_factory=list)
+    scenario_tags: list[str] = Field(default_factory=list)
+    vector_weight: float = Field(default=0.6, ge=0.0, le=1.0)
+    keyword_weight: float = Field(default=0.4, ge=0.0, le=1.0)
+    top_k: int = Field(default=10, ge=1, le=50)
+
+
+class BlueprintSearchHighlight(BaseModel):
+    field: str
+    snippet: str
+
+
+class BlueprintSearchItem(BaseModel):
+    blueprint_id: str
+    name: str
+    description: str | None = None
+    product_tags: list[str] = Field(default_factory=list)
+    industry_tags: list[str] = Field(default_factory=list)
+    scenario_tags: list[str] = Field(default_factory=list)
+    source_chapter_title: str | None = None
+    version: int
+    updated_at: str | None = None
+    embedding_status: str
+    score: float
+    score_detail: dict[str, float]
+    highlights: list[BlueprintSearchHighlight] = Field(default_factory=list)
+
+
+class BlueprintSearchResponse(BaseModel):
+    items: list[BlueprintSearchItem]
+    total: int
+    search_meta: dict[str, object]

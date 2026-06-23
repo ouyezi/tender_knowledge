@@ -13,10 +13,12 @@ def _discover_env_files() -> tuple[str, ...]:
 
 
 # Preset profiles for quick provider switching via LLM_PROVIDER.
+# Embedding (百炼 OpenAI 兼容): https://help.aliyun.com/zh/model-studio/developer-reference/text-embedding-synchronous-api
 _LLM_PRESETS: dict[str, dict[str, str]] = {
     "qwen": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen-plus",
+        "embedding_model": "text-embedding-v4",
     },
     "openai": {
         "base_url": "https://api.openai.com/v1",
@@ -58,7 +60,18 @@ class Settings(BaseSettings):
     blueprint_suggest_max_tokens: int = 8192
     blueprint_suggest_max_blueprints: int = 5
     blueprint_suggest_requirement_max: int = 2000
-    embedding_model: str = "text-embedding-v2"
+    blueprint_search_parse_model: str = "qwen3.6-flash"
+    blueprint_search_parse_timeout_sec: int = 30
+    blueprint_search_parse_query_max: int = 500
+    blueprint_search_name_keyword_weight: float = 3.0
+    blueprint_search_body_keyword_weight: float = 1.0
+    blueprint_search_vector_min_similarity: float = 0.10
+    blueprint_search_exact_match_boost: float = 0.35
+    embedding_model: str = "text-embedding-v4"
+    embedding_dimensions: int = 1024
+    # Optional overrides; when unset, embedding uses the same Qwen/OpenAI-compatible endpoint as LLM.
+    embedding_api_base: str | None = None
+    embedding_api_key: str | None = None
 
     model_config = SettingsConfigDict(env_file=_discover_env_files(), extra="ignore")
 
@@ -79,6 +92,22 @@ class Settings(BaseSettings):
             return self.llm_model
         preset = _LLM_PRESETS.get(self.llm_provider.lower(), _LLM_PRESETS["qwen"])
         return preset["model"]
+
+    @property
+    def resolved_embedding_api_base(self) -> str:
+        if self.embedding_api_base:
+            return self.embedding_api_base.strip()
+        return self.resolved_llm_base_url
+
+    @property
+    def resolved_embedding_api_key(self) -> str:
+        if self.embedding_api_key:
+            return self.embedding_api_key.strip()
+        return (self.llm_api_key or "").strip()
+
+    @property
+    def embedding_enabled(self) -> bool:
+        return bool(self.resolved_embedding_api_base and self.resolved_embedding_api_key)
 
 
 settings = Settings()

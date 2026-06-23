@@ -1,6 +1,7 @@
 """ORM models package."""
 
 from src.models.actual_bid_parse_task import ActualBidParseTask
+from src.models.blueprint_embedding import BlueprintEmbedding
 from src.models.chunk_asset import ChunkAsset
 from src.models.chunk_embedding import ChunkEmbedding
 from src.models.document import Document
@@ -20,6 +21,7 @@ from src.models.knowledge_base import KnowledgeBase
 
 __all__ = [
     "ActualBidParseTask",
+    "BlueprintEmbedding",
     "ChunkAsset",
     "ChunkEmbedding",
     "Document",

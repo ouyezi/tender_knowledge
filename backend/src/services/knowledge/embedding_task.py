@@ -9,7 +9,7 @@ from src.config import settings
 from src.models.chunk_asset import ChunkAsset
 from src.models.chunk_embedding import ChunkEmbedding
 from src.models.knowledge_chunk import KnowledgeChunk
-from src.services.knowledge.embedding_client import EmbeddingClient, EmbeddingResult
+from src.services.knowledge.embedding_client import EmbeddingClient, EmbeddingResult, embedding_client_from_settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ OBJECT_TYPE_ASSET = "asset"
 
 
 def _embedding_client() -> EmbeddingClient:
-    return EmbeddingClient(model=settings.embedding_model)
+    return embedding_client_from_settings(model=settings.embedding_model)
 
 
 def _get_embedding_row(
