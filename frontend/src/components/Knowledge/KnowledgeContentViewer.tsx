@@ -4,8 +4,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getAssetTypeLabel } from "../../constants/knowledgeChunkMeta";
 import { buildContentBlocks, type KnowledgeAssetLike } from "./buildContentBlocks";
+import KnowledgeImageWithExtraction from "./KnowledgeImageWithExtraction";
 import { renderKnowledgeAsset } from "./renderKnowledgeAsset";
-import { resolveMarkdownImageSrc } from "./resolveKnowledgeImageUrl";
+import { resolveMarkdownImageSrc, toAbsoluteMediaUrl } from "./resolveKnowledgeImageUrl";
 
 export type ContentViewMode = "preview" | "source";
 
@@ -17,6 +18,12 @@ interface KnowledgeContentViewerProps {
   defaultMode?: ContentViewMode;
   kbId?: string;
   imageRefMap?: Record<string, string>;
+  showImageExtraction?: boolean;
+}
+
+function extractMediaAssetId(url: string): string | null {
+  const match = url.match(/\/media\/([0-9a-fA-F-]{36})/);
+  return match?.[1] ?? null;
 }
 
 export default function KnowledgeContentViewer({
@@ -27,8 +34,27 @@ export default function KnowledgeContentViewer({
   defaultMode = "preview",
   kbId,
   imageRefMap,
+  showImageExtraction = false,
 }: KnowledgeContentViewerProps) {
   const [mode, setMode] = useState<ContentViewMode>(defaultMode);
+
+  const imageAssetByUrl = useMemo(() => {
+    const byUrl = new Map<string, KnowledgeAssetLike>();
+    const byMediaId = new Map<string, KnowledgeAssetLike>();
+    for (const asset of assets) {
+      if (asset.asset_type !== "image" || !asset.image_storage_url) {
+        continue;
+      }
+      const absoluteUrl = toAbsoluteMediaUrl(asset.image_storage_url);
+      byUrl.set(absoluteUrl, asset);
+      byUrl.set(asset.image_storage_url, asset);
+      const mediaId = extractMediaAssetId(absoluteUrl) ?? extractMediaAssetId(asset.image_storage_url);
+      if (mediaId) {
+        byMediaId.set(mediaId, asset);
+      }
+    }
+    return { byUrl, byMediaId };
+  }, [assets]);
 
   const blocks = useMemo(
     () => buildContentBlocks({ contentMd, assets, sectionCharStart }),
@@ -42,16 +68,27 @@ export default function KnowledgeContentViewer({
         if (!resolvedSrc) {
           return <span style={{ color: "#999" }}>[图片无法加载]</span>;
         }
+        const absoluteSrc = toAbsoluteMediaUrl(resolvedSrc);
+        const mediaId = extractMediaAssetId(absoluteSrc) ?? extractMediaAssetId(resolvedSrc);
+        const matchedAsset =
+          imageAssetByUrl.byUrl.get(absoluteSrc) ??
+          imageAssetByUrl.byUrl.get(resolvedSrc) ??
+          (mediaId ? imageAssetByUrl.byMediaId.get(mediaId) : undefined);
+        if (showImageExtraction) {
+          return (
+            <KnowledgeImageWithExtraction src={absoluteSrc} alt={alt ?? "image"} asset={matchedAsset} />
+          );
+        }
         return (
           <img
-            src={resolvedSrc}
+            src={absoluteSrc}
             alt={alt ?? "image"}
             style={{ maxWidth: "100%", border: "1px solid #f0f0f0", borderRadius: 6 }}
           />
         );
       },
     }),
-    [imageRefMap, kbId],
+    [imageAssetByUrl, imageRefMap, kbId, showImageExtraction],
   );
 
   return (
@@ -80,7 +117,11 @@ export default function KnowledgeContentViewer({
                 </div>
               );
             }
-            return <div key={`asset-${block.asset.id}`}>{renderKnowledgeAsset(block.asset)}</div>;
+            return (
+              <div key={`asset-${block.asset.id}`}>
+                {renderKnowledgeAsset(block.asset, { showExtraction: showImageExtraction })}
+              </div>
+            );
           })}
         </Space>
       ) : (

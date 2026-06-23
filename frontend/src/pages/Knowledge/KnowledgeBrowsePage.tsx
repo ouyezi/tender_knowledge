@@ -20,8 +20,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BOOLEAN_OPTIONS, getEnumLabel, getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKBContext } from "../../layout/KBContext";
 import {
+  indexKnowledgeChunk,
   listKnowledgeChunks,
+  parseChunkSearchQuery,
+  searchKnowledgeChunks,
+  waitForChunkIndexComplete,
   type KnowledgeChunkListItem,
+  type KnowledgeChunkSearchItem,
   type ListKnowledgeChunksParams,
 } from "../../services/knowledgeChunks";
 import KnowledgeChunkDetailDrawer from "./KnowledgeChunkDetailDrawer";
@@ -154,11 +159,16 @@ export default function KnowledgeBrowsePage() {
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [detailChunkId, setDetailChunkId] = useState<number>();
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [presets, setPresets] = useState<FilterPreset[]>([]);
   const [selectedPresetName, setSelectedPresetName] = useState<string>();
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetNameInput, setPresetNameInput] = useState("");
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [semanticMode, setSemanticMode] = useState(false);
+  const [semanticQuery, setSemanticQuery] = useState("");
+  const [searchItems, setSearchItems] = useState<KnowledgeChunkSearchItem[]>([]);
+  const [indexingId, setIndexingId] = useState<number>();
 
   useEffect(() => {
     if (!selectedKbId) {
@@ -193,13 +203,17 @@ export default function KnowledgeBrowsePage() {
   }, [filters, page, pageSize, selectedKbId]);
 
   useEffect(() => {
-    void refreshList();
-  }, [refreshList]);
+    if (!semanticMode) {
+      void refreshList();
+    }
+  }, [refreshList, semanticMode]);
 
   const applyFilters = useCallback(() => {
     const values = form.getFieldsValue();
     setFilters(toListParams(values));
     setPage(1);
+    setSemanticMode(false);
+    setSearchItems([]);
   }, [form]);
 
   const resetFilters = useCallback(() => {
@@ -207,7 +221,84 @@ export default function KnowledgeBrowsePage() {
     setFilters({});
     setPage(1);
     setSelectedPresetName(undefined);
+    setSemanticMode(false);
+    setSearchItems([]);
   }, [form]);
+
+  const handleSemanticSearch = useCallback(async () => {
+    if (!selectedKbId || !semanticQuery.trim()) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const parsed = await parseChunkSearchQuery(selectedKbId, {
+        query: semanticQuery.trim(),
+      });
+      const result = await searchKnowledgeChunks(selectedKbId, {
+        ...parsed,
+        vector_weight: 0.6,
+        keyword_weight: 0.4,
+        top_k: 10,
+      });
+      setSearchItems(result.items ?? []);
+      setSemanticMode(true);
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedKbId, semanticQuery]);
+
+  const handleExitSemanticSearch = useCallback(() => {
+    setSemanticMode(false);
+    setSearchItems([]);
+    void refreshList();
+  }, [refreshList]);
+
+  const updateChunkEmbeddingStatus = useCallback((chunkId: number, embeddingStatus: string) => {
+    if (semanticMode) {
+      setSearchItems((prev) =>
+        prev.map((item) => (item.id === chunkId ? { ...item, embedding_status: embeddingStatus } : item)),
+      );
+    } else {
+      setItems((prev) =>
+        prev.map((item) => (item.id === chunkId ? { ...item, embedding_status: embeddingStatus } : item)),
+      );
+    }
+  }, [semanticMode]);
+
+  const handleIndexChunk = useCallback(
+    async (chunkId: number) => {
+      if (!selectedKbId) {
+        return;
+      }
+      setIndexingId(chunkId);
+      try {
+        await indexKnowledgeChunk(selectedKbId, chunkId);
+        updateChunkEmbeddingStatus(chunkId, "indexing");
+        const detail = await waitForChunkIndexComplete(selectedKbId, chunkId);
+        const status = detail?.embedding_status ?? "failed";
+        updateChunkEmbeddingStatus(chunkId, status);
+        if (status === "ready") {
+          message.success("索引构建完成");
+        } else if (status === "skipped") {
+          message.warning("索引已跳过（未配置向量服务）");
+        } else if (status === "failed") {
+          message.error("索引构建失败");
+        } else if (status === "indexing") {
+          message.info("索引仍在进行中，请稍后刷新查看");
+        }
+        if (detailChunkId === chunkId) {
+          setDetailReloadKey((key) => key + 1);
+        }
+      } catch (error) {
+        message.error((error as Error).message);
+      } finally {
+        setIndexingId(undefined);
+      }
+    },
+    [detailChunkId, selectedKbId, updateChunkEmbeddingStatus],
+  );
 
   const handlePresetSave = useCallback(() => {
     if (!selectedKbId) {
@@ -269,7 +360,7 @@ export default function KnowledgeBrowsePage() {
     [presets, selectedKbId],
   );
 
-  const columns: ColumnsType<KnowledgeChunkListItem> = useMemo(
+  const baseColumns: ColumnsType<KnowledgeChunkListItem> = useMemo(
     () => [
       {
         title: getFieldLabel("title"),
@@ -306,8 +397,17 @@ export default function KnowledgeBrowsePage() {
         title: getFieldLabel("status"),
         dataIndex: "status",
         key: "status",
-        width: 140,
+        width: 120,
         render: (value: string) => <Tag>{getEnumLabel("status", value)}</Tag>,
+      },
+      {
+        title: getFieldLabel("embedding_status"),
+        dataIndex: "embedding_status",
+        key: "embedding_status",
+        width: 100,
+        render: (value?: string) => (
+          <Tag>{getEnumLabel("embedding_status", value ?? "pending")}</Tag>
+        ),
       },
       {
         title: getFieldLabel("token_count"),
@@ -322,9 +422,74 @@ export default function KnowledgeBrowsePage() {
         width: 190,
         render: (value: string | null) => formatDateTime(value),
       },
+      {
+        title: "操作",
+        key: "actions",
+        width: 110,
+        render: (_value, record) => {
+          const indexing = record.embedding_status === "indexing";
+          const ready = record.embedding_status === "ready";
+          return (
+            <Button
+              size="small"
+              loading={indexingId === record.id || indexing}
+              disabled={indexing}
+              onClick={() => void handleIndexChunk(record.id)}
+            >
+              {ready ? "重新索引" : "构建索引"}
+            </Button>
+          );
+        },
+      },
     ],
-    [],
+    [handleIndexChunk, indexingId],
   );
+
+  const semanticColumns = useMemo((): ColumnsType<KnowledgeChunkSearchItem> => {
+    const titleColumn = baseColumns[0] as ColumnsType<KnowledgeChunkSearchItem>[number];
+    const restColumns = baseColumns
+      .slice(1)
+      .filter((col) => col.key !== "embedding_status" && col.key !== "actions") as ColumnsType<KnowledgeChunkSearchItem>;
+    return [
+      titleColumn,
+      {
+        title: "匹配分",
+        dataIndex: "score",
+        key: "score",
+        width: 88,
+        align: "center",
+        render: (value: number) => value.toFixed(2),
+      },
+      {
+        title: "匹配摘要",
+        key: "highlight",
+        width: 220,
+        ellipsis: true,
+        render: (_value, record) => {
+          const snippet = record.highlights?.[0]?.snippet;
+          if (!snippet) {
+            return record.summary || "-";
+          }
+          return <span dangerouslySetInnerHTML={{ __html: snippet }} />;
+        },
+      },
+      ...restColumns,
+    ];
+  }, [baseColumns]);
+
+  const tablePagination = semanticMode
+    ? false
+    : {
+        current: page,
+        pageSize,
+        total,
+        showSizeChanger: true,
+        showTotal: (count: number) => `共 ${count} 条`,
+        onChange: (nextPage: number, nextPageSize: number) => {
+          setPage(nextPage);
+          setPageSize(nextPageSize);
+        },
+      };
 
   if (!selectedKbId) {
     return <Alert message="请先选择知识库" type="info" showIcon />;
@@ -333,6 +498,21 @@ export default function KnowledgeBrowsePage() {
   return (
     <>
       <Card title="知识浏览">
+        <Space style={{ width: "100%", marginBottom: 16 }} wrap>
+          <Input
+            style={{ minWidth: 360 }}
+            value={semanticQuery}
+            onChange={(event) => setSemanticQuery(event.target.value)}
+            placeholder="用自然语言描述，如：餐饮行业的食品经营许可证要求"
+            allowClear
+            onPressEnter={() => void handleSemanticSearch()}
+          />
+          <Button type="primary" onClick={() => void handleSemanticSearch()} loading={loading}>
+            语义搜索
+          </Button>
+          {semanticMode ? <Button onClick={handleExitSemanticSearch}>返回列表</Button> : null}
+        </Space>
+
         <Form form={form} layout="vertical">
           <Row gutter={12} align="middle">
             <Col flex="1 1 160px">
@@ -463,30 +643,33 @@ export default function KnowledgeBrowsePage() {
 
         <div style={{ marginBottom: 16 }} />
 
-        <Table
-          rowKey="id"
-          size="small"
-          loading={loading}
-          columns={columns}
-          dataSource={items}
-          locale={{ emptyText: <Empty description="暂无知识记录" /> }}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            showTotal: (count) => `共 ${count} 条`,
-            onChange: (nextPage, nextPageSize) => {
-              setPage(nextPage);
-              setPageSize(nextPageSize);
-            },
-          }}
-        />
+        {semanticMode ? (
+          <Table
+            rowKey="id"
+            size="small"
+            loading={loading}
+            columns={semanticColumns}
+            dataSource={searchItems}
+            locale={{ emptyText: <Empty description="暂无匹配知识" /> }}
+            pagination={false}
+          />
+        ) : (
+          <Table
+            rowKey="id"
+            size="small"
+            loading={loading}
+            columns={baseColumns}
+            dataSource={items}
+            locale={{ emptyText: <Empty description="暂无知识记录" /> }}
+            pagination={tablePagination}
+          />
+        )}
       </Card>
 
       <KnowledgeChunkDetailDrawer
         kbId={selectedKbId}
         chunkId={detailChunkId}
+        reloadKey={detailReloadKey}
         open={detailChunkId !== undefined}
         onClose={() => setDetailChunkId(undefined)}
         onOpenChunk={(nextChunkId) => setDetailChunkId(nextChunkId)}

@@ -38,6 +38,7 @@ from src.models import (  # noqa: F401
     knowledge_blueprint,
     knowledge_blueprint_node,
     blueprint_embedding,
+    image_extraction_cache,
 )
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite://")

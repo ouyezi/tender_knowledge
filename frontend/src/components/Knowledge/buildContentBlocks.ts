@@ -8,6 +8,10 @@ export interface KnowledgeAssetLike {
   page_end?: number | null;
   raw_markdown: string | null;
   image_storage_url?: string | null;
+  image_caption?: string | null;
+  image_ocr_text?: string | null;
+  extracted_facts?: Record<string, unknown> | null;
+  llm_summary?: string | null;
 }
 
 export type ContentBlock =

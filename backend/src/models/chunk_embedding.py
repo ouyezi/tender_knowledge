@@ -25,6 +25,10 @@ class ChunkEmbedding(Base):
     summary_embedding: Mapped[Any] = mapped_column(
         JSON().with_variant(Vector(1024), "postgresql"), nullable=True
     )
+    title_embedding: Mapped[Any] = mapped_column(
+        JSON().with_variant(Vector(1024), "postgresql"), nullable=True
+    )
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     create_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
