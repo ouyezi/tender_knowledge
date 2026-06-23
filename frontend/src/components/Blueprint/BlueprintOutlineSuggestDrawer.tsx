@@ -1,4 +1,4 @@
-import { Alert, Button, Drawer, Empty, Input, Space, Spin, Typography, message } from "antd";
+import { Alert, Button, Collapse, Drawer, Empty, Input, Space, Spin, Typography, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../../services/apiClient";
 import {
@@ -7,7 +7,7 @@ import {
 } from "../../services/blueprints";
 import BlueprintOutlineSuggestTree from "./BlueprintOutlineSuggestTree";
 
-const { Paragraph, Text } = Typography;
+const { Paragraph, Text, Title } = Typography;
 const { TextArea } = Input;
 const MAX_REQUIREMENT_LEN = 2000;
 
@@ -119,12 +119,25 @@ export default function BlueprintOutlineSuggestDrawer({
           ) : null}
           {result ? (
             <Space direction="vertical" size={12} style={{ width: "100%" }}>
-              <div>
-                <Text strong>{result.outline_title}</Text>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  {result.summary}
-                </Paragraph>
-              </div>
+              <Title level={5} style={{ marginBottom: 0 }}>
+                {result.outline_title}
+              </Title>
+              {result.summary?.trim() ? (
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: "summary",
+                      label: "整体说明",
+                      children: (
+                        <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                          {result.summary}
+                        </Paragraph>
+                      ),
+                    },
+                  ]}
+                />
+              ) : null}
               <BlueprintOutlineSuggestTree nodes={result.nodes} />
             </Space>
           ) : null}

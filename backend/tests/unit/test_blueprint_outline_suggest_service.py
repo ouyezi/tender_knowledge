@@ -5,6 +5,7 @@ from uuid import uuid4
 from src.services.knowledge.blueprint_outline_suggest_service import (
     OutlineSuggestFailedError,
     OutlineSuggestValidationError,
+    build_suggest_user_prompt,
     compact_blueprint_detail,
     parse_and_validate_llm_response,
     suggest_outline,
@@ -66,6 +67,15 @@ def test_compact_blueprint_detail_uses_short_keys():
     assert compact["nodes"][0]["imp"] == "required"
     assert compact["nodes"][0]["cd"] == "写总体思路"
     assert "node_title" not in compact["nodes"][0]
+
+
+def test_build_suggest_user_prompt_emphasizes_blueprint_skeleton():
+    compact = compact_blueprint_detail(SAMPLE_DETAIL)
+    prompt = build_suggest_user_prompt(blueprints=[compact], requirement="突出安全合规")
+    assert "推荐模板" in prompt
+    assert "骨架" in prompt
+    assert "供应链蓝图" in prompt
+    assert "突出安全合规" in prompt
 
 
 def test_validate_suggest_node_leaf_requires_no_split_reason():

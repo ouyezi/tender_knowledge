@@ -1,6 +1,6 @@
-import { Tag, Tree, Typography } from "antd";
+import { Card, Tag, Tree, Typography } from "antd";
 import type { DataNode } from "antd/es/tree";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SuggestOutlineNode } from "../../services/blueprints";
 import { getImportanceLevelLabel } from "../../constants/blueprintMeta";
 
@@ -10,26 +10,10 @@ interface BlueprintOutlineSuggestTreeProps {
   nodes: SuggestOutlineNode[];
 }
 
-function renderNodeMeta(node: SuggestOutlineNode) {
-  const hasChildren = (node.children?.length ?? 0) > 0;
-  const reason = hasChildren ? node.split_reason : node.no_split_reason;
-  const reasonLabel = hasChildren ? "拆分理由" : "不拆分理由";
-
-  return (
-    <div style={{ marginTop: 4, marginBottom: 8 }}>
-      <Paragraph style={{ marginBottom: 4 }} type="secondary">
-        {node.content_suggestion}
-      </Paragraph>
-      {reason ? (
-        <Text type="secondary">
-          {reasonLabel}：{reason}
-        </Text>
-      ) : null}
-    </div>
-  );
-}
-
 function getNodeByPath(nodes: SuggestOutlineNode[], path: string): SuggestOutlineNode | undefined {
+  if (!path) {
+    return undefined;
+  }
   const parts = path.split("-").map((part) => Number(part));
   let current: SuggestOutlineNode[] = nodes;
   let found: SuggestOutlineNode | undefined;
@@ -49,36 +33,63 @@ function toTreeData(nodes: SuggestOutlineNode[], parentPath = ""): DataNode[] {
     const title = node.title?.trim() || "(未命名章节)";
     return {
       key: path,
-      title: (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span>{title}</span>
-          <Tag>{getImportanceLevelLabel(node.importance)}</Tag>
-        </span>
-      ),
+      title,
       children: toTreeData(node.children ?? [], path),
     };
   });
 }
 
-export default function BlueprintOutlineSuggestTree({ nodes }: BlueprintOutlineSuggestTreeProps) {
-  const treeData = toTreeData(nodes);
+function SuggestNodeDetailPanel({ node }: { node: SuggestOutlineNode }) {
+  const hasChildren = (node.children?.length ?? 0) > 0;
+  const reason = hasChildren ? node.split_reason : node.no_split_reason;
+  const reasonLabel = hasChildren ? "拆分理由" : "不拆分理由";
 
   return (
-    <Tree
-      defaultExpandAll
-      treeData={treeData}
-      titleRender={(node) => {
-        const item = getNodeByPath(nodes, String(node.key));
-        if (!item) {
-          return node.title as ReactNode;
-        }
-        return (
-          <div>
-            {node.title as ReactNode}
-            {renderNodeMeta(item)}
-          </div>
-        );
-      }}
-    />
+    <Card size="small" title={node.title?.trim() || "(未命名章节)"}>
+      <Paragraph style={{ marginBottom: 8 }}>
+        <Text type="secondary">重要程度：</Text>
+        <Tag style={{ marginLeft: 4 }}>{getImportanceLevelLabel(node.importance)}</Tag>
+      </Paragraph>
+      <Paragraph style={{ marginBottom: 8 }}>
+        <Text strong>内容建议</Text>
+        <br />
+        <Text>{node.content_suggestion}</Text>
+      </Paragraph>
+      {reason ? (
+        <Paragraph style={{ marginBottom: 0 }}>
+          <Text strong>{reasonLabel}</Text>
+          <br />
+          <Text type="secondary">{reason}</Text>
+        </Paragraph>
+      ) : null}
+    </Card>
+  );
+}
+
+export default function BlueprintOutlineSuggestTree({ nodes }: BlueprintOutlineSuggestTreeProps) {
+  const [selectedPath, setSelectedPath] = useState<string>();
+  const treeData = useMemo(() => toTreeData(nodes), [nodes]);
+  const selectedNode = useMemo(
+    () => (selectedPath ? getNodeByPath(nodes, selectedPath) : undefined),
+    [nodes, selectedPath],
+  );
+
+  useEffect(() => {
+    setSelectedPath(undefined);
+  }, [nodes]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Tree
+        treeData={treeData}
+        selectedKeys={selectedPath ? [selectedPath] : []}
+        onSelect={(keys) => setSelectedPath(keys[0] as string | undefined)}
+      />
+      {selectedNode ? (
+        <SuggestNodeDetailPanel node={selectedNode} />
+      ) : (
+        <Text type="secondary">点击章节查看内容建议与说明</Text>
+      )}
+    </div>
   );
 }
