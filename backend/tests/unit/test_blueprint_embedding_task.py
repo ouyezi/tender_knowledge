@@ -49,10 +49,17 @@ def test_embed_blueprint_creates_ready_row(db_session, seeded_kb, monkeypatch):
     assert "政务云蓝图" in row.search_text
 
 
-def test_embed_blueprint_skipped_when_not_configured(db_session, seeded_kb, monkeypatch):
-    blueprint = _seed_blueprint(db_session, seeded_kb.kb_id)
+def _clear_embedding_credentials(monkeypatch):
     monkeypatch.delenv("EMBEDDING_API_BASE", raising=False)
     monkeypatch.delenv("EMBEDDING_API_KEY", raising=False)
+    monkeypatch.setattr("src.config.settings.embedding_api_base", None)
+    monkeypatch.setattr("src.config.settings.embedding_api_key", None)
+    monkeypatch.setattr("src.config.settings.llm_api_key", None)
+
+
+def test_embed_blueprint_skipped_when_not_configured(db_session, seeded_kb, monkeypatch):
+    blueprint = _seed_blueprint(db_session, seeded_kb.kb_id)
+    _clear_embedding_credentials(monkeypatch)
 
     status = embed_blueprint(db_session, blueprint.blueprint_id)
 

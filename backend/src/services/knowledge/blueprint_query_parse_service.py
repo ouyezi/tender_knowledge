@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
@@ -16,8 +17,10 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT = (
     "你是目录蓝图检索助手。将用户的自然语言搜索意图拆分为结构化 JSON。\n"
     "字段：semantic_query（用于向量语义检索，提炼核心概念）、"
-    "keyword（用于关键词匹配，2-5个词）、"
-    "product_tags、industry_tags、scenario_tags（数组，无则空数组）。\n"
+    "keyword（用于关键词匹配，2-5个词，必须是空格分隔的字符串，不要返回数组）、"
+    "product_tags、industry_tags、scenario_tags（数组）。\n"
+    "标签规则：仅当用户在查询中明确提到具体产品名、行业或应用场景时才填写对应标签；"
+    "不要根据搜索意图推测或编造标签，绝大多数查询应返回空数组。\n"
     "只返回 JSON，不要 markdown。"
 )
 
@@ -35,7 +38,7 @@ def parse_search_query_response(raw: str) -> dict[str, Any]:
     if parsed is None:
         raise SearchParseFailedError("invalid llm json")
     semantic_query = str(parsed.get("semantic_query") or "").strip()
-    keyword = str(parsed.get("keyword") or "").strip()
+    keyword = _normalize_keyword(parsed.get("keyword"))
     if not semantic_query and not keyword:
         raise SearchParseFailedError("semantic_query and keyword missing")
     return {
@@ -45,6 +48,32 @@ def parse_search_query_response(raw: str) -> dict[str, Any]:
         "industry_tags": _as_str_list(parsed.get("industry_tags")),
         "scenario_tags": _as_str_list(parsed.get("scenario_tags")),
     }
+
+
+def _normalize_keyword(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return " ".join(str(item).strip() for item in value if str(item).strip())
+    text = str(value).strip()
+    if not text:
+        return ""
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return " ".join(str(item).strip() for item in parsed if str(item).strip())
+        except json.JSONDecodeError:
+            pass
+        try:
+            parsed = ast.literal_eval(text)
+            if isinstance(parsed, list):
+                return " ".join(str(item).strip() for item in parsed if str(item).strip())
+        except (ValueError, SyntaxError):
+            pass
+    if "," in text and " " not in text:
+        return " ".join(part.strip() for part in text.split(",") if part.strip())
+    return text
 
 
 def parse_search_query(*, query: str) -> dict[str, Any]:

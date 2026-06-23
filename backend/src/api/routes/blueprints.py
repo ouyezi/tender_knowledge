@@ -57,7 +57,7 @@ from src.services.knowledge.blueprint_service import (
     list_blueprints,
     update_blueprint,
 )
-from src.services.knowledge.embedding_client import EmbeddingClient
+from src.services.knowledge.embedding_client import embedding_client_from_settings
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ def generate_blueprint_draft_api(
             status_code=502,
             content=error(
                 "blueprint_generate_failed",
-                "Blueprint generation failed",
+                str(exc) or "Blueprint generation failed",
                 trace_id=get_trace_id(),
             ),
         )
@@ -295,7 +295,7 @@ def search_blueprints_api(
 
     query_vector: list[float] | None = None
     if semantic:
-        client = EmbeddingClient(model=settings.embedding_model)
+        client = embedding_client_from_settings(model=settings.embedding_model)
         if client.is_configured:
             result = client.embed_text(semantic)
             if result.vector is not None:

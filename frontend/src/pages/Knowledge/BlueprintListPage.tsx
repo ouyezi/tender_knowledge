@@ -68,11 +68,15 @@ function renderTags(tags?: string[]) {
 
 function formatScoreDetail(item: BlueprintSearchItem): string {
   const detail = item.score_detail;
-  return [
+  const lines = [
     `综合分 ${item.score.toFixed(2)}`,
     `向量 ${detail.vector_score.toFixed(2)} (权重 ${detail.vector_weight})`,
     `关键词 ${detail.keyword_score.toFixed(2)} (权重 ${detail.keyword_weight})`,
-  ].join("\n");
+  ];
+  if (detail.exact_match_bonus) {
+    lines.push(`精确匹配 +${detail.exact_match_bonus.toFixed(2)}`);
+  }
+  return lines.join("\n");
 }
 
 export default function BlueprintListPage() {

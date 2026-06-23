@@ -12,6 +12,14 @@ from src.services.knowledge.embedding_task import (
 from src.services.knowledge.embedding_client import EmbeddingResult
 
 
+def _clear_embedding_credentials(monkeypatch):
+    monkeypatch.delenv("EMBEDDING_API_BASE", raising=False)
+    monkeypatch.delenv("EMBEDDING_API_KEY", raising=False)
+    monkeypatch.setattr("src.config.settings.embedding_api_base", None)
+    monkeypatch.setattr("src.config.settings.embedding_api_key", None)
+    monkeypatch.setattr("src.config.settings.llm_api_key", None)
+
+
 def _seed_chunk(db_session, kb_id, *, content: str = "chunk body", summary: str = "chunk summary"):
     chunk = KnowledgeChunk(
         id=1,
@@ -100,8 +108,7 @@ def test_embed_knowledge_chunk_embeds_linked_assets(db_session, seeded_kb, monke
 
 def test_embed_knowledge_chunk_skipped_when_not_configured(db_session, seeded_kb, monkeypatch):
     chunk = _seed_chunk(db_session, seeded_kb.kb_id)
-    monkeypatch.delenv("EMBEDDING_API_BASE", raising=False)
-    monkeypatch.delenv("EMBEDDING_API_KEY", raising=False)
+    _clear_embedding_credentials(monkeypatch)
 
     status = embed_knowledge_chunk(db_session, chunk.id)
 
@@ -190,7 +197,6 @@ def test_get_embedding_status_failed(db_session, seeded_kb, monkeypatch):
 
 def test_get_embedding_status_skipped(db_session, seeded_kb, monkeypatch):
     chunk = _seed_chunk(db_session, seeded_kb.kb_id)
-    monkeypatch.delenv("EMBEDDING_API_BASE", raising=False)
-    monkeypatch.delenv("EMBEDDING_API_KEY", raising=False)
+    _clear_embedding_credentials(monkeypatch)
 
     assert get_embedding_status(db_session, chunk.id) == "skipped"

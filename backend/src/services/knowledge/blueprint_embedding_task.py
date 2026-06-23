@@ -11,13 +11,13 @@ from src.models.blueprint_embedding import BlueprintEmbedding
 from src.models.knowledge_blueprint import BlueprintStatus, KnowledgeBlueprint
 from src.services.knowledge.blueprint_index_text import build_search_text, compute_content_hash
 from src.services.knowledge.blueprint_service import get_blueprint_detail
-from src.services.knowledge.embedding_client import EmbeddingClient
+from src.services.knowledge.embedding_client import embedding_client_from_settings
 
 logger = logging.getLogger(__name__)
 
 
-def _embedding_client() -> EmbeddingClient:
-    return EmbeddingClient(model=settings.embedding_model)
+def _embedding_client():
+    return embedding_client_from_settings(model=settings.embedding_model)
 
 
 def embed_blueprint(db: Session, blueprint_id: UUID) -> str:

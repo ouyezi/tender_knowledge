@@ -217,6 +217,7 @@ export interface BlueprintSearchItem extends BlueprintListItem {
   score_detail: {
     vector_score: number;
     keyword_score: number;
+    exact_match_bonus?: number;
     vector_weight: number;
     keyword_weight: number;
   };

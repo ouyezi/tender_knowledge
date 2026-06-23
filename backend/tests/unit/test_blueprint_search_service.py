@@ -81,3 +81,38 @@ def test_search_blueprints_empty_query_raises():
             top_k=10,
             query_vector=None,
         )
+
+
+def test_search_exact_title_beats_noisy_vector(db_session, seeded_kb):
+    query_vector = [1.0, 0.0, 0.0, 0.0]
+    noisy_embedding = [0.079, 0.99687, 0.0, 0.0]
+    target_embedding = [0.018, 0.99984, 0.0, 0.0]
+    _seed(
+        db_session,
+        seeded_kb.kb_id,
+        name="企业资质",
+        tags=[],
+        embedding=noisy_embedding,
+    )
+    _seed(
+        db_session,
+        seeded_kb.kb_id,
+        name="餐补产品功能介绍",
+        tags=[],
+        embedding=target_embedding,
+    )
+    result = search_blueprints(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        semantic_query="餐补产品功能介绍",
+        keyword="餐补 产品 功能 介绍",
+        product_tags=[],
+        industry_tags=[],
+        scenario_tags=[],
+        vector_weight=0.6,
+        keyword_weight=0.4,
+        top_k=10,
+        query_vector=query_vector,
+    )
+    assert result["items"][0]["name"] == "餐补产品功能介绍"
+    assert result["items"][0]["score_detail"]["exact_match_bonus"] == 0.35
