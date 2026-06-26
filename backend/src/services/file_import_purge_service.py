@@ -23,7 +23,9 @@ from src.models.import_audit_log import ImportAuditAction, ImportAuditLog
 from src.models.import_task import ImportTask
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.models.knowledge_blueprint import KnowledgeBlueprint
+from src.models.writing_technique import WritingTechnique
 from src.services.knowledge.blueprint_service import delete_blueprints_by_doc_id
+from src.services.knowledge.writing_technique_service import invalidate_techniques_by_chunk_ids
 
 
 class FileImportPurgeServiceError(Exception):
@@ -158,7 +160,7 @@ def _purge_document_tree_nodes(
 
 
 def _purge_documents_for_import(
-    db: Session, *, document_ids: list[UUID], counts: dict[str, int]
+    db: Session, *, kb_id: UUID, document_ids: list[UUID], counts: dict[str, int]
 ) -> None:
     if not document_ids:
         return
@@ -166,6 +168,11 @@ def _purge_documents_for_import(
     chunk_ids = [
         row.id for row in db.query(KnowledgeChunk.id).filter(KnowledgeChunk.doc_id.in_(document_ids)).all()
     ]
+    _inc(
+        counts,
+        "writing_techniques_invalidated",
+        invalidate_techniques_by_chunk_ids(db, kb_id=kb_id, chunk_ids=chunk_ids),
+    )
     asset_ids = [
         row.id for row in db.query(ChunkAsset.id).filter(ChunkAsset.doc_id.in_(document_ids)).all()
     ]
@@ -265,6 +272,11 @@ def check_purge_impact(db: Session, *, kb_id: UUID, import_id: UUID) -> PurgeImp
         if document_ids
         else 0
     )
+    chunk_ids = (
+        [row.id for row in db.query(KnowledgeChunk.id).filter(KnowledgeChunk.doc_id.in_(document_ids)).all()]
+        if document_ids
+        else []
+    )
     asset_count = (
         db.query(ChunkAsset).filter(ChunkAsset.doc_id.in_(document_ids)).count()
         if document_ids
@@ -281,6 +293,16 @@ def check_purge_impact(db: Session, *, kb_id: UUID, import_id: UUID) -> PurgeImp
         if document_ids
         else 0
     )
+    writing_technique_invalidated_count = (
+        db.query(WritingTechnique)
+        .filter(
+            WritingTechnique.kb_id == kb_id,
+            WritingTechnique.source_chunk_id.in_(chunk_ids),
+        )
+        .count()
+        if chunk_ids
+        else 0
+    )
 
     return PurgeImpactReport(
         import_id=str(import_id),
@@ -292,6 +314,7 @@ def check_purge_impact(db: Session, *, kb_id: UUID, import_id: UUID) -> PurgeImp
             "documents": doc_count,
             "import_tasks": task_count,
             "knowledge_chunks": chunk_count,
+            "writing_techniques_invalidated": writing_technique_invalidated_count,
             "chunk_assets": asset_count,
             "chunk_embeddings": embedding_count,
             "actual_bid_parse_tasks": parse_task_count,
@@ -337,7 +360,7 @@ def purge_file_import(
         document_ids = [
             row.document_id for row in db.query(Document).filter(Document.import_id == iid).all()
         ]
-        _purge_documents_for_import(db, document_ids=document_ids, counts=counts)
+        _purge_documents_for_import(db, kb_id=kb_id, document_ids=document_ids, counts=counts)
         _purge_parse_tasks_for_import(db, kb_id=kb_id, import_id=iid, counts=counts)
         _purge_documents(db, document_ids=document_ids, counts=counts)
         _inc(

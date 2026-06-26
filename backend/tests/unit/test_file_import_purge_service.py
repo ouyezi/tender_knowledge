@@ -9,8 +9,10 @@ from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.models.knowledge_blueprint import KnowledgeBlueprint
+from src.models.writing_technique import WritingTechnique
 from src.services.file_import_purge_service import check_purge_impact, purge_file_import
 from src.services.knowledge.blueprint_service import create_blueprint
+from src.services.knowledge.writing_technique_service import create_technique
 
 
 @compiles(JSONB, "sqlite")
@@ -168,6 +170,37 @@ def test_purge_deletes_blueprints_for_document(db_session, seeded_kb):
         .count()
         == 0
     )
+
+
+def test_purge_invalidates_writing_techniques_not_delete(db_session, seeded_kb):
+    import_id, doc = _seed_import_with_chunk(db_session, seeded_kb)
+    doc_id = doc.document_id
+    chunk = db_session.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc_id).one()
+    technique = create_technique(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        payload={"title": "待失效技巧", "source_chunk_id": chunk.id},
+    )
+    db_session.commit()
+
+    report = check_purge_impact(db_session, kb_id=seeded_kb.kb_id, import_id=import_id)
+    assert report.intermediate_counts["writing_techniques_invalidated"] == 1
+
+    summary = purge_file_import(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        import_id=import_id,
+        operator_id="admin",
+        trace_id=None,
+    )
+    db_session.commit()
+
+    refreshed = db_session.get(WritingTechnique, technique.technique_id)
+    assert refreshed is not None
+    assert refreshed.source_chunk_id is None
+    assert refreshed.source_invalid is True
+    assert summary.deleted_counts.get("writing_techniques_invalidated") == 1
+    assert db_session.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc_id).count() == 0
 
 
 def test_purge_file_import_deletes_parse_task_before_document(db_session, seeded_kb):
