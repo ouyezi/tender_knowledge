@@ -24,4 +24,16 @@ describe("KnowledgeContentViewer", () => {
     await user.click(screen.getByTitle("源码"));
     expect(screen.getByText("# 标题")).toBeInTheDocument();
   });
+
+  it("renders markdown table with empty header cells without duplicate keys", () => {
+    render(
+      <KnowledgeContentViewer
+        contentMd={"| | 列一 | 列二 |\n| --- | --- | --- |\n| A | 1 | 2 |"}
+        assets={[]}
+        sectionCharStart={0}
+      />,
+    );
+    expect(screen.getByText("列一")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
 });

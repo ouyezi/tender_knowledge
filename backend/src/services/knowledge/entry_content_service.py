@@ -15,10 +15,9 @@ from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import load_content_md
 from src.services.doc_chunk.section_slice import outline_nodes_from_tree_nodes, slice_section_markdown
-from src.services.knowledge.asset_link_service import assets_in_range
 from src.services.knowledge.media_url_service import (
     load_image_ref_map_payload,
-    resolve_storage_path_to_media_url,
+    resolve_storage_paths_to_media_urls,
 )
 
 
@@ -185,13 +184,13 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> d
     char_start = chunk_char_start if chunk_char_start is not None else slice_char_start
     char_end = chunk_char_end if chunk_char_end is not None else slice_char_end
 
-    assets = (
-        db.query(ChunkAsset)
-        .filter(ChunkAsset.kb_id == kb_id, ChunkAsset.doc_id == doc_id)
-        .order_by(ChunkAsset.char_start.asc(), ChunkAsset.id.asc())
-        .all()
+    matched_assets = _query_assets_in_range(
+        db,
+        kb_id=kb_id,
+        doc_id=doc_id,
+        char_start=char_start,
+        char_end=char_end,
     )
-    matched_assets = assets_in_range(assets, char_start=char_start, char_end=char_end)
     page_start, page_end = _page_range(chunks, matched_assets)
 
     return {
@@ -203,7 +202,7 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> d
         "page_start": page_start,
         "page_end": page_end,
         "catalog_path": build_catalog_path(nodes_by_id, node_id),
-        "assets": [_serialize_asset(item, db, kb_id=kb_id) for item in matched_assets],
+        "assets": _serialize_assets(matched_assets, db, kb_id=kb_id),
         "image_ref_map": load_image_ref_map_payload(document_id=doc_id),
     }
 
@@ -344,14 +343,45 @@ def _page_range(
     return (None, None)
 
 
-def _serialize_asset(asset: ChunkAsset, db: Session, *, kb_id: UUID) -> dict[str, Any]:
-    image_storage_url = asset.image_storage_url
-    if asset.asset_type == "image":
-        image_storage_url = resolve_storage_path_to_media_url(
-            db,
-            kb_id=kb_id,
-            storage_path=asset.image_storage_url,
+def _query_assets_in_range(
+    db: Session,
+    *,
+    kb_id: UUID,
+    doc_id: UUID,
+    char_start: int | None,
+    char_end: int | None,
+) -> list[ChunkAsset]:
+    if char_start is None or char_end is None:
+        return []
+    return (
+        db.query(ChunkAsset)
+        .filter(
+            ChunkAsset.kb_id == kb_id,
+            ChunkAsset.doc_id == doc_id,
+            ChunkAsset.char_start.isnot(None),
+            ChunkAsset.char_end.isnot(None),
+            ChunkAsset.char_start < char_end,
+            ChunkAsset.char_end > char_start,
         )
+        .order_by(ChunkAsset.char_start.asc(), ChunkAsset.id.asc())
+        .all()
+    )
+
+
+def _serialize_assets(assets: list[ChunkAsset], db: Session, *, kb_id: UUID) -> list[dict[str, Any]]:
+    image_paths = [
+        asset.image_storage_url
+        for asset in assets
+        if asset.asset_type == "image" and asset.image_storage_url
+    ]
+    media_url_map = resolve_storage_paths_to_media_urls(db, kb_id=kb_id, storage_paths=image_paths)
+    return [_serialize_asset(asset, media_url_map) for asset in assets]
+
+
+def _serialize_asset(asset: ChunkAsset, media_url_map: dict[str, str]) -> dict[str, Any]:
+    image_storage_url = asset.image_storage_url
+    if asset.asset_type == "image" and image_storage_url:
+        image_storage_url = media_url_map.get(image_storage_url, image_storage_url)
     return {
         "id": asset.id,
         "asset_type": asset.asset_type,

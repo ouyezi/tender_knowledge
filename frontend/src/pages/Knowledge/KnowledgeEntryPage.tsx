@@ -254,24 +254,29 @@ export default function KnowledgeEntryPage() {
     } finally {
       setLoadingTree(false);
     }
-  }, [form, selectedDocId, selectedKbId]);
+  }, [selectedDocId, selectedKbId]);
 
-  const loadPreview = useCallback(async () => {
+  const loadPreview = useCallback(async (signal?: AbortSignal) => {
     if (!selectedKbId || !selectedDocId || !selectedNodeId) {
       setPreview(undefined);
       return;
     }
     setLoadingPreview(true);
     try {
-      const result = await getNodePreview(selectedKbId, selectedDocId, selectedNodeId);
+      const result = await getNodePreview(selectedKbId, selectedDocId, selectedNodeId, { signal });
       setPreview(result);
     } catch (error) {
+      if ((error as Error).name === "AbortError") {
+        return;
+      }
       message.error((error as Error).message);
       setPreview(undefined);
     } finally {
-      setLoadingPreview(false);
+      if (!signal?.aborted) {
+        setLoadingPreview(false);
+      }
     }
-  }, [form, selectedDocId, selectedKbId, selectedNodeId]);
+  }, [selectedDocId, selectedKbId, selectedNodeId]);
 
   useEffect(() => {
     void loadDocuments();
@@ -282,7 +287,9 @@ export default function KnowledgeEntryPage() {
   }, [loadTree]);
 
   useEffect(() => {
-    void loadPreview();
+    const controller = new AbortController();
+    void loadPreview(controller.signal);
+    return () => controller.abort();
   }, [loadPreview]);
 
   useEffect(() => {
@@ -938,7 +945,7 @@ export default function KnowledgeEntryPage() {
                     key: "entry",
                     label: "知识录入",
                     children: (
-                      <>
+                      <Form<EntryFormValues> form={form} layout="vertical">
                         {!rightExpanded ? (
                           <Space direction="vertical">
                             <Text type="secondary">点击“添加到知识库”后，右侧将展开预填表单。</Text>
@@ -955,11 +962,7 @@ export default function KnowledgeEntryPage() {
                           </div>
                         ) : null}
                         {rightExpanded && !prefilling ? (
-                          <Form<EntryFormValues>
-                            form={form}
-                            layout="vertical"
-                            initialValues={{ content: preview?.content_md }}
-                          >
+                          <>
                           <Form.Item
                             name="title"
                             label={getFieldLabel("title")}
@@ -1095,10 +1098,10 @@ export default function KnowledgeEntryPage() {
                           >
                             确认添加
                           </Button>
-                        </Form>
-                      ) : null}
-                    </>
-                  ),
+                          </>
+                        ) : null}
+                      </Form>
+                    ),
                 },
                 {
                   key: "blueprint",

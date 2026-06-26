@@ -53,8 +53,8 @@ function renderTagList(values?: string[]) {
   }
   return (
     <Space size={[4, 4]} wrap>
-      {values.map((value) => (
-        <Tag key={value}>{value}</Tag>
+      {values.map((value, index) => (
+        <Tag key={`tag-${index}-${value}`}>{value || "-"}</Tag>
       ))}
     </Space>
   );
@@ -266,7 +266,7 @@ export default function KnowledgeChunkDetailDrawer({
                   key={asset.id}
                   size="small"
                   title={`${getAssetTypeLabel(asset.asset_type)} #${asset.id}`}
-                  bodyStyle={{ overflow: "auto" }}
+                  styles={{ body: { overflow: "auto" } }}
                 >
                   <Descriptions bordered size="small" column={2} style={{ marginBottom: 12 }}>
                     <Descriptions.Item label={getFieldLabel("asset_code")}>{asset.asset_code || "-"}</Descriptions.Item>

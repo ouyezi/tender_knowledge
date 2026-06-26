@@ -35,7 +35,7 @@ from src.services.knowledge.chunk_search_service import (
     ChunkSearchValidationError,
     search_knowledge_chunks,
 )
-from src.services.knowledge.chunk_service import ChunkConflictError, create_knowledge_chunk
+from src.services.knowledge.chunk_service import ChunkConflictError, ChunkNotFoundError, create_knowledge_chunk, delete_knowledge_chunk
 from src.services.knowledge.embedding_client import embedding_client_from_settings
 from src.services.knowledge.entry_content_service import (
     ContentNotAvailableError,
@@ -582,6 +582,25 @@ def index_knowledge_chunk_api(
         {"chunk_id": chunk_id, "embedding_status": "indexing"},
         trace_id=get_trace_id(),
     )
+
+
+@router.delete("/{chunk_id}")
+def delete_knowledge_chunk_api(
+    kb_id: UUID,
+    chunk_id: int,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    try:
+        delete_knowledge_chunk(db, kb_id=kb_id, chunk_id=chunk_id)
+        db.commit()
+    except ChunkNotFoundError:
+        db.rollback()
+        return JSONResponse(
+            status_code=404,
+            content=error("CHUNK_NOT_FOUND", "Knowledge chunk not found", trace_id=get_trace_id()),
+        )
+    return success({"chunk_id": chunk_id, "deleted": True}, trace_id=get_trace_id())
 
 
 @router.get("/{chunk_id}")

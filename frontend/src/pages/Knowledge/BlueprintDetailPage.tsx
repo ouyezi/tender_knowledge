@@ -30,6 +30,12 @@ import {
 
 const { Paragraph, Text } = Typography;
 
+const BLUEPRINT_PANEL_CARD_BODY_STYLE = {
+  minHeight: 420,
+  maxHeight: "calc(100vh - 360px)",
+  overflow: "auto",
+} as const;
+
 function getNodeByPath(nodes: BlueprintNode[], path?: string): BlueprintNode | undefined {
   if (!path) return undefined;
   const parts = path.split("-").map((part) => Number(part));
@@ -55,8 +61,8 @@ function renderTagList(items?: string[]) {
   }
   return (
     <Space size={[4, 4]} wrap>
-      {items.map((item) => (
-        <Tag key={item}>{item}</Tag>
+      {items.map((item, index) => (
+        <Tag key={`tag-${index}-${item}`}>{item || "-"}</Tag>
       ))}
     </Space>
   );
@@ -246,7 +252,7 @@ export default function BlueprintDetailPage() {
       ) : (
         <Row gutter={12}>
           <Col xs={24} lg={11}>
-            <Card title="目录大纲" bodyStyle={{ minHeight: 420, maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
+            <Card title="目录大纲" styles={{ body: BLUEPRINT_PANEL_CARD_BODY_STYLE }}>
               <BlueprintOutlineTreeReadonly
                 nodes={draft.nodes ?? []}
                 selectedPath={selectedPath}
@@ -255,7 +261,7 @@ export default function BlueprintDetailPage() {
             </Card>
           </Col>
           <Col xs={24} lg={13}>
-            <Card title="节点详情" bodyStyle={{ minHeight: 420, maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
+            <Card title="节点详情" styles={{ body: BLUEPRINT_PANEL_CARD_BODY_STYLE }}>
               {selectedNode ? (
                 <BlueprintNodeDetailPanel node={selectedNode} readOnly onChange={() => undefined} />
               ) : (
