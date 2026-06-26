@@ -6,6 +6,16 @@ import type {
   TreeNode,
 } from "../../services/knowledgeChunks";
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Pydantic `date` fields reject empty/invalid strings — normalize before create. */
+export function normalizeOptionalDate(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!trimmed || !ISO_DATE_RE.test(trimmed)) return null;
+  return trimmed;
+}
+
 export function collectCheckedNodeIds(nodes: TreeNode[], checkedKeys: Key[]): string[] {
   const checkedSet = new Set(checkedKeys.map(String));
   const result: string[] = [];
@@ -34,11 +44,12 @@ export function buildAutoCreatePayload(params: {
   sourceType?: string;
 }): CreateKnowledgeChunkRequest {
   const { docId, nodeId, preview, prefill, documentName, sourceType } = params;
+  const catalogTitle = preview.catalog_path?.[preview.catalog_path.length - 1]?.title;
 
   return {
     doc_id: docId,
     primary_node_id: nodeId,
-    title: prefill.title || preview.title || "",
+    title: prefill.title?.trim() || preview.title?.trim() || catalogTitle?.trim() || "(未命名节点)",
     content: preview.content_md,
     summary: prefill.summary ?? null,
     knowledge_type: prefill.knowledge_type,
@@ -60,8 +71,8 @@ export function buildAutoCreatePayload(params: {
     industries: prefill.industries ?? [],
     customer_types: prefill.customer_types ?? [],
     regions: prefill.regions ?? [],
-    issue_date: prefill.issue_date ?? null,
-    expire_date: prefill.expire_date ?? null,
+    issue_date: normalizeOptionalDate(prefill.issue_date),
+    expire_date: normalizeOptionalDate(prefill.expire_date),
     status: prefill.status,
     is_template: Boolean(prefill.is_template),
     template_type: prefill.template_type ?? null,

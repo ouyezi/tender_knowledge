@@ -126,6 +126,28 @@ describe("buildAutoCreatePayload", () => {
     });
     expect(payload.title).toBe("节点标题");
   });
+
+  it("normalizes invalid issue_date and expire_date to null", () => {
+    const payload = buildAutoCreatePayload({
+      docId: "doc-1",
+      nodeId: "b",
+      preview,
+      prefill: { ...prefill, issue_date: "", expire_date: "invalid" },
+    });
+    expect(payload.issue_date).toBeNull();
+    expect(payload.expire_date).toBeNull();
+  });
+});
+
+describe("normalizeOptionalDate", () => {
+  it("accepts ISO dates and rejects empty or malformed values", async () => {
+    const { normalizeOptionalDate } = await import("./batchIngestUtils");
+    expect(normalizeOptionalDate("2024-06-26")).toBe("2024-06-26");
+    expect(normalizeOptionalDate("")).toBeNull();
+    expect(normalizeOptionalDate("  ")).toBeNull();
+    expect(normalizeOptionalDate("2024/06/26")).toBeNull();
+    expect(normalizeOptionalDate(null)).toBeNull();
+  });
 });
 
 describe("withRetry", () => {

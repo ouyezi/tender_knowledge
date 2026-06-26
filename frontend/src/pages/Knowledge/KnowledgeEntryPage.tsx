@@ -816,7 +816,10 @@ export default function KnowledgeEntryPage() {
                 ) : (
                   <Tree
                     checkable={selectionMode}
-                    checkedKeys={checkedKeys}
+                    checkStrictly={selectionMode}
+                    checkedKeys={
+                      selectionMode ? { checked: checkedKeys, halfChecked: [] } : checkedKeys
+                    }
                     onCheck={(keys) => {
                       const next = Array.isArray(keys) ? keys : keys.checked;
                       setCheckedKeys(next);

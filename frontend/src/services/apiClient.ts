@@ -56,6 +56,19 @@ export async function apiRequest<T>(
     if (err?.error) {
       throw new ApiError(err.error.message, err.error.code, err.error.details);
     }
+    const detail = (json as { detail?: unknown }).detail;
+    if (Array.isArray(detail)) {
+      const message = detail
+        .map((item) => {
+          if (item && typeof item === "object" && "msg" in item) {
+            const loc = "loc" in item && Array.isArray(item.loc) ? item.loc.join(".") : "";
+            return loc ? `${loc}: ${String(item.msg)}` : String(item.msg);
+          }
+          return String(item);
+        })
+        .join("; ");
+      throw new Error(message || `Request failed: ${response.status}`);
+    }
     throw new Error(`Request failed: ${response.status}`);
   }
 
