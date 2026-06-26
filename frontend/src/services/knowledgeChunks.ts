@@ -338,9 +338,11 @@ export async function getNodePreview(
   kbId: string,
   docId: string,
   nodeId: string,
+  options?: { signal?: AbortSignal },
 ): Promise<NodePreview> {
   return apiRequest<NodePreview>(
     `/api/v1/kbs/${kbId}/knowledge-chunks/entry/documents/${docId}/nodes/${nodeId}/preview`,
+    { signal: options?.signal },
   );
 }
 
@@ -442,5 +444,15 @@ export async function searchKnowledgeChunks(
       method: "POST",
       body,
     },
+  );
+}
+
+export async function deleteKnowledgeChunk(
+  kbId: string,
+  chunkId: number,
+): Promise<{ chunk_id: number; deleted: boolean }> {
+  return apiRequest<{ chunk_id: number; deleted: boolean }>(
+    `/api/v1/kbs/${kbId}/knowledge-chunks/${chunkId}`,
+    { method: "DELETE" },
   );
 }

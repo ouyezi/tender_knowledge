@@ -57,9 +57,9 @@ function renderTags(tags?: string[]) {
   }
   return (
     <Space size={[4, 4]} wrap>
-      {tags.map((tag) => (
-        <Tag key={tag} style={SMALL_TAG_STYLE}>
-          {tag}
+      {tags.map((tag, index) => (
+        <Tag key={`tag-${index}-${tag}`} style={SMALL_TAG_STYLE}>
+          {tag || "-"}
         </Tag>
       ))}
     </Space>

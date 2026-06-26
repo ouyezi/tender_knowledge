@@ -7,6 +7,12 @@ import BlueprintOutlineTree from "./BlueprintOutlineTree";
 import BlueprintOutlineTreeReadonly from "./BlueprintOutlineTreeReadonly";
 import type { BlueprintDraft, BlueprintNode } from "../../services/blueprints";
 
+const BLUEPRINT_PANEL_CARD_BODY_STYLE = {
+  minHeight: 420,
+  maxHeight: "calc(100vh - 360px)",
+  overflow: "auto",
+} as const;
+
 const { Text } = Typography;
 
 export interface BlueprintEditorProps {
@@ -116,7 +122,7 @@ export default function BlueprintEditor({
 
       <Row gutter={12}>
         <Col xs={24} lg={11}>
-          <Card title="目录大纲" bodyStyle={{ minHeight: 420, maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
+          <Card title="目录大纲" styles={{ body: BLUEPRINT_PANEL_CARD_BODY_STYLE }}>
             {readOnly ? (
               <BlueprintOutlineTreeReadonly
                 nodes={value.nodes ?? []}
@@ -134,7 +140,7 @@ export default function BlueprintEditor({
           </Card>
         </Col>
         <Col xs={24} lg={13}>
-          <Card title="节点详情" bodyStyle={{ minHeight: 420, maxHeight: "calc(100vh - 360px)", overflow: "auto" }}>
+          <Card title="节点详情" styles={{ body: BLUEPRINT_PANEL_CARD_BODY_STYLE }}>
             <BlueprintNodeDetailPanel node={selectedNode} readOnly={readOnly} onChange={handleNodeChange} />
           </Card>
         </Col>

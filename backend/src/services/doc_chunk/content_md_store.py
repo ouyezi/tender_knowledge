@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
 
@@ -29,6 +30,7 @@ def persist_content_md(
     dest = content_md_path(document_id=document_id, storage_root=storage_root)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, dest)
+    invalidate_document_content_cache(document_id=document_id)
     return dest
 
 
@@ -48,14 +50,28 @@ def persist_image_ref_map(
 
 
 def load_content_md(*, document_id: UUID, storage_root: Path | None = None) -> str | None:
-    path = content_md_path(document_id=document_id, storage_root=storage_root)
+    root_key = str(storage_root) if storage_root is not None else ""
+    return _load_content_md_cached(document_id, root_key)
+
+
+@lru_cache(maxsize=64)
+def _load_content_md_cached(document_id: UUID, storage_root_key: str) -> str | None:
+    root = Path(storage_root_key) if storage_root_key else None
+    path = content_md_path(document_id=document_id, storage_root=root)
     if not path.is_file():
         return None
     return path.read_text(encoding="utf-8")
 
 
 def load_image_ref_map(*, document_id: UUID, storage_root: Path | None = None) -> dict[str, UUID]:
-    path = image_ref_map_path(document_id=document_id, storage_root=storage_root)
+    root_key = str(storage_root) if storage_root is not None else ""
+    return _load_image_ref_map_cached(document_id, root_key)
+
+
+@lru_cache(maxsize=64)
+def _load_image_ref_map_cached(document_id: UUID, storage_root_key: str) -> dict[str, UUID]:
+    root = Path(storage_root_key) if storage_root_key else None
+    path = image_ref_map_path(document_id=document_id, storage_root=root)
     if not path.is_file():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -68,3 +84,10 @@ def load_image_ref_map(*, document_id: UUID, storage_root: Path | None = None) -
         except ValueError:
             continue
     return result
+
+
+def invalidate_document_content_cache(*, document_id: UUID) -> None:
+    """Clear in-memory caches after document content is replaced."""
+    _load_content_md_cached.cache_clear()
+    _load_image_ref_map_cached.cache_clear()
+    _ = document_id

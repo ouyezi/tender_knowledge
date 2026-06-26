@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BOOLEAN_OPTIONS, getEnumLabel, getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKBContext } from "../../layout/KBContext";
 import {
+  deleteKnowledgeChunk,
   indexKnowledgeChunk,
   listKnowledgeChunks,
   parseChunkSearchQuery,
@@ -150,7 +151,7 @@ function savePresets(kbId: string, presets: FilterPreset[]) {
 }
 
 export default function KnowledgeBrowsePage() {
-  const { selectedKbId } = useKBContext();
+  const { selectedKbId, readOnly } = useKBContext();
   const [form] = Form.useForm<FilterFormValues>();
   const [filters, setFilters] = useState<ListKnowledgeChunksParams>({});
   const [items, setItems] = useState<KnowledgeChunkListItem[]>([]);
@@ -169,6 +170,7 @@ export default function KnowledgeBrowsePage() {
   const [semanticQuery, setSemanticQuery] = useState("");
   const [searchItems, setSearchItems] = useState<KnowledgeChunkSearchItem[]>([]);
   const [indexingId, setIndexingId] = useState<number>();
+  const [deletingId, setDeletingId] = useState<number>();
 
   useEffect(() => {
     if (!selectedKbId) {
@@ -300,6 +302,32 @@ export default function KnowledgeBrowsePage() {
     [detailChunkId, selectedKbId, updateChunkEmbeddingStatus],
   );
 
+  const handleDeleteChunk = useCallback(
+    async (chunkId: number) => {
+      if (!selectedKbId) {
+        return;
+      }
+      setDeletingId(chunkId);
+      try {
+        await deleteKnowledgeChunk(selectedKbId, chunkId);
+        message.success("知识已删除");
+        if (detailChunkId === chunkId) {
+          setDetailChunkId(undefined);
+        }
+        if (semanticMode) {
+          setSearchItems((prev) => prev.filter((item) => item.id !== chunkId));
+        } else {
+          await refreshList();
+        }
+      } catch (error) {
+        message.error((error as Error).message);
+      } finally {
+        setDeletingId(undefined);
+      }
+    },
+    [detailChunkId, refreshList, selectedKbId, semanticMode],
+  );
+
   const handlePresetSave = useCallback(() => {
     if (!selectedKbId) {
       return;
@@ -366,9 +394,14 @@ export default function KnowledgeBrowsePage() {
         title: getFieldLabel("title"),
         dataIndex: "title",
         key: "title",
-        ellipsis: true,
+        width: 280,
         render: (_value, record) => (
-          <Button type="link" size="small" onClick={() => setDetailChunkId(record.id)}>
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0, whiteSpace: "nowrap" }}
+            onClick={() => setDetailChunkId(record.id)}
+          >
             {record.title || "-"}
           </Button>
         ),
@@ -425,31 +458,50 @@ export default function KnowledgeBrowsePage() {
       {
         title: "操作",
         key: "actions",
-        width: 110,
+        width: 180,
+        fixed: "right" as const,
         render: (_value, record) => {
           const indexing = record.embedding_status === "indexing";
           const ready = record.embedding_status === "ready";
           return (
-            <Button
-              size="small"
-              loading={indexingId === record.id || indexing}
-              disabled={indexing}
-              onClick={() => void handleIndexChunk(record.id)}
-            >
-              {ready ? "重新索引" : "构建索引"}
-            </Button>
+            <Space size={4}>
+              <Button
+                size="small"
+                loading={indexingId === record.id || indexing}
+                disabled={indexing}
+                onClick={() => void handleIndexChunk(record.id)}
+              >
+                {ready ? "重新索引" : "构建索引"}
+              </Button>
+              <Popconfirm
+                title="确认删除该知识吗？"
+                okText="删除"
+                cancelText="取消"
+                onConfirm={() => void handleDeleteChunk(record.id)}
+                disabled={readOnly}
+              >
+                <Button
+                  danger
+                  size="small"
+                  loading={deletingId === record.id}
+                  disabled={readOnly}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
           );
         },
       },
     ],
-    [handleIndexChunk, indexingId],
+    [deletingId, handleDeleteChunk, handleIndexChunk, indexingId, readOnly],
   );
 
   const semanticColumns = useMemo((): ColumnsType<KnowledgeChunkSearchItem> => {
     const titleColumn = baseColumns[0] as ColumnsType<KnowledgeChunkSearchItem>[number];
     const restColumns = baseColumns
       .slice(1)
-      .filter((col) => col.key !== "embedding_status" && col.key !== "actions") as ColumnsType<KnowledgeChunkSearchItem>;
+      .filter((col) => col.key !== "embedding_status") as ColumnsType<KnowledgeChunkSearchItem>;
     return [
       titleColumn,
       {
@@ -650,6 +702,7 @@ export default function KnowledgeBrowsePage() {
             loading={loading}
             columns={semanticColumns}
             dataSource={searchItems}
+            scroll={{ x: "max-content" }}
             locale={{ emptyText: <Empty description="暂无匹配知识" /> }}
             pagination={false}
           />
@@ -660,6 +713,7 @@ export default function KnowledgeBrowsePage() {
             loading={loading}
             columns={baseColumns}
             dataSource={items}
+            scroll={{ x: "max-content" }}
             locale={{ emptyText: <Empty description="暂无知识记录" /> }}
             pagination={tablePagination}
           />
