@@ -66,6 +66,7 @@ def ensure_image_assets_for_chunk(db: Session, chunk: KnowledgeChunk) -> list[Ch
 
     ensured: list[ChunkAsset] = []
     base_char = chunk.char_start or 0
+    next_id = int(db.query(func.max(ChunkAsset.id)).scalar() or 0)
     for image_ref, rel_start, rel_end in parse_markdown_image_refs(chunk.content):
         storage_path = resolve_image_ref_storage_path(
             db,
@@ -79,8 +80,9 @@ def ensure_image_assets_for_chunk(db: Session, chunk: KnowledgeChunk) -> list[Ch
 
         asset = existing_by_storage.get(storage_path)
         if asset is None:
+            next_id += 1
             asset = ChunkAsset(
-                id=_next_asset_id(db),
+                id=next_id,
                 kb_id=chunk.kb_id,
                 doc_id=chunk.doc_id,
                 chunk_id=chunk.id,
@@ -101,8 +103,3 @@ def ensure_image_assets_for_chunk(db: Session, chunk: KnowledgeChunk) -> list[Ch
     if ensured:
         db.flush()
     return ensured
-
-
-def _next_asset_id(db: Session) -> int:
-    current_max = db.query(func.max(ChunkAsset.id)).scalar()
-    return int(current_max or 0) + 1
