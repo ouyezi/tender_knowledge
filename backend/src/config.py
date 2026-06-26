@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     blueprint_search_parse_model: str = "qwen3.6-flash"
     blueprint_search_parse_timeout_sec: int = 30
     blueprint_search_parse_query_max: int = 500
+    writing_technique_generate_model: str = "qwen-plus"
+    writing_technique_generate_timeout_sec: int = 30
     blueprint_search_name_keyword_weight: float = 3.0
     blueprint_search_body_keyword_weight: float = 1.0
     blueprint_search_vector_min_similarity: float = 0.10
