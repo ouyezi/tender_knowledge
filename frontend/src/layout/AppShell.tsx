@@ -12,11 +12,15 @@ const NAV_ITEMS = [
   { key: "/knowledge/entry", label: <Link to="/knowledge/entry">知识录入</Link> },
   { key: "/knowledge/browse", label: <Link to="/knowledge/browse">知识浏览</Link> },
   { key: "/knowledge/blueprints", label: <Link to="/knowledge/blueprints">目录蓝图</Link> },
+  { key: "/knowledge/writing-techniques", label: <Link to="/knowledge/writing-techniques">撰写技巧</Link> },
 ];
 
 function getSelectedNavKey(pathname: string): string {
   if (pathname.startsWith("/knowledge/blueprints")) {
     return "/knowledge/blueprints";
+  }
+  if (pathname.startsWith("/knowledge/writing-techniques")) {
+    return "/knowledge/writing-techniques";
   }
   return pathname;
 }

@@ -9,6 +9,7 @@ from src.api.routes.file_imports import router as file_imports_router
 from src.api.routes.knowledge_bases import router as kb_router
 from src.api.routes.knowledge_chunks import router as knowledge_chunks_router
 from src.api.routes.media import router as media_router
+from src.api.routes.writing_techniques import router as writing_techniques_router
 from src.db.init_db import init_db
 
 
@@ -34,6 +35,7 @@ app.include_router(kb_router)
 app.include_router(file_imports_router)
 app.include_router(knowledge_chunks_router)
 app.include_router(blueprints_router)
+app.include_router(writing_techniques_router)
 app.include_router(media_router)
 
 

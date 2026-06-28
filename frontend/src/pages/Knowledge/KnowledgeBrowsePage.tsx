@@ -20,6 +20,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BOOLEAN_OPTIONS, getEnumLabel, getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKBContext } from "../../layout/KBContext";
 import {
+  generateWritingTechnique,
+  getWritingTechniqueBySource,
+} from "../../services/writingTechniques";
+import {
   deleteKnowledgeChunk,
   indexKnowledgeChunk,
   listKnowledgeChunks,
@@ -170,6 +174,8 @@ export default function KnowledgeBrowsePage() {
   const [semanticQuery, setSemanticQuery] = useState("");
   const [searchItems, setSearchItems] = useState<KnowledgeChunkSearchItem[]>([]);
   const [indexingId, setIndexingId] = useState<number>();
+  const [generatingTechniqueId, setGeneratingTechniqueId] = useState<number>();
+  const [techniqueByChunkId, setTechniqueByChunkId] = useState<Record<number, string | null>>({});
   const [deletingId, setDeletingId] = useState<number>();
 
   useEffect(() => {
@@ -256,6 +262,80 @@ export default function KnowledgeBrowsePage() {
     setSearchItems([]);
     void refreshList();
   }, [refreshList]);
+
+  const refreshTechniqueBindings = useCallback(
+    async (chunkIds: number[]) => {
+      if (!selectedKbId || !chunkIds.length) {
+        setTechniqueByChunkId({});
+        return;
+      }
+      try {
+        const pairs = await Promise.all(
+          chunkIds.map(async (chunkId) => {
+            const detail = await getWritingTechniqueBySource(selectedKbId, { chunk_id: chunkId });
+            return [chunkId, detail?.technique_id ?? null] as const;
+          }),
+        );
+        setTechniqueByChunkId(Object.fromEntries(pairs));
+      } catch {
+        // 不影响主流程：技巧映射失败时仅退化为“生成技巧”按钮
+      }
+    },
+    [selectedKbId],
+  );
+
+  useEffect(() => {
+    if (semanticMode) {
+      setTechniqueByChunkId({});
+      return;
+    }
+    void refreshTechniqueBindings(items.map((item) => item.id));
+  }, [items, refreshTechniqueBindings, semanticMode]);
+
+  const submitGenerateWritingTechnique = useCallback(
+    async (chunkId: number, confirmOverwrite: boolean) => {
+      if (!selectedKbId) return;
+      setGeneratingTechniqueId(chunkId);
+      try {
+        const result = await generateWritingTechnique(selectedKbId, {
+          chunk_id: chunkId,
+          confirm_overwrite: confirmOverwrite,
+        });
+        setTechniqueByChunkId((prev) => ({ ...prev, [chunkId]: result.technique_id }));
+        message.success(confirmOverwrite ? "撰写技巧已重新生成" : "撰写技巧生成成功");
+      } finally {
+        setGeneratingTechniqueId(undefined);
+      }
+    },
+    [selectedKbId],
+  );
+
+  const handleGenerateWritingTechnique = useCallback(
+    (chunkId: number) => {
+      const hasExisting = Boolean(techniqueByChunkId[chunkId]);
+      const triggerGenerate = async (confirmOverwrite: boolean) => {
+        try {
+          await submitGenerateWritingTechnique(chunkId, confirmOverwrite);
+        } catch (error) {
+          message.error((error as Error).message);
+        }
+      };
+      if (hasExisting) {
+        Modal.confirm({
+          title: "确认重新生成撰写技巧？",
+          content: "重新生成会覆盖该来源已有技巧内容。",
+          okText: "重新生成",
+          cancelText: "取消",
+          onOk: async () => {
+            await triggerGenerate(true);
+          },
+        });
+        return;
+      }
+      void triggerGenerate(false);
+    },
+    [submitGenerateWritingTechnique, techniqueByChunkId],
+  );
 
   const updateChunkEmbeddingStatus = useCallback((chunkId: number, embeddingStatus: string) => {
     if (semanticMode) {
@@ -458,11 +538,12 @@ export default function KnowledgeBrowsePage() {
       {
         title: "操作",
         key: "actions",
-        width: 180,
+        width: 300,
         fixed: "right" as const,
         render: (_value, record) => {
           const indexing = record.embedding_status === "indexing";
           const ready = record.embedding_status === "ready";
+          const hasTechnique = Boolean(techniqueByChunkId[record.id]);
           return (
             <Space size={4}>
               <Button
@@ -472,6 +553,14 @@ export default function KnowledgeBrowsePage() {
                 onClick={() => void handleIndexChunk(record.id)}
               >
                 {ready ? "重新索引" : "构建索引"}
+              </Button>
+              <Button
+                size="small"
+                loading={generatingTechniqueId === record.id}
+                disabled={readOnly}
+                onClick={() => handleGenerateWritingTechnique(record.id)}
+              >
+                {hasTechnique ? "重新生成技巧" : "生成技巧"}
               </Button>
               <Popconfirm
                 title="确认删除该知识吗？"
@@ -494,7 +583,16 @@ export default function KnowledgeBrowsePage() {
         },
       },
     ],
-    [deletingId, handleDeleteChunk, handleIndexChunk, indexingId, readOnly],
+    [
+      deletingId,
+      generatingTechniqueId,
+      handleDeleteChunk,
+      handleGenerateWritingTechnique,
+      handleIndexChunk,
+      indexingId,
+      readOnly,
+      techniqueByChunkId,
+    ],
   );
 
   const semanticColumns = useMemo((): ColumnsType<KnowledgeChunkSearchItem> => {

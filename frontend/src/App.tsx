@@ -6,6 +6,8 @@ import BlueprintDetailPage from "./pages/Knowledge/BlueprintDetailPage";
 import BlueprintListPage from "./pages/Knowledge/BlueprintListPage";
 import KnowledgeEntryPage from "./pages/Knowledge/KnowledgeEntryPage";
 import KnowledgeBrowsePage from "./pages/Knowledge/KnowledgeBrowsePage";
+import WritingTechniqueDetailPage from "./pages/Knowledge/WritingTechniqueDetailPage";
+import WritingTechniqueListPage from "./pages/Knowledge/WritingTechniqueListPage";
 
 export default function App() {
   return (
@@ -17,6 +19,11 @@ export default function App() {
         <Route path="/knowledge/browse" element={<KnowledgeBrowsePage />} />
         <Route path="/knowledge/blueprints" element={<BlueprintListPage />} />
         <Route path="/knowledge/blueprints/:id" element={<BlueprintDetailPage />} />
+        <Route path="/knowledge/writing-techniques" element={<WritingTechniqueListPage />} />
+        <Route
+          path="/knowledge/writing-techniques/:id"
+          element={<WritingTechniqueDetailPage />}
+        />
       </Route>
     </Routes>
   );
