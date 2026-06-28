@@ -1,5 +1,5 @@
 import { Collapse, Segmented, Space } from "antd";
-import { useMemo, useState } from "react";
+import { Children, cloneElement, isValidElement, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getAssetTypeLabel } from "../../constants/knowledgeChunkMeta";
@@ -24,6 +24,12 @@ interface KnowledgeContentViewerProps {
 function extractMediaAssetId(url: string): string | null {
   const match = url.match(/\/media\/([0-9a-fA-F-]{36})/);
   return match?.[1] ?? null;
+}
+
+function withIndexedChildKeys(children: ReactNode, prefix: string): ReactNode {
+  return Children.toArray(children).map((child, index) =>
+    isValidElement(child) ? cloneElement(child, { key: `${prefix}-${index}` }) : child,
+  );
 }
 
 export default function KnowledgeContentViewer({
@@ -63,6 +69,9 @@ export default function KnowledgeContentViewer({
 
   const markdownComponents = useMemo(
     () => ({
+      tr: ({ children, ...props }: { children?: ReactNode }) => (
+        <tr {...props}>{withIndexedChildKeys(children, "md-cell")}</tr>
+      ),
       img: ({ src, alt }: { src?: string; alt?: string }) => {
         const resolvedSrc = resolveMarkdownImageSrc(src, kbId, imageRefMap);
         if (!resolvedSrc) {

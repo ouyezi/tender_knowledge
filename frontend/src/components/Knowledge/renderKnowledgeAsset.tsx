@@ -48,9 +48,9 @@ export function renderKnowledgeAsset(asset: KnowledgeAssetLike, options?: { show
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {table.headers.map((header) => (
+                {table.headers.map((header, headerIndex) => (
                   <th
-                    key={header}
+                    key={`header-${headerIndex}`}
                     style={{ border: "1px solid #f0f0f0", textAlign: "left", padding: 8, background: "#fafafa" }}
                   >
                     {header}

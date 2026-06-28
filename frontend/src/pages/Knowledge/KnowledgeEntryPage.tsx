@@ -6,6 +6,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Progress,
   Select,
   Space,
   Spin,
@@ -17,7 +18,8 @@ import {
   message,
 } from "antd";
 import type { DataNode } from "antd/es/tree";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type Key } from "react";
+import { buildAutoCreatePayload, collectCheckedNodeIds, withRetry } from "./batchIngestUtils";
 import BlueprintEditor from "../../components/Blueprint/BlueprintEditor";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import ResizableWorkspace from "../../components/Knowledge/ResizableWorkspace";
@@ -91,17 +93,32 @@ interface EntryFormValues {
 
 type EntryTabKey = "entry" | "blueprint";
 
-function toTreeData(nodes: TreeNode[]): DataNode[] {
+type BatchIngestState = {
+  active: boolean;
+  total: number;
+  completed: number;
+  currentNodeId?: string;
+  cancelRequested: boolean;
+  failedItems: Array<{ nodeId: string; title: string; error: string }>;
+};
+
+function toTreeData(nodes: TreeNode[], options?: { currentNodeId?: string }): DataNode[] {
   return nodes.map((node) => ({
     key: node.node_id,
     title: (
       <Space size={8}>
-        <span>{node.title || "(未命名节点)"}</span>
+        <span
+          style={
+            options?.currentNodeId === node.node_id ? { fontWeight: 600, color: "#1677ff" } : undefined
+          }
+        >
+          {node.title || "(未命名节点)"}
+        </span>
         {node.ingested ? <Tag color="green">已入库</Tag> : null}
         {node.has_blueprint ? <Tag color="blue">已生成蓝图</Tag> : null}
       </Space>
     ),
-    children: toTreeData(node.children ?? []),
+    children: toTreeData(node.children ?? [], options),
   }));
 }
 
@@ -158,6 +175,17 @@ export default function KnowledgeEntryPage() {
   const [blueprintDraft, setBlueprintDraft] = useState<BlueprintDraft>();
   const [blueprintLoading, setBlueprintLoading] = useState(false);
   const [existingBlueprintId, setExistingBlueprintId] = useState<string>();
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [checkedKeys, setCheckedKeys] = useState<Key[]>([]);
+  const [batchIngest, setBatchIngest] = useState<BatchIngestState | null>(null);
+  const [showProgressBar, setShowProgressBar] = useState(false);
+
+  const batchRunning = Boolean(batchIngest?.active);
+  const checkedCount = checkedKeys.length;
+  const progressPercent =
+    batchIngest && batchIngest.total > 0
+      ? Math.round((batchIngest.completed / batchIngest.total) * 100)
+      : 0;
 
   const selectedDocument = useMemo(
     () => documents.find((doc) => doc.doc_id === selectedDocId),
@@ -226,24 +254,29 @@ export default function KnowledgeEntryPage() {
     } finally {
       setLoadingTree(false);
     }
-  }, [form, selectedDocId, selectedKbId]);
+  }, [selectedDocId, selectedKbId]);
 
-  const loadPreview = useCallback(async () => {
+  const loadPreview = useCallback(async (signal?: AbortSignal) => {
     if (!selectedKbId || !selectedDocId || !selectedNodeId) {
       setPreview(undefined);
       return;
     }
     setLoadingPreview(true);
     try {
-      const result = await getNodePreview(selectedKbId, selectedDocId, selectedNodeId);
+      const result = await getNodePreview(selectedKbId, selectedDocId, selectedNodeId, { signal });
       setPreview(result);
     } catch (error) {
+      if ((error as Error).name === "AbortError") {
+        return;
+      }
       message.error((error as Error).message);
       setPreview(undefined);
     } finally {
-      setLoadingPreview(false);
+      if (!signal?.aborted) {
+        setLoadingPreview(false);
+      }
     }
-  }, [form, selectedDocId, selectedKbId, selectedNodeId]);
+  }, [selectedDocId, selectedKbId, selectedNodeId]);
 
   useEffect(() => {
     void loadDocuments();
@@ -254,7 +287,9 @@ export default function KnowledgeEntryPage() {
   }, [loadTree]);
 
   useEffect(() => {
-    void loadPreview();
+    const controller = new AbortController();
+    void loadPreview(controller.signal);
+    return () => controller.abort();
   }, [loadPreview]);
 
   useEffect(() => {
@@ -602,6 +637,113 @@ export default function KnowledgeEntryPage() {
     });
   }, [selectedDocId, selectedKbId, selectedNodeId, selectedNodeIsLeaf]);
 
+  const handleBatchIngest = useCallback(async () => {
+    if (!selectedKbId || !selectedDocId || readOnly) return;
+
+    const nodeIds = collectCheckedNodeIds(treeNodes, checkedKeys);
+    if (nodeIds.length === 0) {
+      message.warning("请先勾选目录节点");
+      return;
+    }
+
+    setShowProgressBar(true);
+    setBatchIngest({
+      active: true,
+      total: nodeIds.length,
+      completed: 0,
+      cancelRequested: false,
+      failedItems: [],
+    });
+
+    let successCount = 0;
+    const failedItems: BatchIngestState["failedItems"] = [];
+    let stopped = false;
+    let cancelRequested = false;
+
+    for (const nodeId of nodeIds) {
+      if (cancelRequested) {
+        stopped = true;
+        break;
+      }
+
+      setBatchIngest((prev) => (prev ? { ...prev, currentNodeId: nodeId } : prev));
+
+      const nodeTitle = findTreeNodeById(treeNodes, nodeId)?.title ?? nodeId;
+
+      try {
+        await withRetry(async () => {
+          const nodePreview = await getNodePreview(selectedKbId, selectedDocId, nodeId);
+          const prefill = await prefillKnowledgeChunk(selectedKbId, {
+            doc_id: selectedDocId,
+            primary_node_id: nodeId,
+            content: nodePreview.content_md,
+            metadata: {
+              source_type: selectedDocument?.source_type ?? "bid",
+              file_name: selectedDocument?.document_name,
+            },
+          });
+          const payload = buildAutoCreatePayload({
+            docId: selectedDocId,
+            nodeId,
+            preview: nodePreview,
+            prefill,
+            documentName: selectedDocument?.document_name,
+            sourceType: selectedDocument?.source_type,
+          });
+          await createKnowledgeChunk(selectedKbId, payload, true);
+        });
+        successCount += 1;
+        setTreeNodes((prev) => markNodeIngested(prev, nodeId));
+      } catch (error) {
+        failedItems.push({
+          nodeId,
+          title: nodeTitle,
+          error: (error as Error).message,
+        });
+      }
+
+      setBatchIngest((prev) => {
+        if (prev?.cancelRequested) cancelRequested = true;
+        return prev
+          ? { ...prev, completed: prev.completed + 1, failedItems: [...failedItems] }
+          : prev;
+      });
+
+      if (cancelRequested) {
+        stopped = true;
+        break;
+      }
+    }
+
+    setBatchIngest((prev) => (prev ? { ...prev, active: false, currentNodeId: undefined } : prev));
+
+    if (stopped) {
+      const remaining = nodeIds.length - successCount - failedItems.length;
+      message.info(`已停止，剩余 ${remaining} 项未处理（成功 ${successCount} 条）`);
+    } else if (failedItems.length === 0) {
+      message.success(`已成功添加 ${successCount} 条知识`);
+    } else {
+      message.warning(`成功 ${successCount} 条，失败 ${failedItems.length} 条`);
+      Modal.info({
+        title: "批量入库失败明细",
+        width: 560,
+        content: (
+          <ul style={{ paddingLeft: 20, margin: 0 }}>
+            {failedItems.map((item) => (
+              <li key={item.nodeId}>
+                {item.title}: {item.error}
+              </li>
+            ))}
+          </ul>
+        ),
+      });
+    }
+
+    window.setTimeout(() => setShowProgressBar(false), 2000);
+    setSelectionMode(false);
+    setCheckedKeys([]);
+  }, [checkedKeys, readOnly, selectedDocId, selectedDocument, selectedKbId, treeNodes]);
+
   if (!selectedKbId) {
     return <Alert message="请先选择知识库" type="info" showIcon />;
   }
@@ -617,36 +759,131 @@ export default function KnowledgeEntryPage() {
         minHeight: 480,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", flexShrink: 0 }}>
-        <span>来源文档：</span>
-        <Select
-          style={{ width: 420, maxWidth: "100%", flex: 1 }}
-          loading={loadingDocuments}
-          placeholder="请选择文档"
-          value={selectedDocId}
-          options={documents.map((doc) => ({
-            label: doc.source_type === "template" ? `${doc.document_name}（模板）` : doc.document_name,
-            value: doc.doc_id,
-          }))}
-          onChange={(value) => setSelectedDocId(value)}
-        />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span>来源文档：</span>
+          <Select
+            style={{ width: 420, maxWidth: "100%", flex: 1 }}
+            loading={loadingDocuments}
+            placeholder="请选择文档"
+            value={selectedDocId}
+            disabled={selectionMode || batchRunning}
+            options={documents.map((doc) => ({
+              label: doc.source_type === "template" ? `${doc.document_name}（模板）` : doc.document_name,
+              value: doc.doc_id,
+            }))}
+            onChange={(value) => setSelectedDocId(value)}
+          />
+        </div>
+        {showProgressBar && batchIngest ? (
+          <div style={{ width: "100%" }}>
+            <Progress
+              percent={progressPercent}
+              format={() => `${batchIngest.completed} / ${batchIngest.total}`}
+              status={batchRunning ? "active" : batchIngest.failedItems.length ? "exception" : "success"}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div style={{ flex: 1, minHeight: 0 }}>
         <ResizableWorkspace
           treePanel={
-            <Card title="目录树" style={WORKSPACE_CARD_STYLE} styles={{ body: WORKSPACE_CARD_BODY_STYLE }}>
-              {loadingTree ? (
-                <Spin />
-              ) : treeNodes.length === 0 ? (
-                <Text type="secondary">当前文档暂无目录结构</Text>
-              ) : (
-                <Tree
-                  treeData={toTreeData(treeNodes)}
-                  selectedKeys={selectedNodeId ? [selectedNodeId] : []}
-                  onSelect={(keys) => setSelectedNodeId(keys[0] as string | undefined)}
-                />
-              )}
+            <Card
+              title="目录树"
+              style={WORKSPACE_CARD_STYLE}
+              styles={{ body: { ...WORKSPACE_CARD_BODY_STYLE, display: "flex", flexDirection: "column", padding: 0 } }}
+              extra={
+                !readOnly ? (
+                  <Button
+                    size="small"
+                    disabled={loadingTree || treeNodes.length === 0 || batchRunning}
+                    onClick={() => {
+                      setSelectionMode(true);
+                      setCheckedKeys([]);
+                    }}
+                  >
+                    选择
+                  </Button>
+                ) : null
+              }
+            >
+              <div style={{ flex: 1, overflow: "auto", padding: "0 24px", minHeight: 0 }}>
+                {loadingTree ? (
+                  <Spin />
+                ) : treeNodes.length === 0 ? (
+                  <Text type="secondary">当前文档暂无目录结构</Text>
+                ) : (
+                  <Tree
+                    checkable={selectionMode}
+                    checkStrictly={selectionMode}
+                    checkedKeys={
+                      selectionMode ? { checked: checkedKeys, halfChecked: [] } : checkedKeys
+                    }
+                    onCheck={(keys) => {
+                      const next = Array.isArray(keys) ? keys : keys.checked;
+                      setCheckedKeys(next);
+                    }}
+                    disabled={batchRunning}
+                    treeData={toTreeData(treeNodes, { currentNodeId: batchIngest?.currentNodeId })}
+                    selectedKeys={selectedNodeId ? [selectedNodeId] : []}
+                    onSelect={(keys) => {
+                      if (batchRunning) return;
+                      setSelectedNodeId(keys[0] as string | undefined);
+                    }}
+                  />
+                )}
+              </div>
+              {selectionMode ? (
+                <div
+                  style={{
+                    borderTop: "1px solid #f0f0f0",
+                    padding: "12px 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Text>已选 {checkedCount} 项</Text>
+                  <Button
+                    type="primary"
+                    size="small"
+                    disabled={checkedCount === 0 || batchRunning}
+                    onClick={() => void handleBatchIngest()}
+                  >
+                    添加到知识库
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={batchRunning}
+                    onClick={() => {
+                      setSelectionMode(false);
+                      setCheckedKeys([]);
+                    }}
+                  >
+                    取消选择
+                  </Button>
+                  {batchRunning ? (
+                    <Button
+                      size="small"
+                      danger
+                      onClick={() =>
+                        setBatchIngest((prev) => (prev ? { ...prev, cancelRequested: true } : prev))
+                      }
+                    >
+                      停止
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </Card>
           }
           previewPanel={
@@ -676,7 +913,10 @@ export default function KnowledgeEntryPage() {
                       提取目录蓝图
                     </Button>
                   ) : null}
-                  <Button disabled={!preview || readOnly} onClick={() => void handlePrefill()}>
+                  <Button
+                    disabled={!preview || readOnly || selectionMode || batchRunning}
+                    onClick={() => void handlePrefill()}
+                  >
                     添加到知识库
                   </Button>
                 </Space>
@@ -705,7 +945,7 @@ export default function KnowledgeEntryPage() {
                     key: "entry",
                     label: "知识录入",
                     children: (
-                      <>
+                      <Form<EntryFormValues> form={form} layout="vertical">
                         {!rightExpanded ? (
                           <Space direction="vertical">
                             <Text type="secondary">点击“添加到知识库”后，右侧将展开预填表单。</Text>
@@ -722,11 +962,7 @@ export default function KnowledgeEntryPage() {
                           </div>
                         ) : null}
                         {rightExpanded && !prefilling ? (
-                          <Form<EntryFormValues>
-                            form={form}
-                            layout="vertical"
-                            initialValues={{ content: preview?.content_md }}
-                          >
+                          <>
                           <Form.Item
                             name="title"
                             label={getFieldLabel("title")}
@@ -862,10 +1098,10 @@ export default function KnowledgeEntryPage() {
                           >
                             确认添加
                           </Button>
-                        </Form>
-                      ) : null}
-                    </>
-                  ),
+                          </>
+                        ) : null}
+                      </Form>
+                    ),
                 },
                 {
                   key: "blueprint",

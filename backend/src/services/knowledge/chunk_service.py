@@ -7,6 +7,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
+from src.models.chunk_embedding import ChunkEmbedding
+from src.models.chunk_asset import ChunkAsset
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.knowledge.asset_link_service import link_assets_to_chunk
 from src.services.knowledge.chunk_image_assets import ensure_image_assets_for_chunk
@@ -19,6 +21,10 @@ class ChunkConflictError(Exception):
         self.existing_id = existing_id
         self.existing_version = existing_version
         super().__init__(f"chunk already exists: id={existing_id}, version={existing_version}")
+
+
+class ChunkNotFoundError(Exception):
+    pass
 
 
 def bump_version(version: str) -> str:
@@ -132,6 +138,41 @@ def create_knowledge_chunk(
     ensure_image_assets_for_chunk(db, chunk)
     db.flush()
     return chunk
+
+
+def delete_knowledge_chunk(db: Session, *, kb_id: UUID, chunk_id: int) -> None:
+    chunk = (
+        db.query(KnowledgeChunk)
+        .filter(KnowledgeChunk.kb_id == kb_id, KnowledgeChunk.id == chunk_id)
+        .one_or_none()
+    )
+    if chunk is None:
+        raise ChunkNotFoundError
+
+    chunk_ids = [
+        row.id
+        for row in db.query(KnowledgeChunk.id)
+        .filter(
+            KnowledgeChunk.kb_id == kb_id,
+            KnowledgeChunk.knowledge_code == chunk.knowledge_code,
+        )
+        .all()
+    ]
+    if not chunk_ids:
+        return
+
+    db.query(ChunkEmbedding).filter(
+        ChunkEmbedding.object_type == "chunk",
+        ChunkEmbedding.object_id.in_(chunk_ids),
+    ).delete(synchronize_session=False)
+    db.query(ChunkAsset).filter(ChunkAsset.chunk_id.in_(chunk_ids)).update(
+        {ChunkAsset.chunk_id: None},
+        synchronize_session=False,
+    )
+    db.query(KnowledgeChunk).filter(KnowledgeChunk.id.in_(chunk_ids)).delete(
+        synchronize_session=False
+    )
+    db.flush()
 
 
 def _compute_content_hash(content: str) -> str:

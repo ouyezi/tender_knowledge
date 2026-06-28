@@ -62,17 +62,39 @@ def resolve_storage_path_to_media_url(
         return None
     if storage_path.startswith("/api/") or storage_path.startswith("http://") or storage_path.startswith("https://"):
         return storage_path
-    row = (
-        db.query(DocumentMediaAsset.asset_id)
+    return resolve_storage_paths_to_media_urls(db, kb_id=kb_id, storage_paths=[storage_path]).get(
+        storage_path
+    )
+
+
+def resolve_storage_paths_to_media_urls(
+    db: Session,
+    *,
+    kb_id: UUID,
+    storage_paths: list[str],
+) -> dict[str, str]:
+    lookup_paths: list[str] = []
+    resolved: dict[str, str] = {}
+    for path in storage_paths:
+        if not path:
+            continue
+        if path.startswith("/api/") or path.startswith("http://") or path.startswith("https://"):
+            resolved[path] = path
+            continue
+        lookup_paths.append(path)
+    if not lookup_paths:
+        return resolved
+    rows = (
+        db.query(DocumentMediaAsset.storage_path, DocumentMediaAsset.asset_id)
         .filter(
             DocumentMediaAsset.kb_id == kb_id,
-            DocumentMediaAsset.storage_path == storage_path,
+            DocumentMediaAsset.storage_path.in_(lookup_paths),
         )
-        .one_or_none()
+        .all()
     )
-    if row is None:
-        return None
-    return build_media_api_url(kb_id=kb_id, asset_id=row[0])
+    for storage_path, asset_id in rows:
+        resolved[storage_path] = build_media_api_url(kb_id=kb_id, asset_id=asset_id)
+    return resolved
 
 
 def load_image_ref_map_payload(*, document_id: UUID) -> dict[str, str]:
