@@ -173,6 +173,7 @@ export default function KnowledgeBrowsePage() {
   const [semanticMode, setSemanticMode] = useState(false);
   const [semanticQuery, setSemanticQuery] = useState("");
   const [searchItems, setSearchItems] = useState<KnowledgeChunkSearchItem[]>([]);
+  const [indexingId, setIndexingId] = useState<number>();
   const [generatingTechniqueId, setGeneratingTechniqueId] = useState<number>();
   const [techniqueByChunkId, setTechniqueByChunkId] = useState<Record<number, string | null>>({});
   const [deletingId, setDeletingId] = useState<number>();
