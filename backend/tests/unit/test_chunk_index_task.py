@@ -2,10 +2,18 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
 from src.models.chunk_embedding import ChunkEmbedding
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.knowledge.chunk_index_task import index_knowledge_chunk
 from src.services.knowledge.embedding_client import EmbeddingResult
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(_type, _compiler, **_kw):
+    return "JSON"
 
 
 def _seed_chunk(db_session, kb_id):
@@ -95,3 +103,35 @@ def test_index_knowledge_chunk_updates_qualification_info_on_high_confidence(
     db_session.refresh(chunk)
     assert chunk.qualification_info == "ISO9001|A001|2024-01-01|2026-12-31"
     assert chunk.expire_date.isoformat() == "2026-12-31"
+
+
+def test_index_knowledge_chunk_does_not_overwrite_cancelled_failed(
+    db_session, seeded_kb, monkeypatch
+):
+    chunk = _seed_chunk(db_session, seeded_kb.kb_id)
+
+    def fake_rewrite(**_):
+        chunk.embedding_status = "failed"
+        db_session.commit()
+        return {"summary": "新摘要", "date_confidence": "low"}
+
+    monkeypatch.setattr(
+        "src.services.knowledge.chunk_index_task.rewrite_chunk_summary",
+        fake_rewrite,
+    )
+
+    def fake_embed_text(_self, text: str) -> EmbeddingResult:
+        return EmbeddingResult(vector=[0.1, 0.2, 0.3])
+
+    monkeypatch.setattr(
+        "src.services.knowledge.chunk_index_task.EmbeddingClient.embed_text",
+        fake_embed_text,
+    )
+    monkeypatch.setenv("EMBEDDING_API_BASE", "https://embedding.test")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "test-key")
+
+    status = index_knowledge_chunk(db_session, chunk.id)
+
+    assert status == "failed"
+    db_session.refresh(chunk)
+    assert chunk.embedding_status == "failed"

@@ -82,6 +82,17 @@ def _upsert_chunk_embeddings(
     return True
 
 
+def _finalize_index_status(db: Session, chunk: KnowledgeChunk, status: str) -> str:
+    db.refresh(chunk)
+    if chunk.embedding_status != "indexing":
+        return chunk.embedding_status
+    chunk.embedding_status = status
+    if status == "ready":
+        chunk.indexed_at = datetime.now(timezone.utc)
+    db.commit()
+    return status
+
+
 def index_knowledge_chunk(db: Session, chunk_id: int) -> str:
     chunk = db.get(KnowledgeChunk, chunk_id)
     if chunk is None:
@@ -165,27 +176,18 @@ def index_knowledge_chunk(db: Session, chunk_id: int) -> str:
 
         client = _embedding_client()
         if not client.is_configured:
-            chunk.embedding_status = "skipped"
-            chunk.indexed_at = datetime.now(timezone.utc)
-            db.commit()
-            return "skipped"
+            return _finalize_index_status(db, chunk, "skipped")
 
         if not _upsert_chunk_embeddings(db, chunk=chunk, client=client):
-            chunk.embedding_status = "failed"
-            db.commit()
-            return "failed"
+            return _finalize_index_status(db, chunk, "failed")
 
-        chunk.embedding_status = "ready"
-        chunk.indexed_at = datetime.now(timezone.utc)
-        db.commit()
-        return "ready"
+        return _finalize_index_status(db, chunk, "ready")
     except Exception:
         logger.exception("chunk index failed chunk_id=%s", chunk_id)
         db.rollback()
         chunk = db.get(KnowledgeChunk, chunk_id)
         if chunk is not None:
-            chunk.embedding_status = "failed"
-            db.commit()
+            return _finalize_index_status(db, chunk, "failed")
         return "failed"
 
 
