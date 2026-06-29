@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -225,3 +226,41 @@ def _is_sqlite(db: Session) -> bool:
 def _next_chunk_id(db: Session) -> int:
     current_max = db.query(func.max(KnowledgeChunk.id)).scalar()
     return int(current_max or 0) + 1
+
+
+@dataclass
+class MarkIndexFailedResult:
+    updated_ids: list[int]
+    skipped_ids: list[int]
+
+
+def mark_chunks_index_failed(
+    db: Session,
+    *,
+    kb_id: UUID,
+    chunk_ids: list[int],
+) -> MarkIndexFailedResult:
+    if not chunk_ids:
+        return MarkIndexFailedResult(updated_ids=[], skipped_ids=[])
+
+    requested = list(dict.fromkeys(chunk_ids))
+    rows = (
+        db.query(KnowledgeChunk)
+        .filter(KnowledgeChunk.kb_id == kb_id, KnowledgeChunk.id.in_(requested))
+        .all()
+    )
+    by_id = {row.id: row for row in rows}
+    updated_ids: list[int] = []
+    skipped_ids: list[int] = []
+
+    for chunk_id in requested:
+        row = by_id.get(chunk_id)
+        if row is None or row.embedding_status != "indexing":
+            skipped_ids.append(chunk_id)
+            continue
+        row.embedding_status = "failed"
+        updated_ids.append(chunk_id)
+
+    if updated_ids:
+        db.commit()
+    return MarkIndexFailedResult(updated_ids=updated_ids, skipped_ids=skipped_ids)
