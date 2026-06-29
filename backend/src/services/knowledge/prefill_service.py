@@ -11,6 +11,7 @@ import urllib.request
 from typing import Any
 
 from src.config import settings
+from src.services.knowledge.knowledge_taxonomy_seed import KNOWLEDGE_TAXONOMY_SEED_ROWS
 from src.services.llm_client import truncate_for_llm
 
 logger = logging.getLogger(__name__)
@@ -20,22 +21,9 @@ _CONTENT_TYPES = frozenset({"text", "mixed"})
 _SOURCE_TYPES = frozenset(
     {"bid", "proposal", "qualification", "contract", "manual", "wiki", "case"}
 )
-_CATEGORIES = frozenset(
-    {
-        "qualification",
-        "technical",
-        "business",
-        "legal",
-        "personnel",
-        "price",
-        "case",
-        "template",
-    }
-)
 _STATUSES = frozenset({"draft", "active", "deprecated", "disabled"})
 _SECURITY_LEVELS = frozenset({"public", "internal", "confidential"})
 _REVIEW_STATUSES = frozenset({"pending", "approved", "rejected"})
-_QUOTE_MODES = frozenset({"full", "partial"})
 _TEMPLATE_TYPES = frozenset(
     {
         "commitment",
@@ -50,11 +38,13 @@ _TEMPLATE_TYPES = frozenset(
 
 _SYSTEM_PROMPT = (
     "你是标书知识库属性预填助手。根据章节正文与元数据，输出 JSON 对象，字段包括："
-    "title, summary, knowledge_type, content_type, source_type, category, status, "
-    "security_level, review_status, quote_mode, template_type, tags, products, "
+    "title, summary, knowledge_type, content_type, source_type, status, "
+    "security_level, review_status, block_type_code, application_type_code, "
+    "business_line_codes, template_type, tags, "
     "industries, customer_types, regions, issue_date, expire_date, is_template, "
     "winning_flag。"
-    "industries/products/customer_types/regions/expire_date 可留空。"
+    "其中 block_type_code / application_type_code / business_line_codes 必须使用有效 taxonomy code。"
+    "industries/customer_types/regions/expire_date 可留空。"
     "只返回 JSON，不要解释。"
 )
 
@@ -62,12 +52,13 @@ _DEFAULT_ENUMS: dict[str, str] = {
     "knowledge_type": "fact",
     "content_type": "text",
     "source_type": "bid",
-    "category": "technical",
     "status": "draft",
     "security_level": "internal",
     "review_status": "approved",
-    "quote_mode": "full",
+    "block_type_code": "product_solution",
+    "application_type_code": "preferred_reference",
 }
+_DEFAULT_BUSINESS_LINE_CODES = ["general"]
 
 
 def prefill_knowledge_attributes(*, content: str, metadata: dict) -> dict:
@@ -152,7 +143,7 @@ def _build_partial_result(metadata: dict) -> dict:
         "title": "",
         "summary": None,
         "tags": [],
-        "products": [],
+        "business_line_codes": list(_DEFAULT_BUSINESS_LINE_CODES),
         "industries": [],
         "customer_types": [],
         "regions": [],
@@ -184,7 +175,9 @@ def _normalize_prefill(parsed: dict, metadata: dict) -> dict:
             result[field] = _enum_or_default(parsed.get(field), field, _DEFAULT_ENUMS[field])
 
     result["tags"] = _as_str_list(parsed.get("tags"))
-    result["products"] = _as_str_list(parsed.get("products"))
+    result["business_line_codes"] = _business_line_codes_or_default(
+        parsed.get("business_line_codes")
+    )
     result["industries"] = _as_str_list(parsed.get("industries"))
     result["customer_types"] = _as_str_list(parsed.get("customer_types"))
     result["regions"] = _as_str_list(parsed.get("regions"))
@@ -226,13 +219,32 @@ def _as_str_list(value: Any) -> list[str]:
     return []
 
 
+def _business_line_codes_or_default(value: Any) -> list[str]:
+    values = _as_str_list(value)
+    normalized = [item for item in values if item in _BUSINESS_LINE_CODES]
+    return normalized or list(_DEFAULT_BUSINESS_LINE_CODES)
+
+
+def _taxonomy_codes(dimension: str) -> frozenset[str]:
+    return frozenset(
+        str(row["code"])
+        for row in KNOWLEDGE_TAXONOMY_SEED_ROWS
+        if row.get("dimension") == dimension and row.get("is_active", True)
+    )
+
+
+_BLOCK_TYPE_CODES = _taxonomy_codes("block_type")
+_APPLICATION_TYPE_CODES = _taxonomy_codes("application_type")
+_BUSINESS_LINE_CODES = _taxonomy_codes("business_line")
+
+
 _ENUM_SETS: dict[str, frozenset[str]] = {
     "knowledge_type": _KNOWLEDGE_TYPES,
     "content_type": _CONTENT_TYPES,
     "source_type": _SOURCE_TYPES,
-    "category": _CATEGORIES,
     "status": _STATUSES,
     "security_level": _SECURITY_LEVELS,
     "review_status": _REVIEW_STATUSES,
-    "quote_mode": _QUOTE_MODES,
+    "block_type_code": _BLOCK_TYPE_CODES,
+    "application_type_code": _APPLICATION_TYPE_CODES,
 }

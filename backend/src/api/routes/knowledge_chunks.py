@@ -51,6 +51,8 @@ from src.services.knowledge.media_url_service import (
     resolve_storage_path_to_media_url,
 )
 from src.services.knowledge.prefill_service import prefill_knowledge_attributes
+from src.services.knowledge.taxonomy_field_utils import compute_is_expired
+from src.services.knowledge.taxonomy_service import expand_business_line_labels, get_taxonomy_label
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +105,26 @@ def _serialize_asset(asset: ChunkAsset, db: Session, *, kb_id: UUID) -> dict:
     }
 
 
-def _serialize_chunk_list_item(row: KnowledgeChunk) -> dict:
-    return {
+def _enrich_chunk_taxonomy(db: Session, payload: dict, row: KnowledgeChunk) -> dict:
+    payload["block_type_code"] = row.block_type_code
+    payload["application_type_code"] = row.application_type_code
+    payload["business_line_codes"] = list(row.business_line_codes or [])
+    payload["block_type_label"] = get_taxonomy_label(db, "block_type", row.block_type_code)
+    payload["application_type_label"] = get_taxonomy_label(
+        db, "application_type", row.application_type_code
+    )
+    payload["business_line_labels"] = expand_business_line_labels(
+        db, row.business_line_codes or []
+    )
+    payload["is_expired"] = compute_is_expired(row.expire_date)
+    return payload
+
+
+def _serialize_chunk_list_item(db: Session, row: KnowledgeChunk) -> dict:
+    payload = {
         "id": row.id,
         "title": row.title,
         "version": row.version,
-        "category": row.category,
         "knowledge_type": row.knowledge_type,
         "status": row.status,
         "embedding_status": row.embedding_status,
@@ -116,10 +132,11 @@ def _serialize_chunk_list_item(row: KnowledgeChunk) -> dict:
         "token_count": row.token_count,
         "update_time": row.update_time.isoformat() if row.update_time else None,
     }
+    return _enrich_chunk_taxonomy(db, payload, row)
 
 
-def _serialize_chunk_detail(row: KnowledgeChunk, *, embedding_status: str) -> dict:
-    return {
+def _serialize_chunk_detail(db: Session, row: KnowledgeChunk, *, embedding_status: str) -> dict:
+    payload = {
         "id": row.id,
         "kb_id": str(row.kb_id),
         "knowledge_code": row.knowledge_code,
@@ -143,10 +160,7 @@ def _serialize_chunk_detail(row: KnowledgeChunk, *, embedding_status: str) -> di
         "primary_node_id": row.primary_node_id,
         "parent_id": row.parent_id,
         "need_parent_context": row.need_parent_context,
-        "quote_mode": row.quote_mode,
-        "category": row.category,
         "tags": row.tags,
-        "products": row.products,
         "industries": row.industries,
         "customer_types": row.customer_types,
         "regions": row.regions,
@@ -172,6 +186,7 @@ def _serialize_chunk_detail(row: KnowledgeChunk, *, embedding_status: str) -> di
         "update_time": row.update_time.isoformat() if row.update_time else None,
         "embedding_status": embedding_status,
     }
+    return _enrich_chunk_taxonomy(db, payload, row)
 
 
 def _serialize_previous_version(previous: KnowledgeChunk | None) -> dict | None:
@@ -195,7 +210,7 @@ def _contains_any(target_values: list[str], filter_values: list[str] | None) -> 
 
 def _matches_array_filters(row: KnowledgeChunk, filters: KnowledgeChunkListFilters) -> bool:
     return (
-        _contains_any(row.products or [], filters.products)
+        _contains_any(row.business_line_codes or [], filters.business_line_codes)
         and _contains_any(row.industries or [], filters.industries)
         and _contains_any(row.regions or [], filters.regions)
         and _contains_any(row.tags or [], filters.tags)
@@ -337,11 +352,12 @@ def create_knowledge_chunk_api(
 @router.get("")
 def list_knowledge_chunks_api(
     kb_id: UUID,
-    category: str | None = None,
+    block_type_code: str | None = None,
+    application_type_code: str | None = None,
+    business_line_codes: list[str] | None = Query(default=None),
     knowledge_type: str | None = None,
     source_type: str | None = None,
     status: str | None = None,
-    products: list[str] | None = Query(default=None),
     industries: list[str] | None = Query(default=None),
     regions: list[str] | None = Query(default=None),
     tags: list[str] | None = Query(default=None),
@@ -353,6 +369,7 @@ def list_knowledge_chunks_api(
     issue_date_to: date | None = None,
     expire_date_from: date | None = None,
     expire_date_to: date | None = None,
+    expired_only: bool | None = None,
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
@@ -360,11 +377,12 @@ def list_knowledge_chunks_api(
     _: KnowledgeBase = Depends(get_kb_or_404),
 ):
     filters = KnowledgeChunkListFilters(
-        category=category,
+        block_type_code=block_type_code,
+        application_type_code=application_type_code,
+        business_line_codes=business_line_codes,
         knowledge_type=knowledge_type,
         source_type=source_type,
         status=status,
-        products=products,
         industries=industries,
         regions=regions,
         tags=tags,
@@ -376,6 +394,7 @@ def list_knowledge_chunks_api(
         issue_date_to=issue_date_to,
         expire_date_from=expire_date_from,
         expire_date_to=expire_date_to,
+        expired_only=expired_only,
         keyword=keyword,
         page=page,
         page_size=page_size,
@@ -385,8 +404,10 @@ def list_knowledge_chunks_api(
         KnowledgeChunk.kb_id == kb_id,
         KnowledgeChunk.is_latest.is_(True),
     )
-    if filters.category:
-        query = query.filter(KnowledgeChunk.category == filters.category)
+    if filters.block_type_code:
+        query = query.filter(KnowledgeChunk.block_type_code == filters.block_type_code)
+    if filters.application_type_code:
+        query = query.filter(KnowledgeChunk.application_type_code == filters.application_type_code)
     if filters.knowledge_type:
         query = query.filter(KnowledgeChunk.knowledge_type == filters.knowledge_type)
     if filters.source_type:
@@ -409,6 +430,16 @@ def list_knowledge_chunks_api(
         query = query.filter(KnowledgeChunk.expire_date >= filters.expire_date_from)
     if filters.expire_date_to:
         query = query.filter(KnowledgeChunk.expire_date <= filters.expire_date_to)
+    if filters.expired_only is True:
+        query = query.filter(
+            KnowledgeChunk.expire_date.is_not(None),
+            KnowledgeChunk.expire_date < date.today(),
+        )
+    elif filters.expired_only is False:
+        query = query.filter(
+            (KnowledgeChunk.expire_date.is_(None))
+            | (KnowledgeChunk.expire_date >= date.today())
+        )
     if filters.keyword:
         token = f"%{filters.keyword.strip()}%"
         query = query.filter(
@@ -426,7 +457,7 @@ def list_knowledge_chunks_api(
 
     return success(
         {
-            "items": [_serialize_chunk_list_item(row) for row in paged],
+            "items": [_serialize_chunk_list_item(db, row) for row in paged],
             "total": total,
             "page": filters.page,
             "page_size": filters.page_size,
@@ -632,7 +663,7 @@ def get_knowledge_chunk_api(
         .all()
     )
     status = row.embedding_status
-    payload = _serialize_chunk_detail(row, embedding_status=status)
+    payload = _serialize_chunk_detail(db, row, embedding_status=status)
     payload["previous_version"] = _serialize_previous_version(previous)
     payload["assets"] = [_serialize_asset(asset, db, kb_id=kb_id) for asset in assets]
     payload["image_ref_map"] = load_image_ref_map_payload(document_id=row.doc_id)

@@ -114,7 +114,9 @@ def test_get_document_tree_marks_ingested_from_latest_chunk(db_session, seeded_k
             content_type="text",
             doc_id=document.document_id,
             source_type="actual_bid",
-            category="default",
+            block_type_code="product_solution",
+            application_type_code="preferred_reference",
+            business_line_codes=["general"],
             content_hash="hash-1",
             primary_node_id=str(child.node_id),
         )

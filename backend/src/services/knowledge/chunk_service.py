@@ -13,6 +13,11 @@ from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.knowledge.asset_link_service import link_assets_to_chunk
 from src.services.knowledge.chunk_image_assets import ensure_image_assets_for_chunk
 from src.services.knowledge.entry_content_service import build_catalog_path
+from src.services.knowledge.taxonomy_service import (
+    validate_application_type_code,
+    validate_block_type_code,
+    validate_business_line_codes,
+)
 from src.services.knowledge.token_counter import count_tokens
 
 
@@ -66,6 +71,13 @@ def create_knowledge_chunk(
             existing.primary_node_id = f"{existing.primary_node_id}#v{existing.version}"
 
     content = str(payload.get("content") or "")
+    block_type_code = validate_block_type_code(
+        db, str(payload.get("block_type_code") or "product_solution")
+    )
+    application_type_code = validate_application_type_code(
+        db, str(payload.get("application_type_code") or "preferred_reference")
+    )
+    business_line_codes = validate_business_line_codes(db, payload.get("business_line_codes"))
     tree_nodes = _load_heading_nodes(db, kb_id=kb_id, doc_id=doc_id)
     nodes_by_id = {node.node_id: node for node in tree_nodes}
     node_uuid = _coerce_uuid(primary_node_id)
@@ -97,10 +109,10 @@ def create_knowledge_chunk(
         primary_node_id=node_key,
         parent_id=payload.get("parent_id"),
         need_parent_context=bool(payload.get("need_parent_context", False)),
-        quote_mode=str(payload.get("quote_mode") or "full"),
-        category=str(payload.get("category") or ""),
+        block_type_code=block_type_code,
+        application_type_code=application_type_code,
+        business_line_codes=business_line_codes,
         tags=list(payload.get("tags") or []),
-        products=list(payload.get("products") or []),
         industries=list(payload.get("industries") or []),
         customer_types=list(payload.get("customer_types") or []),
         regions=list(payload.get("regions") or []),

@@ -32,10 +32,10 @@ class CreateKnowledgeChunkRequest(BaseModel):
     catalog_path: list[dict[str, Any]] = Field(default_factory=list)
     parent_id: int | None = None
     need_parent_context: bool = False
-    quote_mode: str = "full"
-    category: str = "technical"
+    block_type_code: str = "product_solution"
+    application_type_code: str = "preferred_reference"
+    business_line_codes: list[str] = Field(default_factory=lambda: ["general"])
     tags: list[str] = Field(default_factory=list)
-    products: list[str] = Field(default_factory=list)
     industries: list[str] = Field(default_factory=list)
     customer_types: list[str] = Field(default_factory=list)
     regions: list[str] = Field(default_factory=list)
@@ -76,11 +76,12 @@ class ChunkSearchRequest(BaseModel):
 
 
 class KnowledgeChunkListFilters(BaseModel):
-    category: str | None = None
+    block_type_code: str | None = None
+    application_type_code: str | None = None
+    business_line_codes: list[str] | None = None
     knowledge_type: str | None = None
     source_type: str | None = None
     status: str | None = None
-    products: list[str] | None = None
     industries: list[str] | None = None
     regions: list[str] | None = None
     tags: list[str] | None = None
@@ -92,6 +93,7 @@ class KnowledgeChunkListFilters(BaseModel):
     issue_date_to: date | None = None
     expire_date_from: date | None = None
     expire_date_to: date | None = None
+    expired_only: bool | None = None
     keyword: str | None = None
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=20, ge=1, le=200)
