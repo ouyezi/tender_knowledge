@@ -191,6 +191,7 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> d
         char_start=char_start,
         char_end=char_end,
     )
+    matched_assets = _filter_assets_for_section(matched_assets, section_md)
     page_start, page_end = _page_range(chunks, matched_assets)
 
     return {
@@ -235,6 +236,31 @@ def infer_content_type(content_md: str, assets: list) -> str:
     if re.search(r"(?m)^\|.*\|\s*$", markdown):
         return "mixed"
     return "text"
+
+
+def _asset_visible_in_section(asset: ChunkAsset, section_md: str) -> bool:
+    if asset.asset_type == "table":
+        raw = (asset.raw_markdown or "").strip()
+        if not raw:
+            return False
+        header = raw.split("\n", 1)[0].strip()
+        if len(header) >= 3:
+            return header in section_md
+        return raw in section_md
+    if asset.asset_type == "image":
+        raw = (asset.raw_markdown or "").strip()
+        if raw and raw in section_md:
+            return True
+        storage_url = (asset.image_storage_url or "").strip()
+        if storage_url and storage_url in section_md:
+            return True
+        filename = storage_url.rsplit("/", 1)[-1] if storage_url else ""
+        return bool(filename and filename in section_md)
+    return True
+
+
+def _filter_assets_for_section(assets: list[ChunkAsset], section_md: str) -> list[ChunkAsset]:
+    return [asset for asset in assets if _asset_visible_in_section(asset, section_md)]
 
 
 def _get_ready_document(db: Session, *, kb_id: UUID, doc_id: UUID) -> Document:

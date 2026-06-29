@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
+from src.models.chunk_asset import ChunkAsset
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType, DocumentSourceUsage
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
@@ -69,6 +70,50 @@ def _seed_document_tree(db_session, kb_id):
     db_session.add_all([parent, child])
     db_session.commit()
     return document, parent, child
+
+
+def test_get_node_preview_excludes_mispositioned_table_assets(db_session, seeded_kb, tmp_path):
+    document, _, child = _seed_document_tree(db_session, seeded_kb.kb_id)
+    section_md = (
+        "## 1.1 范围\n\n"
+        "兹证明某某同志为我单位法定代表人。\n\n"
+        "特此证明。\n"
+    )
+    foreign_table = "| 指标 | 2019 | 2020 |\n| --- | --- | --- |\n| 净资产 | 1% | 2% |"
+    source = tmp_path / "content.md"
+    source.write_text(
+        "# 第一章 总则\n\n父节点内容。\n\n"
+        f"{section_md}\n\n"
+        "## 1.2 财务状况\n\n"
+        f"{foreign_table}\n",
+        encoding="utf-8",
+    )
+    persist_content_md(document_id=document.document_id, source_path=Path(source))
+
+    section_start = source.read_text(encoding="utf-8").index("## 1.1 范围")
+    db_session.add(
+        ChunkAsset(
+            id=1,
+            kb_id=seeded_kb.kb_id,
+            doc_id=document.document_id,
+            asset_type="table",
+            char_start=section_start + 40,
+            char_end=section_start + 500,
+            raw_markdown=foreign_table,
+        )
+    )
+    db_session.commit()
+
+    preview = get_node_preview(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=document.document_id,
+        node_id=child.node_id,
+    )
+
+    assert "| 指标 |" not in preview["content_md"]
+    assert preview["content_type"] == "text"
+    assert preview["assets"] == []
 
 
 def test_get_node_preview_parent_includes_child_content(db_session, seeded_kb, tmp_path):

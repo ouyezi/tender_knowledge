@@ -54,6 +54,48 @@ def _chunk_fallback_range(chunk_payload: dict[str, Any]) -> tuple[int | None, in
     return (None, None)
 
 
+def _locate_markdown_in_content(
+    content_md: str,
+    markdown: str,
+    *,
+    search_from: int = 0,
+) -> tuple[int, int] | None:
+    snippet = markdown.strip()
+    if not snippet or not content_md:
+        return None
+
+    idx = content_md.find(snippet, search_from)
+    if idx >= 0:
+        return (idx, idx + len(snippet))
+
+    first_line = snippet.split("\n", 1)[0].strip()
+    if len(first_line) < 3:
+        return None
+    idx = content_md.find(first_line, search_from)
+    if idx < 0:
+        return None
+    end = min(idx + len(snippet), len(content_md))
+    return (idx, end)
+
+
+def _table_markdown_for_block(
+    block: dict[str, Any],
+    *,
+    workspace: Path,
+    blocks_table_refs: dict[int, str],
+) -> str:
+    markdown = str(block.get("text") or block.get("markdown") or "").strip()
+    table_ref = block.get("table_ref")
+    if not table_ref:
+        block_index = block.get("block_index")
+        if isinstance(block_index, int):
+            table_ref = blocks_table_refs.get(block_index)
+    sidecar = _load_table_sidecar(workspace, str(table_ref)) if table_ref else None
+    if sidecar:
+        return str(sidecar.get("markdown") or markdown).strip()
+    return markdown
+
+
 def _load_blocks_table_refs(workspace: Path) -> dict[int, str]:
     payload = _load_json(workspace / "content.blocks.json") or {}
     mapping: dict[int, str] = {}
@@ -134,6 +176,13 @@ def seed_chunk_assets_from_workspace(
     media_storage_cache: dict[UUID, str | None] = {}
     blocks_table_refs = _load_blocks_table_refs(workspace)
     next_id = db.query(func.max(ChunkAsset.id)).scalar() or 0
+    content_md_path = workspace / "content.md"
+    content_md = (
+        content_md_path.read_text(encoding="utf-8")
+        if content_md_path.is_file()
+        else ""
+    )
+    content_search_cursor = 0
 
     images_manifest = _load_json(workspace / "images" / "manifest.json") or {}
     for entry in images_manifest.get("images") or []:
@@ -174,11 +223,28 @@ def seed_chunk_assets_from_workspace(
             if not isinstance(block, dict) or block.get("type") != "table":
                 continue
             char_start, char_end = _position_from_item(block)
+            markdown = _table_markdown_for_block(
+                block,
+                workspace=workspace,
+                blocks_table_refs=blocks_table_refs,
+            )
             if char_start is None or char_end is None:
-                char_start, char_end = fallback_start, fallback_end
+                located = (
+                    _locate_markdown_in_content(
+                        content_md,
+                        markdown,
+                        search_from=content_search_cursor,
+                    )
+                    if content_md and markdown
+                    else None
+                )
+                if located is not None:
+                    char_start, char_end = located
+                    content_search_cursor = char_end
+                else:
+                    char_start, char_end = fallback_start, fallback_end
             if char_start is None or char_end is None:
                 continue
-            markdown = str(block.get("text") or block.get("markdown") or "").strip()
             table_ref = block.get("table_ref")
             if not table_ref:
                 block_index = block.get("block_index")

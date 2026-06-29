@@ -142,3 +142,52 @@ def test_seed_chunk_assets_from_workspace_tables(db_session, seeded_kb, tmp_path
     assert rows[1].table_summary == "【表格:示例】列A=1; 列B=2"
     assert rows[1].table_headers == ["列A", "列B"]
     assert rows[1].table_rows == [["1", "2"]]
+
+
+def test_seed_chunk_assets_locates_table_in_content_md_instead_of_chunk_fallback(
+    db_session, seeded_kb, tmp_path
+):
+    workspace = tmp_path / "workspace"
+    shutil.copytree(FIXTURE_ROOT, workspace)
+
+    table_markdown = "|指标|2019|2020|\n|---|---|---|\n|净资产|1%|2%|"
+    (workspace / "content.md").write_text(
+        "# 章节\n\n身份证明正文\n\n"
+        f"{table_markdown}\n\n"
+        "# 下一章\n",
+        encoding="utf-8",
+    )
+
+    chunk_path = workspace / "chunks" / "chunk-0002.json"
+    chunk_payload = json.loads(chunk_path.read_text(encoding="utf-8"))
+    chunk_payload["source_ranges"] = [{"char_start": 5, "char_end": 999}]
+    chunk_payload["blocks"] = [
+        {
+            "type": "table",
+            "markdown": table_markdown,
+        }
+    ]
+    chunk_path.write_text(json.dumps(chunk_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    doc_id = uuid4()
+    count = seed_chunk_assets_from_workspace(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=doc_id,
+        workspace_path=workspace,
+    )
+
+    assert count == 1
+    row = (
+        db_session.query(ChunkAsset)
+        .filter(
+            ChunkAsset.kb_id == seeded_kb.kb_id,
+            ChunkAsset.doc_id == doc_id,
+            ChunkAsset.asset_type == "table",
+        )
+        .one()
+    )
+    content_md = (workspace / "content.md").read_text(encoding="utf-8")
+    expected_start = content_md.index(table_markdown)
+    assert row.char_start == expected_start
+    assert row.char_end == expected_start + len(table_markdown)
