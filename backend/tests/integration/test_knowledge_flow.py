@@ -187,6 +187,7 @@ def test_knowledge_full_regression_flow(client, db_session, seeded_kb, seeded_ta
     assert len(list_data["items"]) == 1
     assert list_data["items"][0]["id"] == chunk_id
     assert list_data["items"][0]["title"] == "网络架构要求"
+    assert list_data["items"][0]["summary"] == "网络架构摘要"
     assert list_data["items"][0]["version"] == "1.0"
 
     detail_resp = client.get(f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/{chunk_id}")
@@ -233,4 +234,5 @@ def test_knowledge_full_regression_flow(client, db_session, seeded_kb, seeded_ta
     assert final_list_data["total"] == 1
     assert len(final_list_data["items"]) == 1
     assert final_list_data["items"][0]["id"] == overwritten_id
+    assert final_list_data["items"][0]["summary"] == "网络架构摘要-覆盖版"
     assert final_list_data["items"][0]["version"] == "1.1"

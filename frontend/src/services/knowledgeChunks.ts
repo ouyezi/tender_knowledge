@@ -87,6 +87,7 @@ export interface CreateKnowledgeChunkRequest {
 export interface KnowledgeChunkListItem {
   id: number;
   title: string;
+  summary?: string | null;
   version: string;
   block_type_code: string;
   application_type_code: string;

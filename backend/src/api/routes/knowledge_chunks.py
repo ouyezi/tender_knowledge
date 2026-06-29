@@ -130,9 +130,15 @@ def _enrich_chunk_taxonomy(db: Session, payload: dict, row: KnowledgeChunk) -> d
 
 
 def _serialize_chunk_list_item(db: Session, row: KnowledgeChunk) -> dict:
+    summary = (row.summary or "").strip() or None
+    if summary is None:
+        content = (row.content or "").strip()
+        if content:
+            summary = content[:200]
     payload = {
         "id": row.id,
         "title": row.title,
+        "summary": summary,
         "version": row.version,
         "knowledge_type": row.knowledge_type,
         "status": row.status,

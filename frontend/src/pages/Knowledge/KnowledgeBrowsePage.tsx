@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Col,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -14,10 +15,13 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
+import type { MenuProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { MoreOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Key } from "react";
 import TaxonomyCascader from "../../components/Knowledge/TaxonomyCascader";
@@ -131,6 +135,73 @@ function fromListParams(params: ListKnowledgeChunksParams): FilterFormValues {
 
 function formatDateTime(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
+}
+
+function truncateChars(text: string, maxLength: number): string {
+  const chars = Array.from(text);
+  if (chars.length <= maxLength) {
+    return text;
+  }
+  return `${chars.slice(0, maxLength).join("")}…`;
+}
+
+function charWidthPx(chars: number) {
+  return Math.round(chars * 14);
+}
+
+function renderCharWidthText(
+  text: string | null | undefined,
+  charWidth: number,
+  options?: { truncateAt?: number; tooltip?: boolean; minWidth?: number },
+) {
+  const raw = text?.trim();
+  if (!raw) {
+    return "-";
+  }
+  const display = options?.truncateAt ? truncateChars(raw, options.truncateAt) : raw;
+  const content = (
+    <span
+      style={{
+        display: "inline-block",
+        minWidth: options?.minWidth ? `${options.minWidth}em` : undefined,
+        maxWidth: `${charWidth}em`,
+        whiteSpace: "normal",
+        wordBreak: "break-all",
+        lineHeight: 1.4,
+      }}
+    >
+      {display}
+    </span>
+  );
+  if (options?.tooltip === false) {
+    return content;
+  }
+  return <Tooltip title={raw}>{content}</Tooltip>;
+}
+
+function renderCompactTag(text: string, charWidth: number, color?: string) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        maxWidth: `${charWidth}em`,
+        whiteSpace: "normal",
+        wordBreak: "break-all",
+        lineHeight: 1.4,
+      }}
+    >
+      <Tag
+        color={color}
+        style={{ margin: 0, whiteSpace: "normal", wordBreak: "break-all", lineHeight: 1.4 }}
+      >
+        {text}
+      </Tag>
+    </span>
+  );
+}
+
+function getTablePopupContainer(triggerNode: HTMLElement) {
+  return (triggerNode.closest(".ant-table-wrapper") as HTMLElement | null) ?? document.body;
 }
 
 function filterPresetStorageKey(kbId: string) {
@@ -805,61 +876,68 @@ export default function KnowledgeBrowsePage() {
         title: getFieldLabel("title"),
         dataIndex: "title",
         key: "title",
-        width: 280,
-        render: (_value, record) => (
-          <Button
-            type="link"
-            size="small"
-            style={{ padding: 0, whiteSpace: "nowrap" }}
-            onClick={() => setDetailChunkId(record.id)}
-          >
-            {record.title || "-"}
-          </Button>
-        ),
+        width: charWidthPx(12),
+        render: (_value, record) => {
+          const title = record.title?.trim();
+          if (!title) {
+            return "-";
+          }
+          return (
+            <Tooltip title={title}>
+              <Button
+                type="link"
+                size="small"
+                style={{
+                  padding: 0,
+                  maxWidth: "12em",
+                  whiteSpace: "normal",
+                  wordBreak: "break-all",
+                  textAlign: "left",
+                  height: "auto",
+                  lineHeight: 1.4,
+                }}
+                onClick={() => setDetailChunkId(record.id)}
+              >
+                {title}
+              </Button>
+            </Tooltip>
+          );
+        },
       },
       {
-        title: getFieldLabel("version"),
-        dataIndex: "version",
-        key: "version",
-        width: 120,
-      },
-      {
-        title: getFieldLabel("block_type_label"),
-        dataIndex: "block_type_label",
-        key: "block_type_label",
-        width: 180,
-        render: (value: string) => value || "-",
-      },
-      {
-        title: getFieldLabel("application_type_label"),
-        dataIndex: "application_type_label",
-        key: "application_type_label",
-        width: 140,
-        render: (value: string) => value || "-",
+        title: getFieldLabel("summary"),
+        dataIndex: "summary",
+        key: "summary",
+        width: charWidthPx(20),
+        onCell: () => ({ style: { minWidth: "20em" } }),
+        render: (value: string | null | undefined, record) =>
+          renderCharWidthText(value ?? record.summary, 40, { truncateAt: 40, minWidth: 20 }),
       },
       {
         title: getFieldLabel("business_line_labels"),
         dataIndex: "business_line_labels",
         key: "business_line_labels",
-        width: 180,
-        render: (value: string[]) => (value?.length ? value.join(" / ") : "-"),
+        width: charWidthPx(4),
+        render: (value: string[]) =>
+          renderCharWidthText(value?.length ? value.join(" / ") : undefined, 4),
       },
       {
-        title: getFieldLabel("knowledge_type"),
-        dataIndex: "knowledge_type",
-        key: "knowledge_type",
-        width: 160,
-        render: (value: string) => <Tag>{getEnumLabel("knowledge_type", value)}</Tag>,
+        title: getFieldLabel("block_type_label"),
+        dataIndex: "block_type_label",
+        key: "block_type_label",
+        width: 140,
+        render: (value: string) => value || "-",
       },
       {
         title: getFieldLabel("status"),
         dataIndex: "status",
         key: "status",
-        width: 120,
+        width: charWidthPx(4),
+        onCell: () => ({ style: { minWidth: "4em", maxWidth: "4em" } }),
         render: (value: string, record) => (
-          <Space size={4}>
-            <Tag>{getEnumLabel("status", value)}</Tag>
-            {record.is_expired ? <Tag color="red">已过期</Tag> : null}
+          <Space size={4} direction="vertical" style={{ width: "100%" }}>
+            {renderCompactTag(getEnumLabel("status", value), 4)}
+            {record.is_expired ? renderCompactTag("已过期", 4, "red") : null}
           </Space>
         ),
       },
@@ -867,16 +945,30 @@ export default function KnowledgeBrowsePage() {
         title: getFieldLabel("embedding_status"),
         dataIndex: "embedding_status",
         key: "embedding_status",
-        width: 100,
-        render: (value?: string) => (
-          <Tag>{getEnumLabel("embedding_status", value ?? "pending")}</Tag>
-        ),
+        width: charWidthPx(5),
+        onCell: () => ({ style: { minWidth: "5em", maxWidth: "5em" } }),
+        render: (value?: string) =>
+          renderCompactTag(getEnumLabel("embedding_status", value ?? "pending"), 5),
       },
       {
         title: getFieldLabel("token_count"),
         dataIndex: "token_count",
         key: "token_count",
-        width: 120,
+        width: charWidthPx(5),
+        onCell: () => ({ style: { minWidth: "5em", maxWidth: "5em" } }),
+        render: (value: number) => (
+          <span
+            style={{
+              display: "inline-block",
+              maxWidth: "5em",
+              wordBreak: "break-all",
+              whiteSpace: "normal",
+              lineHeight: 1.4,
+            }}
+          >
+            {value ?? "-"}
+          </span>
+        ),
       },
       {
         title: getFieldLabel("update_time"),
@@ -888,47 +980,62 @@ export default function KnowledgeBrowsePage() {
       {
         title: "操作",
         key: "actions",
-        width: 300,
+        width: 56,
         fixed: "right" as const,
         render: (_value, record) => {
           const indexing = record.embedding_status === "indexing";
           const ready = record.embedding_status === "ready";
           const hasTechnique = Boolean(techniqueByChunkId[record.id]);
+          const actionLoading =
+            indexingId === record.id ||
+            indexing ||
+            deletingId === record.id ||
+            generatingTechniqueId === record.id;
+          const menuItems: MenuProps["items"] = [
+            {
+              key: "index",
+              label: ready ? "重新索引" : "构建索引",
+              disabled: indexing,
+              onClick: () => void handleIndexChunk(record.id),
+            },
+            {
+              key: "technique",
+              label: hasTechnique ? "重新生成技巧" : "生成技巧",
+              disabled: readOnly,
+              onClick: () => handleGenerateWritingTechnique(record.id),
+            },
+            {
+              key: "delete",
+              label: "删除",
+              danger: true,
+              disabled: readOnly,
+              onClick: () => {
+                Modal.confirm({
+                  title: "确认删除该知识吗？",
+                  okText: "删除",
+                  cancelText: "取消",
+                  okButtonProps: { danger: true },
+                  onOk: () => handleDeleteChunk(record.id),
+                });
+              },
+            },
+          ];
           return (
-            <Space size={4}>
+            <Dropdown
+              menu={{ items: menuItems }}
+              trigger={["click"]}
+              placement="bottomRight"
+              getPopupContainer={getTablePopupContainer}
+            >
               <Button
+                type="text"
+                shape="circle"
                 size="small"
-                loading={indexingId === record.id || indexing}
-                disabled={indexing}
-                onClick={() => void handleIndexChunk(record.id)}
-              >
-                {ready ? "重新索引" : "构建索引"}
-              </Button>
-              <Button
-                size="small"
-                loading={generatingTechniqueId === record.id}
-                disabled={readOnly}
-                onClick={() => handleGenerateWritingTechnique(record.id)}
-              >
-                {hasTechnique ? "重新生成技巧" : "生成技巧"}
-              </Button>
-              <Popconfirm
-                title="确认删除该知识吗？"
-                okText="删除"
-                cancelText="取消"
-                onConfirm={() => void handleDeleteChunk(record.id)}
-                disabled={readOnly}
-              >
-                <Button
-                  danger
-                  size="small"
-                  loading={deletingId === record.id}
-                  disabled={readOnly}
-                >
-                  删除
-                </Button>
-              </Popconfirm>
-            </Space>
+                icon={<MoreOutlined />}
+                loading={actionLoading}
+                aria-label="操作"
+              />
+            </Dropdown>
           );
         },
       },
@@ -946,12 +1053,14 @@ export default function KnowledgeBrowsePage() {
   );
 
   const semanticColumns = useMemo((): ColumnsType<KnowledgeChunkSearchItem> => {
-    const titleColumn = baseColumns[0] as ColumnsType<KnowledgeChunkSearchItem>[number];
-    const restColumns = baseColumns
-      .slice(1)
-      .filter((col) => col.key !== "embedding_status") as ColumnsType<KnowledgeChunkSearchItem>;
+    const titleColumn = baseColumns.find((col) => col.key === "title") as
+      | ColumnsType<KnowledgeChunkSearchItem>[number]
+      | undefined;
+    const restColumns = baseColumns.filter(
+      (col) => col.key !== "title" && col.key !== "embedding_status",
+    ) as ColumnsType<KnowledgeChunkSearchItem>;
     return [
-      titleColumn,
+      ...(titleColumn ? [titleColumn] : []),
       {
         title: "匹配分",
         dataIndex: "score",
@@ -1032,13 +1141,13 @@ export default function KnowledgeBrowsePage() {
         <Form form={form} layout="vertical">
           <Row gutter={12} align="middle">
             <Col flex="1 1 160px">
-              <Form.Item name="block_type_code" label={getFieldLabel("block_type_label")}>
-                <TaxonomyCascader />
+              <Form.Item name="business_line_codes" label={getFieldLabel("business_line_labels")}>
+                <Select mode="multiple" allowClear options={businessLineOptions} />
               </Form.Item>
             </Col>
             <Col flex="1 1 160px">
-              <Form.Item name="application_type_code" label={getFieldLabel("application_type_label")}>
-                <Select allowClear options={applicationTypeOptions} />
+              <Form.Item name="block_type_code" label={getFieldLabel("block_type_label")}>
+                <TaxonomyCascader />
               </Form.Item>
             </Col>
             <Col flex="1 1 160px">
@@ -1073,8 +1182,8 @@ export default function KnowledgeBrowsePage() {
             <>
               <Row gutter={12}>
                 <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="business_line_codes" label={getFieldLabel("business_line_labels")}>
-                    <Select mode="multiple" allowClear options={businessLineOptions} />
+                  <Form.Item name="application_type_code" label={getFieldLabel("application_type_label")}>
+                    <Select allowClear options={applicationTypeOptions} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>

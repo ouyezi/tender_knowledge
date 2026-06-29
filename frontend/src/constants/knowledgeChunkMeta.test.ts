@@ -9,9 +9,9 @@ import {
 
 describe("knowledgeChunkMeta", () => {
   it("returns Chinese field labels", () => {
-    expect(getFieldLabel("knowledge_type")).toBe("知识类型");
+    expect(getFieldLabel("knowledge_type")).toBe("形态");
     expect(getFieldLabel("expire_date_from")).toBe("失效日期起");
-    expect(getFieldLabel("block_type_label")).toBe("块类型");
+    expect(getFieldLabel("block_type_label")).toBe("知识类别");
   });
 
   it("labels qualification_info", () => {
