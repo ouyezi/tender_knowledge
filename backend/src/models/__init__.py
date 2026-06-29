@@ -16,6 +16,8 @@ from src.models.image_extraction_cache import ImageExtractionCache
 from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.models.knowledge_blueprint_node import KnowledgeBlueprintNode
 from src.models.knowledge_chunk import KnowledgeChunk
+from src.models.knowledge_taxonomy import KnowledgeTaxonomy
+from src.models.dynamic_knowledge_record import DynamicKnowledgeRecord
 from src.models.writing_technique import WritingTechnique
 from src.models.writing_technique_embedding import WritingTechniqueEmbedding
 from src.models.kb_clone_log import KBCloneLog
@@ -39,6 +41,8 @@ __all__ = [
     "KnowledgeBlueprint",
     "KnowledgeBlueprintNode",
     "KnowledgeChunk",
+    "KnowledgeTaxonomy",
+    "DynamicKnowledgeRecord",
     "WritingTechnique",
     "WritingTechniqueEmbedding",
     "KBCloneLog",

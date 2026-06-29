@@ -153,12 +153,14 @@ def index_knowledge_chunk(db: Session, chunk_id: int) -> str:
         if llm_result:
             fields, warnings = apply_summary_update(
                 current_summary=chunk.summary,
-                current_issue_date=chunk.issue_date,
+                current_certificate_number=chunk.certificate_number,
+                current_certificate_date=chunk.certificate_date,
                 current_expire_date=chunk.expire_date,
                 llm_result=llm_result,
             )
             chunk.summary = fields["summary"]
-            chunk.issue_date = fields["issue_date"]
+            chunk.certificate_number = fields["certificate_number"]
+            chunk.certificate_date = fields["certificate_date"]
             chunk.expire_date = fields["expire_date"]
             if warnings:
                 logger.info("chunk index summary warnings chunk_id=%s warnings=%s", chunk_id, warnings)

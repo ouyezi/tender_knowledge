@@ -17,7 +17,9 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import TaxonomyCascader from "../../components/Knowledge/TaxonomyCascader";
 import { BOOLEAN_OPTIONS, getEnumLabel, getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
+import { useKnowledgeTaxonomy } from "../../hooks/useKnowledgeTaxonomy";
 import { useKBContext } from "../../layout/KBContext";
 import {
   generateWritingTechnique,
@@ -37,22 +39,19 @@ import {
 import KnowledgeChunkDetailDrawer from "./KnowledgeChunkDetailDrawer";
 
 interface FilterFormValues {
-  category?: string;
+  block_type_code?: string;
+  application_type_code?: string;
+  business_line_codes?: string[];
   knowledge_type?: string;
-  source_type?: string;
   status?: string;
-  products?: string[];
-  industries?: string[];
   regions?: string[];
   tags?: string[];
   security_level?: string;
   is_template?: "true" | "false";
-  winning_flag?: "true" | "false";
   review_status?: string;
-  issue_date_from?: string;
-  issue_date_to?: string;
   expire_date_from?: string;
   expire_date_to?: string;
+  expired_only?: "true" | "false";
   keyword?: string;
 }
 
@@ -68,48 +67,42 @@ function normalizeText(value?: string): string | undefined {
 
 function toListParams(values: FilterFormValues): ListKnowledgeChunksParams {
   return {
-    category: normalizeText(values.category),
+    block_type_code: normalizeText(values.block_type_code),
+    application_type_code: normalizeText(values.application_type_code),
+    business_line_codes: values.business_line_codes?.length ? values.business_line_codes : undefined,
     knowledge_type: normalizeText(values.knowledge_type),
-    source_type: normalizeText(values.source_type),
     status: normalizeText(values.status),
-    products: values.products?.length ? values.products : undefined,
-    industries: values.industries?.length ? values.industries : undefined,
     regions: values.regions?.length ? values.regions : undefined,
     tags: values.tags?.length ? values.tags : undefined,
     security_level: normalizeText(values.security_level),
     is_template:
       values.is_template === undefined ? undefined : values.is_template === "true",
-    winning_flag:
-      values.winning_flag === undefined ? undefined : values.winning_flag === "true",
     review_status: normalizeText(values.review_status),
-    issue_date_from: normalizeText(values.issue_date_from),
-    issue_date_to: normalizeText(values.issue_date_to),
     expire_date_from: normalizeText(values.expire_date_from),
     expire_date_to: normalizeText(values.expire_date_to),
+    expired_only:
+      values.expired_only === undefined ? undefined : values.expired_only === "true",
     keyword: normalizeText(values.keyword),
   };
 }
 
 function fromListParams(params: ListKnowledgeChunksParams): FilterFormValues {
   return {
-    category: params.category,
+    block_type_code: params.block_type_code,
+    application_type_code: params.application_type_code,
+    business_line_codes: params.business_line_codes,
     knowledge_type: params.knowledge_type,
-    source_type: params.source_type,
     status: params.status,
-    products: params.products,
-    industries: params.industries,
     regions: params.regions,
     tags: params.tags,
     security_level: params.security_level,
     is_template:
       params.is_template === undefined ? undefined : params.is_template ? "true" : "false",
-    winning_flag:
-      params.winning_flag === undefined ? undefined : params.winning_flag ? "true" : "false",
     review_status: params.review_status,
-    issue_date_from: params.issue_date_from,
-    issue_date_to: params.issue_date_to,
     expire_date_from: params.expire_date_from,
     expire_date_to: params.expire_date_to,
+    expired_only:
+      params.expired_only === undefined ? undefined : params.expired_only ? "true" : "false",
     keyword: params.keyword,
   };
 }
@@ -177,6 +170,16 @@ export default function KnowledgeBrowsePage() {
   const [generatingTechniqueId, setGeneratingTechniqueId] = useState<number>();
   const [techniqueByChunkId, setTechniqueByChunkId] = useState<Record<number, string | null>>({});
   const [deletingId, setDeletingId] = useState<number>();
+  const { items: applicationTypeItems } = useKnowledgeTaxonomy("application_type");
+  const { items: businessLineItems } = useKnowledgeTaxonomy("business_line");
+  const applicationTypeOptions = useMemo(
+    () => applicationTypeItems.map((item) => ({ value: item.code, label: item.label })),
+    [applicationTypeItems],
+  );
+  const businessLineOptions = useMemo(
+    () => businessLineItems.map((item) => ({ value: item.code, label: item.label })),
+    [businessLineItems],
+  );
 
   useEffect(() => {
     if (!selectedKbId) {
@@ -493,11 +496,25 @@ export default function KnowledgeBrowsePage() {
         width: 120,
       },
       {
-        title: getFieldLabel("category"),
-        dataIndex: "category",
-        key: "category",
+        title: getFieldLabel("block_type_label"),
+        dataIndex: "block_type_label",
+        key: "block_type_label",
+        width: 180,
+        render: (value: string) => value || "-",
+      },
+      {
+        title: getFieldLabel("application_type_label"),
+        dataIndex: "application_type_label",
+        key: "application_type_label",
         width: 140,
-        render: (value: string) => getEnumLabel("category", value) || "-",
+        render: (value: string) => value || "-",
+      },
+      {
+        title: getFieldLabel("business_line_labels"),
+        dataIndex: "business_line_labels",
+        key: "business_line_labels",
+        width: 180,
+        render: (value: string[]) => (value?.length ? value.join(" / ") : "-"),
       },
       {
         title: getFieldLabel("knowledge_type"),
@@ -511,7 +528,12 @@ export default function KnowledgeBrowsePage() {
         dataIndex: "status",
         key: "status",
         width: 120,
-        render: (value: string) => <Tag>{getEnumLabel("status", value)}</Tag>,
+        render: (value: string, record) => (
+          <Space size={4}>
+            <Tag>{getEnumLabel("status", value)}</Tag>
+            {record.is_expired ? <Tag color="red">已过期</Tag> : null}
+          </Space>
+        ),
       },
       {
         title: getFieldLabel("embedding_status"),
@@ -666,8 +688,13 @@ export default function KnowledgeBrowsePage() {
         <Form form={form} layout="vertical">
           <Row gutter={12} align="middle">
             <Col flex="1 1 160px">
-              <Form.Item name="category" label={getFieldLabel("category")}>
-                <Select allowClear options={getEnumOptions("category")} />
+              <Form.Item name="block_type_code" label={getFieldLabel("block_type_label")}>
+                <TaxonomyCascader />
+              </Form.Item>
+            </Col>
+            <Col flex="1 1 160px">
+              <Form.Item name="application_type_code" label={getFieldLabel("application_type_label")}>
+                <Select allowClear options={applicationTypeOptions} />
               </Form.Item>
             </Col>
             <Col flex="1 1 160px">
@@ -702,18 +729,8 @@ export default function KnowledgeBrowsePage() {
             <>
               <Row gutter={12}>
                 <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="source_type" label={getFieldLabel("source_type")}>
-                    <Select allowClear options={getEnumOptions("source_type")} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="products" label={getFieldLabel("products")}>
-                    <Select mode="tags" allowClear />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="industries" label={getFieldLabel("industries")}>
-                    <Select mode="tags" allowClear />
+                  <Form.Item name="business_line_codes" label={getFieldLabel("business_line_labels")}>
+                    <Select mode="multiple" allowClear options={businessLineOptions} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
@@ -737,23 +754,13 @@ export default function KnowledgeBrowsePage() {
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="winning_flag" label={getFieldLabel("winning_flag")}>
+                  <Form.Item name="expired_only" label={getFieldLabel("is_expired")}>
                     <Select allowClear options={[...BOOLEAN_OPTIONS]} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Form.Item name="review_status" label={getFieldLabel("review_status")}>
                     <Select allowClear options={getEnumOptions("review_status")} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="issue_date_from" label={getFieldLabel("issue_date_from")}>
-                    <Input placeholder="YYYY-MM-DD" allowClear />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="issue_date_to" label={getFieldLabel("issue_date_to")}>
-                    <Input placeholder="YYYY-MM-DD" allowClear />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>

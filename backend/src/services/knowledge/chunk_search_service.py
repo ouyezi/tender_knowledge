@@ -177,7 +177,7 @@ def search_knowledge_chunks(
                 "title": chunk.title,
                 "summary": chunk.summary,
                 "version": chunk.version,
-                "category": chunk.category,
+                "block_type_code": chunk.block_type_code,
                 "knowledge_type": chunk.knowledge_type,
                 "status": chunk.status,
                 "embedding_status": chunk.embedding_status,

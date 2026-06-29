@@ -7,6 +7,7 @@ from src.models.document import Document, DocumentParseStatus, DocumentSourceTyp
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
 from src.services.doc_chunk.content_md_store import persist_content_md
+from tests.helpers.chunk_payload import minimal_chunk_payload
 
 
 def _seed_file_import(db_session, kb_id):
@@ -81,49 +82,27 @@ def _seed_content_md(tmp_path, document_id):
 
 
 def _create_payload(doc_id, node_id, *, title: str, summary: str):
-    return {
-        "doc_id": str(doc_id),
-        "primary_node_id": str(node_id),
-        "title": title,
-        "content": "知识正文内容",
-        "summary": summary,
-        "knowledge_type": "fact",
-        "content_type": "text",
-        "source_type": "bid",
-        "file_name": "knowledge-v2-api.docx",
-        "project_name": "测试项目",
-        "page_start": 1,
-        "page_end": 2,
-        "char_start": 0,
-        "char_end": 16,
-        "parent_id": None,
-        "need_parent_context": False,
-        "quote_mode": "full",
-        "category": "technical",
-        "tags": ["投标", "技术"],
-        "products": ["产品A"],
-        "industries": ["行业A"],
-        "customer_types": ["客户A"],
-        "regions": ["华东"],
-        "issue_date": None,
-        "expire_date": None,
-        "status": "draft",
-        "is_template": False,
-        "template_type": None,
-        "variables": [],
-        "is_immutable": False,
-        "exclusion_rules": [],
-        "retrieval_weight": 1.0,
-        "security_level": "internal",
-        "owner": "tester",
-        "review_status": "approved",
-        "winning_flag": False,
-        "edit_distance_avg": None,
-        "force": False,
-    }
+    payload = minimal_chunk_payload(
+        title=title,
+        summary=summary,
+        file_name="knowledge-v2-api.docx",
+        tags=["投标", "技术"],
+        regions=["华东"],
+        owner="tester",
+    )
+    payload.update(
+        {
+            "doc_id": str(doc_id),
+            "primary_node_id": str(node_id),
+            "content": "知识正文内容",
+            "force": False,
+        }
+    )
+    return payload
 
 
-def test_knowledge_preview_returns_200(client, db_session, seeded_kb, tmp_path):
+def test_knowledge_preview_returns_200(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     _seed_content_md(tmp_path, document.document_id)
 
@@ -138,7 +117,8 @@ def test_knowledge_preview_returns_200(client, db_session, seeded_kb, tmp_path):
     assert "父节点内容" in payload["content_md"]
 
 
-def test_knowledge_create_returns_201(client, db_session, seeded_kb, tmp_path):
+def test_knowledge_create_returns_201(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     _seed_content_md(tmp_path, document.document_id)
     payload = _create_payload(
@@ -157,7 +137,8 @@ def test_knowledge_create_returns_201(client, db_session, seeded_kb, tmp_path):
     assert data["knowledge_code"]
 
 
-def test_knowledge_duplicate_returns_409(client, db_session, seeded_kb, tmp_path):
+def test_knowledge_duplicate_returns_409(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     _seed_content_md(tmp_path, document.document_id)
     payload = _create_payload(
@@ -176,7 +157,8 @@ def test_knowledge_duplicate_returns_409(client, db_session, seeded_kb, tmp_path
     assert err["details"]["existing_version"] == "1.0"
 
 
-def test_knowledge_force_create_returns_11(client, db_session, seeded_kb, tmp_path):
+def test_knowledge_force_create_returns_11(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     _seed_content_md(tmp_path, document.document_id)
     payload = _create_payload(
@@ -195,7 +177,8 @@ def test_knowledge_force_create_returns_11(client, db_session, seeded_kb, tmp_pa
     assert second.json()["data"]["version"] == "1.1"
 
 
-def test_knowledge_list_supports_keyword_filter(client, db_session, seeded_kb, tmp_path):
+def test_knowledge_list_supports_keyword_filter(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
     document, parent, child = _seed_document_tree(db_session, seeded_kb.kb_id)
     _seed_content_md(tmp_path, document.document_id)
 
@@ -225,3 +208,65 @@ def test_knowledge_list_supports_keyword_filter(client, db_session, seeded_kb, t
     assert data["total"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["title"] == "网络架构要求"
+
+
+def test_create_chunk_returns_taxonomy_fields(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    _seed_content_md(tmp_path, document.document_id)
+    payload = _create_payload(
+        document.document_id,
+        parent.node_id,
+        title="分类测试",
+        summary="分类摘要",
+    )
+    payload["block_type_code"] = "official_template"
+    payload["application_type_code"] = "template_fill"
+    payload["business_line_codes"] = ["insurance"]
+
+    resp = client.post(f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks", json=payload)
+    assert resp.status_code == 201
+    chunk_id = resp.json()["data"]["id"]
+
+    detail = client.get(f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/{chunk_id}")
+    assert detail.status_code == 200
+    data = detail.json()["data"]
+    assert data["block_type_code"] == "official_template"
+    assert data["block_type_label"] == "官方模版"
+    assert data["application_type_code"] == "template_fill"
+    assert data["application_type_label"] == "模版填充"
+    assert data["business_line_codes"] == ["insurance"]
+    assert data["business_line_labels"] == ["保险"]
+    assert "is_expired" in data
+
+
+def test_chunk_detail_excludes_internal_char_fields(
+    client, db_session, seeded_kb, seeded_taxonomy, tmp_path
+):
+    _ = seeded_taxonomy
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    _seed_content_md(tmp_path, document.document_id)
+    create = client.post(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks",
+        json={
+            "doc_id": str(document.document_id),
+            "primary_node_id": str(parent.node_id),
+            "title": "T",
+            "content": "正文",
+            "knowledge_type": "fact",
+            "block_type_code": "ip_patent",
+            "application_type_code": "fixed_reference",
+            "business_line_codes": ["general"],
+            "certificate_number": "NO-1",
+            "certificate_date": "2024-01-01",
+        },
+    )
+    assert create.status_code == 201
+    chunk_id = create.json()["data"]["id"]
+    detail = client.get(f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/{chunk_id}").json()["data"]
+    assert detail["certificate_number"] == "NO-1"
+    assert "char_start" not in detail
+    assert "section_char_start" in detail
+    assert "page_start" not in detail
+    assert "winning_flag" not in detail
+    assert "issue_date" not in detail

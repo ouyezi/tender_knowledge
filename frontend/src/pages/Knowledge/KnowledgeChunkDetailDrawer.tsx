@@ -1,4 +1,4 @@
-import { Button, Card, Descriptions, Drawer, Empty, Space, Spin, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Space, Spin, Tag, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import KnowledgeSummarySection from "../../components/Knowledge/KnowledgeSummarySection";
@@ -86,18 +86,12 @@ function BaseInfo({ detail, onOpenChunk }: { detail: KnowledgeChunkDetail; onOpe
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("doc_id")}>{detail.doc_id}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("file_name")}>{detail.file_name || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("source_type")}>
-        {getEnumLabel("source_type", detail.source_type)}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("project_name")}>{detail.project_name || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("page_start")}>{detail.page_start ?? "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("page_end")}>{detail.page_end ?? "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("char_start")}>{detail.char_start ?? "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("char_end")}>{detail.char_end ?? "-"}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("primary_node_id")}>{detail.primary_node_id}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("parent_id")}>{detail.parent_id ?? "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("category")}>
-        {getEnumLabel("category", detail.category)}
+      <Descriptions.Item label={getFieldLabel("block_type_label")}>
+        {detail.block_type_label || detail.block_type_code || "-"}
+      </Descriptions.Item>
+      <Descriptions.Item label={getFieldLabel("application_type_label")}>
+        {detail.application_type_label || detail.application_type_code || "-"}
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("status")}>{getEnumLabel("status", detail.status)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("security_level")}>
@@ -107,26 +101,25 @@ function BaseInfo({ detail, onOpenChunk }: { detail: KnowledgeChunkDetail; onOpe
         {getEnumLabel("review_status", detail.review_status)}
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("owner")}>{detail.owner || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("quote_mode")}>
-        {getEnumLabel("quote_mode", detail.quote_mode)}
+      <Descriptions.Item label={getFieldLabel("business_line_labels")}>
+        {renderTagList(detail.business_line_labels)}
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("template_type")}>
         {getEnumLabel("template_type", detail.template_type)}
       </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("retrieval_weight")}>{detail.retrieval_weight}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("edit_distance_avg")}>{detail.edit_distance_avg ?? "-"}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("token_count")}>{detail.token_count}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("content_hash")}>{detail.content_hash || "-"}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("has_children")}>{formatBoolean(detail.has_children)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("children_count")}>{detail.children_count}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("is_template")}>{formatBoolean(detail.is_template)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("is_immutable")}>{formatBoolean(detail.is_immutable)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("winning_flag")}>{formatBoolean(detail.winning_flag)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("need_parent_context")}>
-        {formatBoolean(detail.need_parent_context)}
+      <Descriptions.Item label={getFieldLabel("certificate_number")}>
+        {detail.certificate_number || "-"}
       </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("issue_date")}>{detail.issue_date || "-"}</Descriptions.Item>
+      <Descriptions.Item label={getFieldLabel("certificate_date")}>
+        {detail.certificate_date || "-"}
+      </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("expire_date")}>{detail.expire_date || "-"}</Descriptions.Item>
+      <Descriptions.Item label={getFieldLabel("is_expired")}>{formatBoolean(detail.is_expired)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("create_time")}>{formatDateTime(detail.create_time)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("update_time")}>{formatDateTime(detail.update_time)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("embedding_status")}>
@@ -199,11 +192,7 @@ export default function KnowledgeChunkDetailDrawer({
   }, [chunkId, detail?.embedding_status, loadDetail, open]);
 
   const catalogPathText = useMemo(() => JSON.stringify(detail?.catalog_path ?? [], null, 2), [detail?.catalog_path]);
-  const variablesText = useMemo(() => JSON.stringify(detail?.variables ?? [], null, 2), [detail?.variables]);
-  const exclusionRulesText = useMemo(
-    () => JSON.stringify(detail?.exclusion_rules ?? [], null, 2),
-    [detail?.exclusion_rules],
-  );
+  const sectionCharStart = detail?.section_char_start ?? null;
 
   return (
     <Drawer
@@ -223,13 +212,21 @@ export default function KnowledgeChunkDetailDrawer({
 
       {!loading && detail ? (
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          {detail.is_expired ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="该知识已过期"
+              description="当前知识已超过失效日期，建议优先核验并更新内容后再使用。"
+            />
+          ) : null}
           <BaseInfo detail={detail} onOpenChunk={onOpenChunk} />
 
           <Card title={getFieldLabel("content")}>
             <KnowledgeContentViewer
               contentMd={detail.content || ""}
               assets={detail.assets}
-              sectionCharStart={detail.char_start}
+              sectionCharStart={sectionCharStart}
               kbId={kbId}
               imageRefMap={detail.image_ref_map}
               showImageExtraction
@@ -242,20 +239,10 @@ export default function KnowledgeChunkDetailDrawer({
                 <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{catalogPathText}</pre>
               </Descriptions.Item>
               <Descriptions.Item label={getFieldLabel("tags")}>{renderTagList(detail.tags)}</Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("products")}>{renderTagList(detail.products)}</Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("industries")}>
-                {renderTagList(detail.industries)}
-              </Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("customer_types")}>
-                {renderTagList(detail.customer_types)}
+              <Descriptions.Item label={getFieldLabel("business_line_labels")}>
+                {renderTagList(detail.business_line_labels)}
               </Descriptions.Item>
               <Descriptions.Item label={getFieldLabel("regions")}>{renderTagList(detail.regions)}</Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("variables")}>
-                <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{variablesText}</pre>
-              </Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("exclusion_rules")}>
-                <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{exclusionRulesText}</pre>
-              </Descriptions.Item>
             </Descriptions>
           </Card>
 

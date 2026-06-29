@@ -15,6 +15,8 @@ from src.services.knowledge.chunk_service import (
     ChunkConflictError,
     create_knowledge_chunk,
 )
+from src.services.knowledge.taxonomy_service import TaxonomyValidationError
+from tests.helpers.chunk_payload import minimal_chunk_payload
 
 
 def _seed_file_import(db_session, kb_id):
@@ -78,46 +80,6 @@ def _seed_document_tree(db_session, kb_id):
     return document, parent, child
 
 
-def _payload(content: str = "正文内容 A B C") -> dict:
-    return {
-        "title": "章节标题",
-        "content": content,
-        "summary": "摘要",
-        "knowledge_type": "fact",
-        "content_type": "text",
-        "source_type": "bid",
-        "file_name": "chunk-service.docx",
-        "project_name": "测试项目",
-        "page_start": 1,
-        "page_end": 2,
-        "char_start": 0,
-        "char_end": 10,
-        "parent_id": None,
-        "need_parent_context": False,
-        "quote_mode": "full",
-        "category": "technical",
-        "tags": ["tag-a"],
-        "products": ["prod-a"],
-        "industries": ["ind-a"],
-        "customer_types": ["cust-a"],
-        "regions": ["region-a"],
-        "issue_date": None,
-        "expire_date": None,
-        "status": "draft",
-        "is_template": False,
-        "template_type": None,
-        "variables": [],
-        "is_immutable": False,
-        "exclusion_rules": [],
-        "retrieval_weight": 1.0,
-        "security_level": "internal",
-        "owner": "tester",
-        "review_status": "approved",
-        "winning_flag": False,
-        "edit_distance_avg": None,
-    }
-
-
 def test_create_chunk_initial_version(db_session, seeded_kb, tmp_path):
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     source = tmp_path / "content.md"
@@ -139,7 +101,7 @@ def test_create_chunk_initial_version(db_session, seeded_kb, tmp_path):
     chunk = create_knowledge_chunk(
         db_session,
         kb_id=seeded_kb.kb_id,
-        payload=_payload(),
+        payload=minimal_chunk_payload(),
         doc_id=document.document_id,
         primary_node_id=parent.node_id,
     )
@@ -151,6 +113,9 @@ def test_create_chunk_initial_version(db_session, seeded_kb, tmp_path):
     assert chunk.token_count == 4
     assert chunk.children_count == 1
     assert chunk.has_children is True
+    assert chunk.block_type_code == "product_solution"
+    assert chunk.application_type_code == "preferred_reference"
+    assert chunk.business_line_codes == ["general"]
     assert chunk.catalog_path == [
         {"node_id": str(parent.node_id), "title": "第一章 总则", "level": 1}
     ]
@@ -168,7 +133,7 @@ def test_create_chunk_conflict_without_force(db_session, seeded_kb, tmp_path):
     create_knowledge_chunk(
         db_session,
         kb_id=seeded_kb.kb_id,
-        payload=_payload(),
+        payload=minimal_chunk_payload(),
         doc_id=document.document_id,
         primary_node_id=parent.node_id,
     )
@@ -177,7 +142,7 @@ def test_create_chunk_conflict_without_force(db_session, seeded_kb, tmp_path):
         create_knowledge_chunk(
             db_session,
             kb_id=seeded_kb.kb_id,
-            payload=_payload(),
+            payload=minimal_chunk_payload(),
             doc_id=document.document_id,
             primary_node_id=parent.node_id,
             force=False,
@@ -196,14 +161,14 @@ def test_create_chunk_force_bumps_version(db_session, seeded_kb, tmp_path):
     first = create_knowledge_chunk(
         db_session,
         kb_id=seeded_kb.kb_id,
-        payload=_payload("首版内容"),
+        payload=minimal_chunk_payload(content="首版内容"),
         doc_id=document.document_id,
         primary_node_id=parent.node_id,
     )
     second = create_knowledge_chunk(
         db_session,
         kb_id=seeded_kb.kb_id,
-        payload=_payload("覆盖内容"),
+        payload=minimal_chunk_payload(content="覆盖内容"),
         doc_id=document.document_id,
         primary_node_id=parent.node_id,
         force=True,
@@ -213,3 +178,55 @@ def test_create_chunk_force_bumps_version(db_session, seeded_kb, tmp_path):
     assert second.previous_version_id == first.id
     db_session.refresh(first)
     assert first.is_latest is False
+
+
+def test_create_chunk_auto_sets_char_range_and_certificate_fields(
+    db_session, seeded_kb, tmp_path
+):
+    from src.models.knowledge_chunk import KnowledgeChunk
+
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    source = tmp_path / "content.md"
+    source.write_text("# 第一章 总则\n\n## 1.1\n\n资质正文XYZ\n", encoding="utf-8")
+    persisted = persist_content_md(document_id=document.document_id, source_path=Path(source))
+    assert persisted is not None
+
+    chunk = create_knowledge_chunk(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        payload=minimal_chunk_payload(
+            content="资质正文XYZ",
+            certificate_number="CERT-001, CERT-002",
+            certificate_date="2024-01-01,2025-01-01",
+            expire_date="2025-06-01",
+        ),
+        doc_id=document.document_id,
+        primary_node_id=parent.node_id,
+    )
+    row = db_session.get(KnowledgeChunk, chunk.id)
+    assert row is not None
+    assert row.char_start is not None
+    assert row.char_end is not None
+    assert row.certificate_number == "CERT-001,CERT-002"
+    assert row.certificate_date == "2024-01-01,2025-01-01"
+    assert not hasattr(row, "page_start")
+    assert row.expire_date is not None
+    assert row.expire_date.isoformat() == "2025-06-01"
+
+
+def test_create_chunk_rejects_invalid_block_type(db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    source = tmp_path / "content.md"
+    source.write_text("# 第一章 总则\n\n正文内容\n", encoding="utf-8")
+    persisted = persist_content_md(document_id=document.document_id, source_path=Path(source))
+    assert persisted is not None
+
+    with pytest.raises(TaxonomyValidationError):
+        create_knowledge_chunk(
+            db_session,
+            kb_id=seeded_kb.kb_id,
+            payload=minimal_chunk_payload(block_type_code="bogus"),
+            doc_id=document.document_id,
+            primary_node_id=parent.node_id,
+        )

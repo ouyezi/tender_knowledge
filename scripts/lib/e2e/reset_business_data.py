@@ -11,11 +11,15 @@ from src.config import Settings
 from src.db.session import engine
 
 BUSINESS_TABLES: tuple[str, ...] = (
+    "writing_technique_embeddings",
+    "writing_techniques",
     "chunk_embeddings",
     "chunk_assets",
     "knowledge_chunks",
+    "dynamic_knowledge_records",
     "knowledge_blueprint_nodes",
     "knowledge_blueprints",
+    "blueprint_embeddings",
     "document_media_assets",
     "document_parse_suggestions",
     "document_tree_nodes",
@@ -26,6 +30,7 @@ BUSINESS_TABLES: tuple[str, ...] = (
     "import_tasks",
     "file_purpose_suggestions",
     "file_imports",
+    "image_extraction_cache",
     "kb_clone_logs",
 )
 

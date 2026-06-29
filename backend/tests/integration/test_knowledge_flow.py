@@ -10,6 +10,7 @@ from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
 from src.services.doc_chunk.content_md_store import persist_content_md
 from src.services.knowledge.asset_seed_service import seed_chunk_assets_from_workspace
+from tests.helpers.chunk_payload import minimal_chunk_payload
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "doc_chunk_workspace_minimal"
 
@@ -125,49 +126,27 @@ def _seed_chunk_assets_optional(tmp_path, db_session, kb_id, doc_id):
 
 
 def _create_payload(doc_id, node_id, *, summary: str, force: bool = False):
-    return {
-        "doc_id": str(doc_id),
-        "primary_node_id": str(node_id),
-        "title": "网络架构要求",
-        "content": "知识正文内容",
-        "summary": summary,
-        "knowledge_type": "fact",
-        "content_type": "text",
-        "source_type": "bid",
-        "file_name": "knowledge-v2-flow.docx",
-        "project_name": "测试项目",
-        "page_start": 1,
-        "page_end": 2,
-        "char_start": 0,
-        "char_end": 16,
-        "parent_id": None,
-        "need_parent_context": False,
-        "quote_mode": "full",
-        "category": "technical",
-        "tags": ["投标", "技术"],
-        "products": ["产品A"],
-        "industries": ["行业A"],
-        "customer_types": ["客户A"],
-        "regions": ["华东"],
-        "issue_date": None,
-        "expire_date": None,
-        "status": "draft",
-        "is_template": False,
-        "template_type": None,
-        "variables": [],
-        "is_immutable": False,
-        "exclusion_rules": [],
-        "retrieval_weight": 1.0,
-        "security_level": "internal",
-        "owner": "tester",
-        "review_status": "approved",
-        "winning_flag": False,
-        "edit_distance_avg": None,
-        "force": force,
-    }
+    payload = minimal_chunk_payload(
+        title="网络架构要求",
+        content="知识正文内容",
+        summary=summary,
+        file_name="knowledge-v2-flow.docx",
+        tags=["投标", "技术"],
+        regions=["华东"],
+        owner="tester",
+    )
+    payload.update(
+        {
+            "doc_id": str(doc_id),
+            "primary_node_id": str(node_id),
+            "force": force,
+        }
+    )
+    return payload
 
 
-def test_knowledge_full_regression_flow(client, db_session, seeded_kb, tmp_path):
+def test_knowledge_full_regression_flow(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+    _ = seeded_taxonomy
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     _seed_content_md(tmp_path, document.document_id)
     seeded_assets = _seed_chunk_assets_optional(

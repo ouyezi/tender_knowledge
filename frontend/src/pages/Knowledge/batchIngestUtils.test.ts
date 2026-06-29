@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAutoCreatePayload,
+  buildPrefillMetadata,
   collectCheckedNodeIds,
   withRetry,
 } from "./batchIngestUtils";
@@ -56,6 +57,30 @@ describe("collectCheckedNodeIds", () => {
   });
 });
 
+describe("buildPrefillMetadata", () => {
+  it("includes catalog and asset summary for prefill context", () => {
+    const metadata = buildPrefillMetadata({
+      preview: {
+        title: "1.1 资质",
+        content_md: "正文",
+        content_type: "mixed",
+        char_start: null,
+        char_end: null,
+        page_start: null,
+        page_end: null,
+        catalog_path: [{ node_id: "b", title: "1.1 资质", level: 2 }],
+        assets: [{ asset_type: "table", asset_code: null, char_start: 0, raw_markdown: null, image_storage_url: null }],
+      },
+      documentName: "标书.docx",
+      sourceType: "bid",
+    });
+    expect(metadata.chapter_title).toBe("1.1 资质");
+    expect(metadata.file_name).toBe("标书.docx");
+    expect(metadata.content_type_hint).toBe("mixed");
+    expect(metadata.asset_summary).toMatchObject({ has_table: true, total: 1 });
+  });
+});
+
 describe("buildAutoCreatePayload", () => {
   const preview: NodePreview = {
     title: "节点标题",
@@ -73,23 +98,20 @@ describe("buildAutoCreatePayload", () => {
     summary: "摘要",
     knowledge_type: "technical",
     content_type: "markdown",
-    source_type: "bid",
     file_name: "标书.docx",
-    quote_mode: "verbatim",
-    category: "solution",
+    block_type_code: "qualification_document",
+    application_type_code: "preferred_reference",
+    business_line_codes: ["general"],
     tags: ["tag1"],
-    products: [],
-    industries: [],
-    customer_types: [],
     regions: [],
     status: "draft",
     security_level: "internal",
     review_status: "pending",
     is_template: false,
-    winning_flag: true,
     template_type: null,
-    issue_date: null,
-    expire_date: null,
+    certificate_number: "CERT-001",
+    certificate_date: "2024-01-01",
+    expire_date: "2025-12-31",
   };
 
   it("maps preview + prefill to create payload with force defaults", () => {
@@ -108,12 +130,12 @@ describe("buildAutoCreatePayload", () => {
       content: "# 正文",
       summary: "摘要",
       catalog_path: preview.catalog_path,
-      variables: [],
-      exclusion_rules: [],
-      need_parent_context: false,
-      is_immutable: false,
-      retrieval_weight: 1,
-      winning_flag: true,
+      certificate_number: "CERT-001",
+      certificate_date: "2024-01-01",
+      expire_date: "2025-12-31",
+      block_type_code: "qualification_document",
+      application_type_code: "preferred_reference",
+      business_line_codes: ["general"],
     });
   });
 
@@ -127,14 +149,13 @@ describe("buildAutoCreatePayload", () => {
     expect(payload.title).toBe("节点标题");
   });
 
-  it("normalizes invalid issue_date and expire_date to null", () => {
+  it("normalizes invalid expire_date to null", () => {
     const payload = buildAutoCreatePayload({
       docId: "doc-1",
       nodeId: "b",
       preview,
-      prefill: { ...prefill, issue_date: "", expire_date: "invalid" },
+      prefill: { ...prefill, expire_date: "invalid" },
     });
-    expect(payload.issue_date).toBeNull();
     expect(payload.expire_date).toBeNull();
   });
 });
