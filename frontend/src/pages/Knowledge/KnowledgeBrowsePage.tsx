@@ -8,15 +8,18 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Progress,
   Row,
   Select,
   Space,
   Table,
   Tag,
+  Typography,
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Key } from "react";
 import TaxonomyCascader from "../../components/Knowledge/TaxonomyCascader";
 import { BOOLEAN_OPTIONS, getEnumLabel, getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
 import { useKnowledgeTaxonomy } from "../../hooks/useKnowledgeTaxonomy";
@@ -27,16 +30,35 @@ import {
 } from "../../services/writingTechniques";
 import {
   deleteKnowledgeChunk,
+  getKnowledgeChunk,
   indexKnowledgeChunk,
   listKnowledgeChunks,
+  markChunksIndexFailed,
   parseChunkSearchQuery,
   searchKnowledgeChunks,
+  TERMINAL_EMBEDDING_STATUSES,
   waitForChunkIndexComplete,
   type KnowledgeChunkListItem,
   type KnowledgeChunkSearchItem,
   type ListKnowledgeChunksParams,
 } from "../../services/knowledgeChunks";
+import { partitionIndexableChunks, runWithConcurrency } from "./batchIndexUtils";
 import KnowledgeChunkDetailDrawer from "./KnowledgeChunkDetailDrawer";
+
+const { Text } = Typography;
+const BATCH_INDEX_CONCURRENCY = 3;
+const BATCH_INDEX_POLL_MS = 3000;
+const BATCH_INDEX_TIMEOUT_MS = 30 * 60 * 1000;
+
+interface BatchIndexState {
+  active: boolean;
+  submittedIds: number[];
+  skippedIds: number[];
+  terminalIds: number[];
+  failedIds: number[];
+  cancelRequested: boolean;
+  submitFailedIds: number[];
+}
 
 interface FilterFormValues {
   block_type_code?: string;
@@ -170,6 +192,11 @@ export default function KnowledgeBrowsePage() {
   const [generatingTechniqueId, setGeneratingTechniqueId] = useState<number>();
   const [techniqueByChunkId, setTechniqueByChunkId] = useState<Record<number, string | null>>({});
   const [deletingId, setDeletingId] = useState<number>();
+  const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
+  const [batchIndex, setBatchIndex] = useState<BatchIndexState | null>(null);
+  const [showBatchProgress, setShowBatchProgress] = useState(false);
+  const batchCancelRef = useRef(false);
+  const batchIndexRef = useRef<BatchIndexState | null>(null);
   const { items: applicationTypeItems } = useKnowledgeTaxonomy("application_type");
   const { items: businessLineItems } = useKnowledgeTaxonomy("business_line");
   const applicationTypeOptions = useMemo(
@@ -189,6 +216,30 @@ export default function KnowledgeBrowsePage() {
     }
     setPresets(loadPresets(selectedKbId));
     setSelectedPresetName(undefined);
+  }, [selectedKbId]);
+
+  useEffect(() => {
+    batchIndexRef.current = batchIndex;
+  }, [batchIndex]);
+
+  useEffect(() => {
+    setSelectedRowKeys([]);
+    setBatchIndex(null);
+    setShowBatchProgress(false);
+    batchCancelRef.current = false;
+  }, [selectedKbId]);
+
+  useEffect(() => {
+    return () => {
+      const active = batchIndexRef.current;
+      const kbId = selectedKbId;
+      if (active?.active && kbId) {
+        const pending = active.submittedIds.filter((id) => !active.terminalIds.includes(id));
+        if (pending.length > 0) {
+          void markChunksIndexFailed(kbId, pending);
+        }
+      }
+    };
   }, [selectedKbId]);
 
   const refreshList = useCallback(async () => {
@@ -218,6 +269,283 @@ export default function KnowledgeBrowsePage() {
       void refreshList();
     }
   }, [refreshList, semanticMode]);
+
+  const currentRows = useMemo(
+    () => (semanticMode ? searchItems : items),
+    [items, searchItems, semanticMode],
+  );
+
+  const titleById = useMemo(
+    () => new Map(currentRows.map((row) => [row.id, row.title || `ID ${row.id}`])),
+    [currentRows],
+  );
+
+  const applyEmbeddingStatuses = useCallback(
+    (statusById: Map<number, string>) => {
+      if (semanticMode) {
+        setSearchItems((prev) =>
+          prev.map((item) => {
+            const next = statusById.get(item.id);
+            return next ? { ...item, embedding_status: next } : item;
+          }),
+        );
+      } else {
+        setItems((prev) =>
+          prev.map((item) => {
+            const next = statusById.get(item.id);
+            return next ? { ...item, embedding_status: next } : item;
+          }),
+        );
+      }
+    },
+    [semanticMode],
+  );
+
+  const fetchStatusesForIds = useCallback(
+    async (ids: number[]) => {
+      if (!selectedKbId || ids.length === 0) return new Map<number, string>();
+      const pairs = await Promise.all(
+        ids.map(async (id) => {
+          const detail = await getKnowledgeChunk(selectedKbId, id);
+          return [id, detail?.embedding_status ?? "failed"] as const;
+        }),
+      );
+      return new Map(pairs);
+    },
+    [selectedKbId],
+  );
+
+  const finalizeBatchIndex = useCallback(
+    (state: BatchIndexState, cancelled: boolean) => {
+      const failedCount = state.failedIds.length + state.submitFailedIds.length;
+      const successCount = state.terminalIds.filter((id) => !state.failedIds.includes(id)).length;
+
+      if (cancelled) {
+        message.info(`已停止批量索引（成功 ${successCount} 条，失败 ${failedCount} 条）`);
+      } else if (failedCount === 0) {
+        message.success(`批量索引完成，共 ${state.submittedIds.length} 条`);
+      } else {
+        message.warning(`批量索引完成：成功 ${successCount} 条，失败 ${failedCount} 条`);
+        Modal.info({
+          title: "批量索引失败明细",
+          width: 560,
+          content: (
+            <ul style={{ paddingLeft: 20, margin: 0 }}>
+              {[...state.failedIds, ...state.submitFailedIds].map((id) => (
+                <li key={id}>{titleById.get(id) ?? `ID ${id}`}</li>
+              ))}
+            </ul>
+          ),
+        });
+      }
+
+      window.setTimeout(() => {
+        setShowBatchProgress(false);
+        setBatchIndex(null);
+        setSelectedRowKeys([]);
+        batchCancelRef.current = false;
+      }, 2000);
+    },
+    [titleById],
+  );
+
+  const handleBatchIndexCancel = useCallback(async () => {
+    const active = batchIndexRef.current;
+    if (!selectedKbId || !active?.active) {
+      return;
+    }
+
+    batchCancelRef.current = true;
+    setBatchIndex((prev) => (prev ? { ...prev, cancelRequested: true } : prev));
+
+    const pendingIds = active.submittedIds.filter((id) => !active.terminalIds.includes(id));
+    if (pendingIds.length > 0) {
+      try {
+        await markChunksIndexFailed(selectedKbId, pendingIds);
+        const statusById = await fetchStatusesForIds(pendingIds);
+        applyEmbeddingStatuses(statusById);
+      } catch (error) {
+        message.error((error as Error).message);
+      }
+    }
+
+    const finalState: BatchIndexState = {
+      ...active,
+      active: false,
+      cancelRequested: true,
+      failedIds: Array.from(new Set([...active.failedIds, ...pendingIds])),
+      terminalIds: Array.from(new Set([...active.terminalIds, ...pendingIds])),
+    };
+    setBatchIndex(finalState);
+    finalizeBatchIndex(finalState, true);
+  }, [applyEmbeddingStatuses, fetchStatusesForIds, finalizeBatchIndex, selectedKbId]);
+
+  const handleBatchIndex = useCallback(async () => {
+    if (!selectedKbId || batchIndexRef.current?.active) {
+      return;
+    }
+
+    const { indexableIds, indexingIds } = partitionIndexableChunks(currentRows, selectedRowKeys);
+
+    if (indexingIds.length > 0) {
+      message.warning(`已跳过 ${indexingIds.length} 条正在索引中的知识`);
+    }
+    if (indexableIds.length === 0) {
+      message.warning("所选知识均在索引中或无效");
+      return;
+    }
+
+    batchCancelRef.current = false;
+    setShowBatchProgress(true);
+    const initial: BatchIndexState = {
+      active: true,
+      submittedIds: [],
+      skippedIds: indexingIds,
+      terminalIds: [],
+      failedIds: [],
+      cancelRequested: false,
+      submitFailedIds: [],
+    };
+    setBatchIndex(initial);
+    batchIndexRef.current = initial;
+
+    const submittedIds: number[] = [];
+    const submitFailedIds: number[] = [];
+    const skippedIds = [...indexingIds];
+
+    const submitResults = await runWithConcurrency(
+      indexableIds,
+      async (id) => {
+        if (batchCancelRef.current) {
+          throw new Error("cancelled");
+        }
+        await indexKnowledgeChunk(selectedKbId, id);
+        submittedIds.push(id);
+        applyEmbeddingStatuses(new Map([[id, "indexing"]]));
+        return id;
+      },
+      BATCH_INDEX_CONCURRENCY,
+    );
+
+    for (const result of submitResults) {
+      if ("error" in result) {
+        const msg = result.error.message;
+        if (msg.includes("INDEX_IN_PROGRESS") || msg.includes("409")) {
+          skippedIds.push(result.id);
+        } else if (msg !== "cancelled") {
+          submitFailedIds.push(result.id);
+        }
+      }
+    }
+
+    if (batchCancelRef.current) {
+      const partialState: BatchIndexState = {
+        ...initial,
+        submittedIds: [...submittedIds],
+        skippedIds,
+        submitFailedIds,
+      };
+      batchIndexRef.current = partialState;
+      setBatchIndex(partialState);
+      await handleBatchIndexCancel();
+      return;
+    }
+
+    const pollIds = Array.from(new Set(submittedIds));
+    if (pollIds.length === 0) {
+      const emptyState: BatchIndexState = {
+        ...initial,
+        submittedIds: [],
+        skippedIds,
+        submitFailedIds,
+        active: false,
+      };
+      finalizeBatchIndex(emptyState, false);
+      setBatchIndex(null);
+      batchIndexRef.current = null;
+      return;
+    }
+
+    const pollingState: BatchIndexState = {
+      ...initial,
+      submittedIds: pollIds,
+      skippedIds,
+      submitFailedIds,
+    };
+    setBatchIndex(pollingState);
+    batchIndexRef.current = pollingState;
+
+    const startedAt = Date.now();
+    let terminalIds: number[] = [];
+    let failedIds: number[] = [];
+
+    while (terminalIds.length < pollIds.length) {
+      if (batchCancelRef.current) {
+        await handleBatchIndexCancel();
+        return;
+      }
+      if (Date.now() - startedAt > BATCH_INDEX_TIMEOUT_MS) {
+        message.warning("批量索引轮询超时，未完成项将标记为失败");
+        const pending = pollIds.filter((id) => !terminalIds.includes(id));
+        if (pending.length > 0) {
+          await markChunksIndexFailed(selectedKbId, pending);
+          failedIds = Array.from(new Set([...failedIds, ...pending]));
+          terminalIds = Array.from(new Set([...terminalIds, ...pending]));
+        }
+        break;
+      }
+
+      const statusById = await fetchStatusesForIds(
+        pollIds.filter((id) => !terminalIds.includes(id)),
+      );
+      applyEmbeddingStatuses(statusById);
+
+      for (const [id, status] of statusById.entries()) {
+        if (TERMINAL_EMBEDDING_STATUSES.has(status)) {
+          if (!terminalIds.includes(id)) terminalIds.push(id);
+          if (status === "failed" && !failedIds.includes(id)) failedIds.push(id);
+        }
+      }
+
+      const loopState: BatchIndexState = {
+        ...pollingState,
+        terminalIds: [...terminalIds],
+        failedIds: [...failedIds],
+      };
+      setBatchIndex(loopState);
+      batchIndexRef.current = loopState;
+
+      if (terminalIds.length < pollIds.length) {
+        await new Promise((resolve) => setTimeout(resolve, BATCH_INDEX_POLL_MS));
+      }
+    }
+
+    if (batchCancelRef.current) {
+      await handleBatchIndexCancel();
+      return;
+    }
+
+    const doneState: BatchIndexState = {
+      active: false,
+      submittedIds: pollIds,
+      skippedIds,
+      terminalIds,
+      failedIds,
+      cancelRequested: false,
+      submitFailedIds,
+    };
+    finalizeBatchIndex(doneState, false);
+    setBatchIndex(null);
+    batchIndexRef.current = null;
+  }, [
+    applyEmbeddingStatuses,
+    currentRows,
+    fetchStatusesForIds,
+    finalizeBatchIndex,
+    handleBatchIndexCancel,
+    selectedKbId,
+    selectedRowKeys,
+  ]);
 
   const applyFilters = useCallback(() => {
     const values = form.getFieldsValue();
@@ -660,8 +988,24 @@ export default function KnowledgeBrowsePage() {
         onChange: (nextPage: number, nextPageSize: number) => {
           setPage(nextPage);
           setPageSize(nextPageSize);
+          setSelectedRowKeys([]);
         },
       };
+
+  const batchRunning = Boolean(batchIndex?.active);
+  const batchProgressPercent =
+    batchIndex && batchIndex.submittedIds.length > 0
+      ? Math.round((batchIndex.terminalIds.length / batchIndex.submittedIds.length) * 100)
+      : 0;
+
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (keys: Key[]) => setSelectedRowKeys(keys.map(Number)),
+    getCheckboxProps: (record: { id: number; embedding_status?: string }) => ({
+      disabled: batchRunning || record.embedding_status === "indexing",
+    }),
+    preserveSelectedRowKeys: false,
+  };
 
   if (!selectedKbId) {
     return <Alert message="请先选择知识库" type="info" showIcon />;
@@ -800,6 +1144,52 @@ export default function KnowledgeBrowsePage() {
 
         <div style={{ marginBottom: 16 }} />
 
+        <Space style={{ marginBottom: 16 }} wrap>
+          <Button
+            size="small"
+            disabled={batchRunning || currentRows.length === 0}
+            onClick={() => setSelectedRowKeys(currentRows.map((row) => row.id))}
+          >
+            全选当前页
+          </Button>
+          <Button
+            size="small"
+            disabled={batchRunning || selectedRowKeys.length === 0}
+            onClick={() => setSelectedRowKeys([])}
+          >
+            取消选择
+          </Button>
+          {selectedRowKeys.length > 0 ? <Text>已选 {selectedRowKeys.length} 项</Text> : null}
+          <Button
+            type="primary"
+            size="small"
+            disabled={selectedRowKeys.length === 0 || batchRunning}
+            onClick={() => void handleBatchIndex()}
+          >
+            批量构建索引
+          </Button>
+          {batchRunning ? (
+            <Button size="small" danger onClick={() => void handleBatchIndexCancel()}>
+              停止
+            </Button>
+          ) : null}
+        </Space>
+        {showBatchProgress && batchIndex ? (
+          <div style={{ marginBottom: 16 }}>
+            <Progress
+              percent={batchProgressPercent}
+              format={() => `${batchIndex.terminalIds.length} / ${batchIndex.submittedIds.length}`}
+              status={
+                batchRunning
+                  ? "active"
+                  : batchIndex.failedIds.length + batchIndex.submitFailedIds.length
+                    ? "exception"
+                    : "success"
+              }
+            />
+          </div>
+        ) : null}
+
         {semanticMode ? (
           <Table
             rowKey="id"
@@ -807,6 +1197,7 @@ export default function KnowledgeBrowsePage() {
             loading={loading}
             columns={semanticColumns}
             dataSource={searchItems}
+            rowSelection={rowSelection}
             scroll={{ x: "max-content" }}
             locale={{ emptyText: <Empty description="暂无匹配知识" /> }}
             pagination={false}
@@ -818,6 +1209,7 @@ export default function KnowledgeBrowsePage() {
             loading={loading}
             columns={baseColumns}
             dataSource={items}
+            rowSelection={rowSelection}
             scroll={{ x: "max-content" }}
             locale={{ emptyText: <Empty description="暂无知识记录" /> }}
             pagination={tablePagination}

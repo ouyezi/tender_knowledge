@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
 from src.models.knowledge_chunk import KnowledgeChunk
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(_type, _compiler, **_kw):
+    return "JSON"
 from src.services.knowledge.chunk_service import mark_chunks_index_failed
 from tests.helpers.chunk_payload import minimal_chunk_orm_kwargs
 
