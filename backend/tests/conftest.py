@@ -35,6 +35,8 @@ from src.models import (  # noqa: F401
     kb_clone_log,
     knowledge_base,
     knowledge_chunk,
+    knowledge_taxonomy,
+    dynamic_knowledge_record,
     knowledge_blueprint,
     knowledge_blueprint_node,
     blueprint_embedding,
@@ -89,6 +91,13 @@ def api_client(db_engine):
 def client(api_client):
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture()
+def seeded_taxonomy(db_session):
+    from tests.helpers.taxonomy_seed import seed_knowledge_taxonomy
+
+    seed_knowledge_taxonomy(db_session)
 
 
 @pytest.fixture()
