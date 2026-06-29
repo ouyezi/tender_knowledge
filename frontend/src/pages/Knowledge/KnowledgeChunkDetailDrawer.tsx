@@ -1,4 +1,4 @@
-import { Button, Card, Descriptions, Drawer, Empty, Space, Spin, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Space, Spin, Tag, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import KnowledgeSummarySection from "../../components/Knowledge/KnowledgeSummarySection";
@@ -96,8 +96,11 @@ function BaseInfo({ detail, onOpenChunk }: { detail: KnowledgeChunkDetail; onOpe
       <Descriptions.Item label={getFieldLabel("char_end")}>{detail.char_end ?? "-"}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("primary_node_id")}>{detail.primary_node_id}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("parent_id")}>{detail.parent_id ?? "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("category")}>
-        {getEnumLabel("category", detail.category)}
+      <Descriptions.Item label={getFieldLabel("block_type_label")}>
+        {detail.block_type_label || detail.block_type_code || "-"}
+      </Descriptions.Item>
+      <Descriptions.Item label={getFieldLabel("application_type_label")}>
+        {detail.application_type_label || detail.application_type_code || "-"}
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("status")}>{getEnumLabel("status", detail.status)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("security_level")}>
@@ -107,8 +110,8 @@ function BaseInfo({ detail, onOpenChunk }: { detail: KnowledgeChunkDetail; onOpe
         {getEnumLabel("review_status", detail.review_status)}
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("owner")}>{detail.owner || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("quote_mode")}>
-        {getEnumLabel("quote_mode", detail.quote_mode)}
+      <Descriptions.Item label={getFieldLabel("business_line_labels")}>
+        {renderTagList(detail.business_line_labels)}
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("template_type")}>
         {getEnumLabel("template_type", detail.template_type)}
@@ -127,6 +130,7 @@ function BaseInfo({ detail, onOpenChunk }: { detail: KnowledgeChunkDetail; onOpe
       </Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("issue_date")}>{detail.issue_date || "-"}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("expire_date")}>{detail.expire_date || "-"}</Descriptions.Item>
+      <Descriptions.Item label={getFieldLabel("is_expired")}>{formatBoolean(detail.is_expired)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("create_time")}>{formatDateTime(detail.create_time)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("update_time")}>{formatDateTime(detail.update_time)}</Descriptions.Item>
       <Descriptions.Item label={getFieldLabel("embedding_status")}>
@@ -223,6 +227,14 @@ export default function KnowledgeChunkDetailDrawer({
 
       {!loading && detail ? (
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          {detail.is_expired ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="该知识已过期"
+              description="当前知识已超过失效日期，建议优先核验并更新内容后再使用。"
+            />
+          ) : null}
           <BaseInfo detail={detail} onOpenChunk={onOpenChunk} />
 
           <Card title={getFieldLabel("content")}>
@@ -242,7 +254,9 @@ export default function KnowledgeChunkDetailDrawer({
                 <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{catalogPathText}</pre>
               </Descriptions.Item>
               <Descriptions.Item label={getFieldLabel("tags")}>{renderTagList(detail.tags)}</Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("products")}>{renderTagList(detail.products)}</Descriptions.Item>
+              <Descriptions.Item label={getFieldLabel("business_line_labels")}>
+                {renderTagList(detail.business_line_labels)}
+              </Descriptions.Item>
               <Descriptions.Item label={getFieldLabel("industries")}>
                 {renderTagList(detail.industries)}
               </Descriptions.Item>

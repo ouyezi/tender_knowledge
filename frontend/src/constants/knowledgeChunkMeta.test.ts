@@ -11,6 +11,7 @@ describe("knowledgeChunkMeta", () => {
   it("returns Chinese field labels", () => {
     expect(getFieldLabel("knowledge_type")).toBe("知识类型");
     expect(getFieldLabel("issue_date_from")).toBe("生效日期起");
+    expect(getFieldLabel("block_type_label")).toBe("块类型");
   });
 
   it("falls back to raw field name for unknown fields", () => {
@@ -20,7 +21,7 @@ describe("knowledgeChunkMeta", () => {
   it("returns Chinese enum labels", () => {
     expect(getEnumLabel("knowledge_type", "fact")).toBe("事实");
     expect(getEnumLabel("status", "draft")).toBe("草稿");
-    expect(getEnumLabel("quote_mode", "full")).toBe("全文引用");
+    expect(getEnumLabel("source_type", "qualification")).toBe("资质");
   });
 
   it("falls back to raw enum value when unknown", () => {
@@ -32,6 +33,11 @@ describe("knowledgeChunkMeta", () => {
     const options = getEnumOptions("status");
     expect(options).toContainEqual({ value: "draft", label: "草稿" });
     expect(options).toContainEqual({ value: "active", label: "生效" });
+  });
+
+  it("returns sync status enum labels", () => {
+    expect(getEnumLabel("sync_status", "pending")).toBe("待同步");
+    expect(getEnumLabel("sync_status", "synced")).toBe("已同步");
   });
 
   it("formats booleans in Chinese", () => {

@@ -76,10 +76,10 @@ export interface CreateKnowledgeChunkRequest {
   catalog_path?: CatalogPathItem[];
   parent_id?: number | null;
   need_parent_context?: boolean;
-  quote_mode?: string;
-  category?: string;
+  block_type_code?: string;
+  application_type_code?: string;
+  business_line_codes?: string[];
   tags?: string[];
-  products?: string[];
   industries?: string[];
   customer_types?: string[];
   regions?: string[];
@@ -104,7 +104,13 @@ export interface KnowledgeChunkListItem {
   id: number;
   title: string;
   version: string;
-  category: string;
+  block_type_code: string;
+  application_type_code: string;
+  business_line_codes: string[];
+  block_type_label: string;
+  application_type_label: string;
+  business_line_labels: string[];
+  is_expired: boolean;
   knowledge_type: string;
   status: string;
   embedding_status?: string;
@@ -189,10 +195,14 @@ export interface KnowledgeChunkDetail {
   primary_node_id: string;
   parent_id: number | null;
   need_parent_context: boolean;
-  quote_mode: string;
-  category: string;
+  block_type_code: string;
+  application_type_code: string;
+  business_line_codes: string[];
+  block_type_label: string;
+  application_type_label: string;
+  business_line_labels: string[];
+  is_expired: boolean;
   tags: string[];
-  products: string[];
   industries: string[];
   customer_types: string[];
   regions: string[];
@@ -236,14 +246,14 @@ export interface PrefillResult {
   knowledge_type: string;
   content_type: string;
   source_type: string;
-  category: string;
+  block_type_code: string;
+  application_type_code: string;
+  business_line_codes: string[];
   status: string;
   security_level: string;
   review_status: string;
-  quote_mode: string;
   template_type: string | null;
   tags: string[];
-  products: string[];
   industries: string[];
   customer_types: string[];
   regions: string[];
@@ -264,11 +274,12 @@ export interface PagedKnowledgeChunks {
 }
 
 export interface ListKnowledgeChunksParams {
-  category?: string;
+  block_type_code?: string;
+  application_type_code?: string;
+  business_line_codes?: string[];
   knowledge_type?: string;
   source_type?: string;
   status?: string;
-  products?: string[];
   industries?: string[];
   regions?: string[];
   tags?: string[];
@@ -280,6 +291,7 @@ export interface ListKnowledgeChunksParams {
   issue_date_to?: string;
   expire_date_from?: string;
   expire_date_to?: string;
+  expired_only?: boolean;
   keyword?: string;
   page?: number;
   page_size?: number;
@@ -294,11 +306,12 @@ function appendList(search: URLSearchParams, key: string, values?: string[]): vo
 
 function buildListQuery(params?: ListKnowledgeChunksParams): string {
   const search = new URLSearchParams();
-  if (params?.category) search.set("category", params.category);
+  if (params?.block_type_code) search.set("block_type_code", params.block_type_code);
+  if (params?.application_type_code) search.set("application_type_code", params.application_type_code);
+  appendList(search, "business_line_codes", params?.business_line_codes);
   if (params?.knowledge_type) search.set("knowledge_type", params.knowledge_type);
   if (params?.source_type) search.set("source_type", params.source_type);
   if (params?.status) search.set("status", params.status);
-  appendList(search, "products", params?.products);
   appendList(search, "industries", params?.industries);
   appendList(search, "regions", params?.regions);
   appendList(search, "tags", params?.tags);
@@ -310,6 +323,7 @@ function buildListQuery(params?: ListKnowledgeChunksParams): string {
   if (params?.issue_date_to) search.set("issue_date_to", params.issue_date_to);
   if (params?.expire_date_from) search.set("expire_date_from", params.expire_date_from);
   if (params?.expire_date_to) search.set("expire_date_to", params.expire_date_to);
+  if (params?.expired_only !== undefined) search.set("expired_only", String(params.expired_only));
   if (params?.keyword) search.set("keyword", params.keyword);
   if (params?.page !== undefined) search.set("page", String(params.page));
   if (params?.page_size !== undefined) search.set("page_size", String(params.page_size));

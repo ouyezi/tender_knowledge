@@ -73,12 +73,12 @@ describe("buildAutoCreatePayload", () => {
     summary: "摘要",
     knowledge_type: "technical",
     content_type: "markdown",
-    source_type: "bid",
+    source_type: "qualification",
     file_name: "标书.docx",
-    quote_mode: "verbatim",
-    category: "solution",
+    block_type_code: "qualification_document",
+    application_type_code: "preferred_reference",
+    business_line_codes: ["general"],
     tags: ["tag1"],
-    products: [],
     industries: [],
     customer_types: [],
     regions: [],
@@ -114,6 +114,9 @@ describe("buildAutoCreatePayload", () => {
       is_immutable: false,
       retrieval_weight: 1,
       winning_flag: true,
+      block_type_code: "qualification_document",
+      application_type_code: "preferred_reference",
+      business_line_codes: ["general"],
     });
   });
 

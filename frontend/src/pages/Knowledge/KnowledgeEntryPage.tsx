@@ -23,7 +23,9 @@ import { buildAutoCreatePayload, collectCheckedNodeIds, withRetry } from "./batc
 import BlueprintEditor from "../../components/Blueprint/BlueprintEditor";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import ResizableWorkspace from "../../components/Knowledge/ResizableWorkspace";
+import TaxonomyCascader from "../../components/Knowledge/TaxonomyCascader";
 import { getEnumOptions, getFieldLabel } from "../../constants/knowledgeChunkMeta";
+import { useKnowledgeTaxonomy } from "../../hooks/useKnowledgeTaxonomy";
 import { useKBContext } from "../../layout/KBContext";
 import { ApiError } from "../../services/apiClient";
 import {
@@ -66,10 +68,10 @@ interface EntryFormValues {
   char_start?: number;
   char_end?: number;
   parent_id?: number;
-  quote_mode?: string;
-  category?: string;
+  block_type_code?: string;
+  application_type_code?: string;
+  business_line_codes?: string[];
   tags?: string[];
-  products?: string[];
   industries?: string[];
   customer_types?: string[];
   regions?: string[];
@@ -179,6 +181,10 @@ export default function KnowledgeEntryPage() {
   const [checkedKeys, setCheckedKeys] = useState<Key[]>([]);
   const [batchIngest, setBatchIngest] = useState<BatchIngestState | null>(null);
   const [showProgressBar, setShowProgressBar] = useState(false);
+  const sourceTypeValue = Form.useWatch("source_type", form);
+  const blockTypeCodeValue = Form.useWatch("block_type_code", form);
+  const { items: applicationTypeItems } = useKnowledgeTaxonomy("application_type");
+  const { items: businessLineItems } = useKnowledgeTaxonomy("business_line");
 
   const batchRunning = Boolean(batchIngest?.active);
   const checkedCount = checkedKeys.length;
@@ -199,6 +205,16 @@ export default function KnowledgeEntryPage() {
   // entry/documents 仅返回 parse_status=ready 且已有目录树的文档
   const canShowExtractBlueprint = Boolean(selectedDocument);
   const extractBlueprintDisabled = readOnly || blueprintLoading || !selectedNodeId || selectedNodeIsLeaf;
+  const showExpireDateHint =
+    sourceTypeValue === "qualification" || Boolean(blockTypeCodeValue?.startsWith("qualification"));
+  const applicationTypeOptions = useMemo(
+    () => applicationTypeItems.map((item) => ({ value: item.code, label: item.label })),
+    [applicationTypeItems],
+  );
+  const businessLineOptions = useMemo(
+    () => businessLineItems.map((item) => ({ value: item.code, label: item.label })),
+    [businessLineItems],
+  );
   const emptyBlueprintDraft = useMemo<BlueprintDraft>(
     () => ({
       name: "",
@@ -315,10 +331,10 @@ export default function KnowledgeEntryPage() {
         page_end: preview?.page_end ?? undefined,
         char_start: preview?.char_start ?? undefined,
         char_end: preview?.char_end ?? undefined,
-        quote_mode: result.quote_mode,
-        category: result.category,
+        block_type_code: result.block_type_code,
+        application_type_code: result.application_type_code,
+        business_line_codes: result.business_line_codes ?? [],
         tags: result.tags ?? [],
-        products: result.products ?? [],
         industries: result.industries ?? [],
         customer_types: result.customer_types ?? [],
         regions: result.regions ?? [],
@@ -408,10 +424,10 @@ export default function KnowledgeEntryPage() {
         catalog_path: catalogPath,
         parent_id: values.parent_id ?? null,
         need_parent_context: Boolean(values.need_parent_context),
-        quote_mode: values.quote_mode,
-        category: values.category,
+        block_type_code: values.block_type_code,
+        application_type_code: values.application_type_code,
+        business_line_codes: values.business_line_codes ?? [],
         tags: values.tags ?? [],
-        products: values.products ?? [],
         industries: values.industries ?? [],
         customer_types: values.customer_types ?? [],
         regions: values.regions ?? [],
@@ -991,14 +1007,17 @@ export default function KnowledgeEntryPage() {
                           <Form.Item name="project_name" label={getFieldLabel("project_name")}>
                             <Input />
                           </Form.Item>
-                          <Form.Item name="category" label={getFieldLabel("category")}>
-                            <Select allowClear options={getEnumOptions("category")} />
+                          <Form.Item name="block_type_code" label={getFieldLabel("block_type_label")}>
+                            <TaxonomyCascader />
+                          </Form.Item>
+                          <Form.Item name="application_type_code" label={getFieldLabel("application_type_label")}>
+                            <Select allowClear options={applicationTypeOptions} />
+                          </Form.Item>
+                          <Form.Item name="business_line_codes" label={getFieldLabel("business_line_labels")}>
+                            <Select mode="multiple" allowClear options={businessLineOptions} />
                           </Form.Item>
                           <Form.Item name="status" label={getFieldLabel("status")}>
                             <Select allowClear options={getEnumOptions("status")} />
-                          </Form.Item>
-                          <Form.Item name="quote_mode" label={getFieldLabel("quote_mode")}>
-                            <Select allowClear options={getEnumOptions("quote_mode")} />
                           </Form.Item>
                           <Form.Item name="template_type" label={getFieldLabel("template_type")}>
                             <Select allowClear options={getEnumOptions("template_type")} />
@@ -1015,13 +1034,14 @@ export default function KnowledgeEntryPage() {
                           <Form.Item name="issue_date" label={getFieldLabel("issue_date")}>
                             <Input placeholder="YYYY-MM-DD" />
                           </Form.Item>
-                          <Form.Item name="expire_date" label={getFieldLabel("expire_date")}>
+                          <Form.Item
+                            name="expire_date"
+                            label={getFieldLabel("expire_date")}
+                            extra={showExpireDateHint ? "资质类内容建议填写失效日期，系统将自动提示过期。" : undefined}
+                          >
                             <Input placeholder="YYYY-MM-DD" />
                           </Form.Item>
                           <Form.Item name="tags" label={getFieldLabel("tags")}>
-                            <Select mode="tags" />
-                          </Form.Item>
-                          <Form.Item name="products" label={getFieldLabel("products")}>
                             <Select mode="tags" />
                           </Form.Item>
                           <Form.Item name="industries" label={getFieldLabel("industries")}>
