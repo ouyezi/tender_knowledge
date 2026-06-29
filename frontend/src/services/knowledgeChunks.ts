@@ -357,7 +357,7 @@ export async function getKnowledgeChunk(
   );
 }
 
-const TERMINAL_EMBEDDING_STATUSES = new Set(["ready", "failed", "skipped"]);
+export const TERMINAL_EMBEDDING_STATUSES = new Set(["ready", "failed", "skipped"]);
 
 export async function waitForChunkIndexComplete(
   kbId: string,
@@ -386,6 +386,19 @@ export async function indexKnowledgeChunk(
     {
       method: "POST",
       body: { force },
+    },
+  );
+}
+
+export async function markChunksIndexFailed(
+  kbId: string,
+  chunkIds: number[],
+): Promise<{ updated_ids: number[]; skipped_ids: number[] }> {
+  return apiRequest<{ updated_ids: number[]; skipped_ids: number[] }>(
+    `/api/v1/kbs/${kbId}/knowledge-chunks/mark-index-failed`,
+    {
+      method: "POST",
+      body: { chunk_ids: chunkIds },
     },
   );
 }
