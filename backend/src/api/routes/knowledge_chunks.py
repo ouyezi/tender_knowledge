@@ -17,6 +17,7 @@ from src.api.schemas.knowledge_chunks import (
     CreateKnowledgeChunkRequest,
     IndexKnowledgeChunkRequest,
     KnowledgeChunkListFilters,
+    MarkChunksIndexFailedRequest,
     ParseChunkSearchQueryRequest,
     PrefillRequest,
 )
@@ -35,7 +36,13 @@ from src.services.knowledge.chunk_search_service import (
     ChunkSearchValidationError,
     search_knowledge_chunks,
 )
-from src.services.knowledge.chunk_service import ChunkConflictError, ChunkNotFoundError, create_knowledge_chunk, delete_knowledge_chunk
+from src.services.knowledge.chunk_service import (
+    ChunkConflictError,
+    ChunkNotFoundError,
+    create_knowledge_chunk,
+    delete_knowledge_chunk,
+    mark_chunks_index_failed,
+)
 from src.services.knowledge.embedding_client import embedding_client_from_settings
 from src.services.knowledge.entry_content_service import (
     ContentNotAvailableError,
@@ -572,6 +579,23 @@ def list_chunk_assets_api(
     assets = query.order_by(ChunkAsset.char_start.asc(), ChunkAsset.id.asc()).all()
     return success(
         {"items": [_serialize_asset(asset, db, kb_id=kb_id) for asset in assets]},
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/mark-index-failed")
+def mark_chunks_index_failed_api(
+    kb_id: UUID,
+    body: MarkChunksIndexFailedRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    result = mark_chunks_index_failed(db, kb_id=kb_id, chunk_ids=body.chunk_ids)
+    return success(
+        {
+            "updated_ids": result.updated_ids,
+            "skipped_ids": result.skipped_ids,
+        },
         trace_id=get_trace_id(),
     )
 

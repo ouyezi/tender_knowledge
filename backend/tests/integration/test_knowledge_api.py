@@ -3,11 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType, DocumentSourceUsage
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
 from src.services.doc_chunk.content_md_store import persist_content_md
 from tests.helpers.chunk_payload import minimal_chunk_payload
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(_type, _compiler, **_kw):
+    return "JSON"
 
 
 def _seed_file_import(db_session, kb_id):
@@ -269,3 +277,38 @@ def test_chunk_detail_excludes_internal_char_fields(
     assert "page_start" not in detail
     assert "winning_flag" not in detail
     assert "issue_date" not in detail
+
+
+def test_mark_chunks_index_failed_api(client, db_session, seeded_kb):
+    from uuid import uuid4
+
+    from src.models.knowledge_chunk import KnowledgeChunk
+    from tests.helpers.chunk_payload import minimal_chunk_orm_kwargs
+
+    chunk = KnowledgeChunk(
+        id=501,
+        kb_id=seeded_kb.kb_id,
+        knowledge_code=str(uuid4()),
+        version="1.0",
+        is_latest=True,
+        doc_id=uuid4(),
+        primary_node_id=str(uuid4()),
+        content_hash="hash-501",
+        token_count=3,
+        embedding_status="indexing",
+        **minimal_chunk_orm_kwargs(),
+    )
+    db_session.add(chunk)
+    db_session.commit()
+
+    resp = client.post(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/mark-index-failed",
+        json={"chunk_ids": [501, 502]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["updated_ids"] == [501]
+    assert body["skipped_ids"] == [502]
+
+    db_session.refresh(chunk)
+    assert chunk.embedding_status == "failed"

@@ -44,6 +44,10 @@ class IndexKnowledgeChunkRequest(BaseModel):
     force: bool = False
 
 
+class MarkChunksIndexFailedRequest(BaseModel):
+    chunk_ids: list[int] = Field(..., min_length=1, max_length=200)
+
+
 class ParseChunkSearchQueryRequest(BaseModel):
     query: str
 
