@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 from uuid import UUID, uuid4
 
 from sqlalchemy import func
@@ -11,8 +12,14 @@ from src.models.chunk_embedding import ChunkEmbedding
 from src.models.chunk_asset import ChunkAsset
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.knowledge.asset_link_service import link_assets_to_chunk
+from src.services.knowledge.certificate_field_utils import (
+    earliest_expire_date_from_csv,
+    normalize_certificate_date,
+    normalize_certificate_number,
+    parse_expire_date_value,
+)
 from src.services.knowledge.chunk_image_assets import ensure_image_assets_for_chunk
-from src.services.knowledge.entry_content_service import build_catalog_path
+from src.services.knowledge.entry_content_service import build_catalog_path, compute_section_char_range
 from src.services.knowledge.taxonomy_service import (
     validate_application_type_code,
     validate_block_type_code,
@@ -86,6 +93,21 @@ def create_knowledge_chunk(
     )
     children_count = sum(1 for node in tree_nodes if node.parent_id == node_uuid)
 
+    char_start, char_end = (
+        compute_section_char_range(
+            db,
+            kb_id=kb_id,
+            doc_id=doc_id,
+            primary_node_id=node_uuid,
+            content=content,
+        )
+        if node_uuid
+        else (None, None)
+    )
+    cert_number = normalize_certificate_number(payload.get("certificate_number"))
+    cert_date = normalize_certificate_date(payload.get("certificate_date"))
+    expire_date = _resolve_expire_date(payload.get("expire_date"))
+
     chunk = KnowledgeChunk(
         kb_id=kb_id,
         knowledge_code=str(uuid4()),
@@ -99,37 +121,24 @@ def create_knowledge_chunk(
         content_type=str(payload.get("content_type") or "text"),
         doc_id=doc_id,
         file_name=payload.get("file_name"),
-        source_type=str(payload.get("source_type") or ""),
-        project_name=payload.get("project_name"),
-        page_start=payload.get("page_start"),
-        page_end=payload.get("page_end"),
-        char_start=payload.get("char_start"),
-        char_end=payload.get("char_end"),
+        char_start=char_start,
+        char_end=char_end,
         catalog_path=payload.get("catalog_path") or computed_catalog_path,
         primary_node_id=node_key,
-        parent_id=payload.get("parent_id"),
-        need_parent_context=bool(payload.get("need_parent_context", False)),
         block_type_code=block_type_code,
         application_type_code=application_type_code,
         business_line_codes=business_line_codes,
         tags=list(payload.get("tags") or []),
-        industries=list(payload.get("industries") or []),
-        customer_types=list(payload.get("customer_types") or []),
         regions=list(payload.get("regions") or []),
-        issue_date=payload.get("issue_date"),
-        expire_date=payload.get("expire_date"),
+        certificate_number=cert_number,
+        certificate_date=cert_date,
+        expire_date=expire_date,
         status=str(payload.get("status") or "draft"),
         is_template=bool(payload.get("is_template", False)),
         template_type=payload.get("template_type"),
-        variables=list(payload.get("variables") or []),
-        is_immutable=bool(payload.get("is_immutable", False)),
-        exclusion_rules=list(payload.get("exclusion_rules") or []),
-        retrieval_weight=payload.get("retrieval_weight", 1.0),
         security_level=str(payload.get("security_level") or "internal"),
         owner=payload.get("owner"),
         review_status=str(payload.get("review_status") or "approved"),
-        winning_flag=bool(payload.get("winning_flag", False)),
-        edit_distance_avg=payload.get("edit_distance_avg"),
         content_hash=_compute_content_hash(content),
         token_count=count_tokens(content),
         has_children=children_count > 0,
@@ -185,6 +194,14 @@ def delete_knowledge_chunk(db: Session, *, kb_id: UUID, chunk_id: int) -> None:
         synchronize_session=False
     )
     db.flush()
+
+
+def _resolve_expire_date(value: object | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    return parse_expire_date_value(value)
 
 
 def _compute_content_hash(content: str) -> str:

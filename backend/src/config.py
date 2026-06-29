@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     doc_chunk_classification_config: str | None = None
 
     knowledge_prefill_model: str = "qwen3-max"
-    knowledge_prefill_timeout_sec: int = 10
+    knowledge_prefill_timeout_sec: int = 20
     blueprint_generate_model: str = "qwen3.6-flash"
     blueprint_generate_timeout_sec: int = 120
     blueprint_generate_max_tokens: int = 16384

@@ -180,6 +180,40 @@ def test_create_chunk_force_bumps_version(db_session, seeded_kb, tmp_path):
     assert first.is_latest is False
 
 
+def test_create_chunk_auto_sets_char_range_and_certificate_fields(
+    db_session, seeded_kb, tmp_path
+):
+    from src.models.knowledge_chunk import KnowledgeChunk
+
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    source = tmp_path / "content.md"
+    source.write_text("# 第一章 总则\n\n## 1.1\n\n资质正文XYZ\n", encoding="utf-8")
+    persisted = persist_content_md(document_id=document.document_id, source_path=Path(source))
+    assert persisted is not None
+
+    chunk = create_knowledge_chunk(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        payload=minimal_chunk_payload(
+            content="资质正文XYZ",
+            certificate_number="CERT-001, CERT-002",
+            certificate_date="2024-01-01,2025-01-01",
+            expire_date="2025-06-01",
+        ),
+        doc_id=document.document_id,
+        primary_node_id=parent.node_id,
+    )
+    row = db_session.get(KnowledgeChunk, chunk.id)
+    assert row is not None
+    assert row.char_start is not None
+    assert row.char_end is not None
+    assert row.certificate_number == "CERT-001,CERT-002"
+    assert row.certificate_date == "2024-01-01,2025-01-01"
+    assert not hasattr(row, "page_start")
+    assert row.expire_date is not None
+    assert row.expire_date.isoformat() == "2025-06-01"
+
+
 def test_create_chunk_rejects_invalid_block_type(db_session, seeded_kb, seeded_taxonomy, tmp_path):
     _ = seeded_taxonomy
     document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)

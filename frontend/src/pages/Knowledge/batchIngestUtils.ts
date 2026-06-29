@@ -35,6 +35,31 @@ export function collectCheckedNodeIds(nodes: TreeNode[], checkedKeys: Key[]): st
   return result;
 }
 
+export function buildPrefillMetadata(params: {
+  preview: NodePreview;
+  documentName?: string;
+  sourceType?: string;
+}): Record<string, unknown> {
+  const { preview, documentName, sourceType } = params;
+  const byType: Record<string, number> = {};
+  for (const asset of preview.assets ?? []) {
+    byType[asset.asset_type] = (byType[asset.asset_type] ?? 0) + 1;
+  }
+  return {
+    source_type: sourceType ?? "bid",
+    file_name: documentName,
+    chapter_title: preview.title,
+    catalog_path: preview.catalog_path,
+    content_type_hint: preview.content_type,
+    asset_summary: {
+      total: preview.assets?.length ?? 0,
+      by_type: byType,
+      has_table: Boolean(byType.table),
+      has_image: Boolean(byType.image),
+    },
+  };
+}
+
 export function buildAutoCreatePayload(params: {
   docId: string;
   nodeId: string;
@@ -43,7 +68,7 @@ export function buildAutoCreatePayload(params: {
   documentName?: string;
   sourceType?: string;
 }): CreateKnowledgeChunkRequest {
-  const { docId, nodeId, preview, prefill, documentName, sourceType } = params;
+  const { docId, nodeId, preview, prefill, documentName } = params;
   const catalogTitle = preview.catalog_path?.[preview.catalog_path.length - 1]?.title;
 
   return {
@@ -54,37 +79,22 @@ export function buildAutoCreatePayload(params: {
     summary: prefill.summary ?? null,
     knowledge_type: prefill.knowledge_type,
     content_type: prefill.content_type || preview.content_type,
-    source_type: prefill.source_type ?? sourceType,
     file_name: prefill.file_name || documentName || null,
-    project_name: prefill.project_name ?? null,
-    page_start: preview.page_start ?? null,
-    page_end: preview.page_end ?? null,
-    char_start: preview.char_start ?? null,
-    char_end: preview.char_end ?? null,
     catalog_path: preview.catalog_path,
-    parent_id: null,
-    need_parent_context: false,
     block_type_code: prefill.block_type_code,
     application_type_code: prefill.application_type_code,
     business_line_codes: prefill.business_line_codes ?? [],
     tags: prefill.tags ?? [],
-    industries: prefill.industries ?? [],
-    customer_types: prefill.customer_types ?? [],
     regions: prefill.regions ?? [],
-    issue_date: normalizeOptionalDate(prefill.issue_date),
+    certificate_number: prefill.certificate_number ?? null,
+    certificate_date: prefill.certificate_date ?? null,
     expire_date: normalizeOptionalDate(prefill.expire_date),
     status: prefill.status,
     is_template: Boolean(prefill.is_template),
     template_type: prefill.template_type ?? null,
-    variables: [],
-    is_immutable: false,
-    exclusion_rules: [],
-    retrieval_weight: 1,
     security_level: prefill.security_level,
     owner: null,
     review_status: prefill.review_status,
-    winning_flag: Boolean(prefill.winning_flag),
-    edit_distance_avg: null,
   };
 }
 

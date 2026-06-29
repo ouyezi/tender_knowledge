@@ -86,25 +86,16 @@ def _create_payload(doc_id, node_id, *, title: str, summary: str):
         title=title,
         summary=summary,
         file_name="knowledge-v2-api.docx",
-        project_name="测试项目",
         tags=["投标", "技术"],
-        industries=["行业A"],
-        customer_types=["客户A"],
         regions=["华东"],
         owner="tester",
     )
     payload.update(
         {
-        "doc_id": str(doc_id),
-        "primary_node_id": str(node_id),
-        "content": "知识正文内容",
-        "page_start": 1,
-        "page_end": 2,
-        "char_start": 0,
-        "char_end": 16,
-        "parent_id": None,
-        "need_parent_context": False,
-        "force": False,
+            "doc_id": str(doc_id),
+            "primary_node_id": str(node_id),
+            "content": "知识正文内容",
+            "force": False,
         }
     )
     return payload
@@ -247,3 +238,35 @@ def test_create_chunk_returns_taxonomy_fields(client, db_session, seeded_kb, see
     assert data["business_line_codes"] == ["insurance"]
     assert data["business_line_labels"] == ["保险"]
     assert "is_expired" in data
+
+
+def test_chunk_detail_excludes_internal_char_fields(
+    client, db_session, seeded_kb, seeded_taxonomy, tmp_path
+):
+    _ = seeded_taxonomy
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    _seed_content_md(tmp_path, document.document_id)
+    create = client.post(
+        f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks",
+        json={
+            "doc_id": str(document.document_id),
+            "primary_node_id": str(parent.node_id),
+            "title": "T",
+            "content": "正文",
+            "knowledge_type": "fact",
+            "block_type_code": "ip_patent",
+            "application_type_code": "fixed_reference",
+            "business_line_codes": ["general"],
+            "certificate_number": "NO-1",
+            "certificate_date": "2024-01-01",
+        },
+    )
+    assert create.status_code == 201
+    chunk_id = create.json()["data"]["id"]
+    detail = client.get(f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/{chunk_id}").json()["data"]
+    assert detail["certificate_number"] == "NO-1"
+    assert "char_start" not in detail
+    assert "section_char_start" in detail
+    assert "page_start" not in detail
+    assert "winning_flag" not in detail
+    assert "issue_date" not in detail

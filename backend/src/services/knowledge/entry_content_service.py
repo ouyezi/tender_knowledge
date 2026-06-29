@@ -328,14 +328,29 @@ def _range_from_slice(content_md: str, section_md: str) -> tuple[int | None, int
     return (start, start + len(section_md))
 
 
+def compute_section_char_range(
+    db: Session,
+    *,
+    kb_id: UUID,
+    doc_id: UUID,
+    primary_node_id: UUID,
+    content: str,
+) -> tuple[int | None, int | None]:
+    _ = (db, kb_id, primary_node_id)
+    content_md = load_content_md(document_id=doc_id)
+    if not content_md:
+        return (None, None)
+    section_md = content.strip()
+    if not section_md:
+        return (None, None)
+    return _range_from_slice(content_md, section_md)
+
+
 def _page_range(
     chunks: list[KnowledgeChunk],
     assets: list[ChunkAsset],
 ) -> tuple[int | None, int | None]:
-    page_starts = [item.page_start for item in chunks if item.page_start is not None]
-    page_ends = [item.page_end for item in chunks if item.page_end is not None]
-    if page_starts and page_ends:
-        return (min(page_starts), max(page_ends))
+    _ = chunks
     asset_page_starts = [item.page_start for item in assets if item.page_start is not None]
     asset_page_ends = [item.page_end for item in assets if item.page_end is not None]
     if asset_page_starts and asset_page_ends:

@@ -19,7 +19,7 @@ import {
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 import { useCallback, useEffect, useMemo, useState, type Key } from "react";
-import { buildAutoCreatePayload, collectCheckedNodeIds, withRetry } from "./batchIngestUtils";
+import { buildAutoCreatePayload, buildPrefillMetadata, collectCheckedNodeIds, withRetry } from "./batchIngestUtils";
 import BlueprintEditor from "../../components/Blueprint/BlueprintEditor";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import ResizableWorkspace from "../../components/Knowledge/ResizableWorkspace";
@@ -60,37 +60,22 @@ interface EntryFormValues {
   summary?: string;
   knowledge_type?: string;
   content_type?: string;
-  source_type?: string;
   file_name?: string;
-  project_name?: string;
-  page_start?: number;
-  page_end?: number;
-  char_start?: number;
-  char_end?: number;
-  parent_id?: number;
   block_type_code?: string;
   application_type_code?: string;
   business_line_codes?: string[];
   tags?: string[];
-  industries?: string[];
-  customer_types?: string[];
   regions?: string[];
-  issue_date?: string;
+  certificate_number?: string;
+  certificate_date?: string;
   expire_date?: string;
   status?: string;
   template_type?: string;
-  retrieval_weight?: number;
   security_level?: string;
   owner?: string;
   review_status?: string;
-  edit_distance_avg?: number;
   catalog_path_json?: string;
-  variables_json?: string;
-  exclusion_rules_json?: string;
-  need_parent_context?: boolean;
   is_template?: boolean;
-  is_immutable?: boolean;
-  winning_flag?: boolean;
 }
 
 type EntryTabKey = "entry" | "blueprint";
@@ -181,7 +166,6 @@ export default function KnowledgeEntryPage() {
   const [checkedKeys, setCheckedKeys] = useState<Key[]>([]);
   const [batchIngest, setBatchIngest] = useState<BatchIngestState | null>(null);
   const [showProgressBar, setShowProgressBar] = useState(false);
-  const sourceTypeValue = Form.useWatch("source_type", form);
   const blockTypeCodeValue = Form.useWatch("block_type_code", form);
   const { items: applicationTypeItems } = useKnowledgeTaxonomy("application_type");
   const { items: businessLineItems } = useKnowledgeTaxonomy("business_line");
@@ -206,7 +190,12 @@ export default function KnowledgeEntryPage() {
   const canShowExtractBlueprint = Boolean(selectedDocument);
   const extractBlueprintDisabled = readOnly || blueprintLoading || !selectedNodeId || selectedNodeIsLeaf;
   const showExpireDateHint =
-    sourceTypeValue === "qualification" || Boolean(blockTypeCodeValue?.startsWith("qualification"));
+    selectedDocument?.source_type === "qualification" ||
+    Boolean(
+      blockTypeCodeValue?.startsWith("qualification_") ||
+        blockTypeCodeValue?.startsWith("financial_") ||
+        blockTypeCodeValue?.startsWith("ip_"),
+    );
   const applicationTypeOptions = useMemo(
     () => applicationTypeItems.map((item) => ({ value: item.code, label: item.label })),
     [applicationTypeItems],
@@ -324,35 +313,22 @@ export default function KnowledgeEntryPage() {
         summary: result.summary ?? undefined,
         knowledge_type: result.knowledge_type,
         content_type: result.content_type || preview?.content_type,
-        source_type: result.source_type,
         file_name: result.file_name || selectedDocument?.document_name,
-        project_name: result.project_name,
-        page_start: preview?.page_start ?? undefined,
-        page_end: preview?.page_end ?? undefined,
-        char_start: preview?.char_start ?? undefined,
-        char_end: preview?.char_end ?? undefined,
         block_type_code: result.block_type_code,
         application_type_code: result.application_type_code,
         business_line_codes: result.business_line_codes ?? [],
         tags: result.tags ?? [],
-        industries: result.industries ?? [],
-        customer_types: result.customer_types ?? [],
         regions: result.regions ?? [],
-        issue_date: result.issue_date ?? undefined,
+        certificate_number: result.certificate_number ?? undefined,
+        certificate_date: result.certificate_date ?? undefined,
         expire_date: result.expire_date ?? undefined,
         status: result.status,
         template_type: result.template_type ?? undefined,
-        retrieval_weight: 1,
         security_level: result.security_level,
         review_status: result.review_status,
         owner: undefined,
         catalog_path_json: JSON.stringify(preview?.catalog_path ?? [], null, 2),
-        variables_json: "[]",
-        exclusion_rules_json: "[]",
-        need_parent_context: false,
         is_template: result.is_template ?? false,
-        is_immutable: false,
-        winning_flag: result.winning_flag ?? false,
       });
     },
     [form, preview, selectedDocument?.document_name],
@@ -371,10 +347,11 @@ export default function KnowledgeEntryPage() {
         doc_id: selectedDocId,
         primary_node_id: selectedNodeId,
         content: preview.content_md,
-        metadata: {
-          source_type: selectedDocument?.source_type ?? "bid",
-          file_name: selectedDocument?.document_name,
-        },
+        metadata: buildPrefillMetadata({
+          preview,
+          documentName: selectedDocument?.document_name,
+          sourceType: selectedDocument?.source_type,
+        }),
       });
       applyPrefillToForm(result);
       if (result.warnings?.length) {
@@ -403,8 +380,6 @@ export default function KnowledgeEntryPage() {
       }
       const catalogPath =
         parseJsonArray<CatalogPathItem>(values.catalog_path_json) ?? (preview.catalog_path as CatalogPathItem[]);
-      const variables = parseJsonArray<Record<string, unknown>>(values.variables_json);
-      const exclusionRules = parseJsonArray<Record<string, unknown>>(values.exclusion_rules_json);
 
       return {
         doc_id: selectedDocId,
@@ -414,37 +389,22 @@ export default function KnowledgeEntryPage() {
         summary: values.summary || null,
         knowledge_type: values.knowledge_type,
         content_type: values.content_type,
-        source_type: values.source_type,
         file_name: values.file_name || null,
-        project_name: values.project_name || null,
-        page_start: values.page_start ?? null,
-        page_end: values.page_end ?? null,
-        char_start: values.char_start ?? null,
-        char_end: values.char_end ?? null,
         catalog_path: catalogPath,
-        parent_id: values.parent_id ?? null,
-        need_parent_context: Boolean(values.need_parent_context),
         block_type_code: values.block_type_code,
         application_type_code: values.application_type_code,
         business_line_codes: values.business_line_codes ?? [],
         tags: values.tags ?? [],
-        industries: values.industries ?? [],
-        customer_types: values.customer_types ?? [],
         regions: values.regions ?? [],
-        issue_date: values.issue_date || null,
+        certificate_number: values.certificate_number?.trim() || null,
+        certificate_date: values.certificate_date?.trim() || null,
         expire_date: values.expire_date || null,
         status: values.status,
         is_template: Boolean(values.is_template),
         template_type: values.template_type ?? null,
-        variables,
-        is_immutable: Boolean(values.is_immutable),
-        exclusion_rules: exclusionRules,
-        retrieval_weight: values.retrieval_weight ?? 1,
         security_level: values.security_level,
         owner: values.owner || null,
         review_status: values.review_status,
-        winning_flag: Boolean(values.winning_flag),
-        edit_distance_avg: values.edit_distance_avg ?? null,
       };
     },
     [preview, selectedDocId, selectedNodeId],
@@ -693,10 +653,11 @@ export default function KnowledgeEntryPage() {
             doc_id: selectedDocId,
             primary_node_id: nodeId,
             content: nodePreview.content_md,
-            metadata: {
-              source_type: selectedDocument?.source_type ?? "bid",
-              file_name: selectedDocument?.document_name,
-            },
+            metadata: buildPrefillMetadata({
+              preview: nodePreview,
+              documentName: selectedDocument?.document_name,
+              sourceType: selectedDocument?.source_type,
+            }),
           });
           const payload = buildAutoCreatePayload({
             docId: selectedDocId,
@@ -998,13 +959,7 @@ export default function KnowledgeEntryPage() {
                           <Form.Item name="content_type" label={getFieldLabel("content_type")}>
                             <Select allowClear options={getEnumOptions("content_type")} />
                           </Form.Item>
-                          <Form.Item name="source_type" label={getFieldLabel("source_type")}>
-                            <Select allowClear options={getEnumOptions("source_type")} />
-                          </Form.Item>
                           <Form.Item name="file_name" label={getFieldLabel("file_name")}>
-                            <Input />
-                          </Form.Item>
-                          <Form.Item name="project_name" label={getFieldLabel("project_name")}>
                             <Input />
                           </Form.Item>
                           <Form.Item name="block_type_code" label={getFieldLabel("block_type_label")}>
@@ -1031,83 +986,37 @@ export default function KnowledgeEntryPage() {
                           <Form.Item name="owner" label={getFieldLabel("owner")}>
                             <Input />
                           </Form.Item>
-                          <Form.Item name="issue_date" label={getFieldLabel("issue_date")}>
-                            <Input placeholder="YYYY-MM-DD" />
+                          {showExpireDateHint ? (
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="建议填写证书编号、证书日期与失效日期"
+                              style={{ marginBottom: 16 }}
+                            />
+                          ) : null}
+                          <Form.Item name="certificate_number" label={getFieldLabel("certificate_number")}>
+                            <Input placeholder="多个编号用英文逗号分隔" />
+                          </Form.Item>
+                          <Form.Item name="certificate_date" label={getFieldLabel("certificate_date")}>
+                            <Input placeholder="YYYY-MM-DD，多个用英文逗号分隔" />
                           </Form.Item>
                           <Form.Item
                             name="expire_date"
                             label={getFieldLabel("expire_date")}
                             extra={showExpireDateHint ? "资质类内容建议填写失效日期，系统将自动提示过期。" : undefined}
                           >
-                            <Input placeholder="YYYY-MM-DD" />
+                            <Input type="date" />
                           </Form.Item>
                           <Form.Item name="tags" label={getFieldLabel("tags")}>
-                            <Select mode="tags" />
-                          </Form.Item>
-                          <Form.Item name="industries" label={getFieldLabel("industries")}>
-                            <Select mode="tags" />
-                          </Form.Item>
-                          <Form.Item name="customer_types" label={getFieldLabel("customer_types")}>
                             <Select mode="tags" />
                           </Form.Item>
                           <Form.Item name="regions" label={getFieldLabel("regions")}>
                             <Select mode="tags" />
                           </Form.Item>
-                          <Form.Item name="page_start" label={getFieldLabel("page_start")}>
-                            <InputNumber style={{ width: "100%" }} />
-                          </Form.Item>
-                          <Form.Item name="page_end" label={getFieldLabel("page_end")}>
-                            <InputNumber style={{ width: "100%" }} />
-                          </Form.Item>
-                          <Form.Item name="char_start" label={getFieldLabel("char_start")}>
-                            <InputNumber style={{ width: "100%" }} />
-                          </Form.Item>
-                          <Form.Item name="char_end" label={getFieldLabel("char_end")}>
-                            <InputNumber style={{ width: "100%" }} />
-                          </Form.Item>
-                          <Form.Item name="parent_id" label={getFieldLabel("parent_id")}>
-                            <InputNumber style={{ width: "100%" }} />
-                          </Form.Item>
-                          <Form.Item name="retrieval_weight" label={getFieldLabel("retrieval_weight")}>
-                            <InputNumber style={{ width: "100%" }} />
-                          </Form.Item>
-                          <Form.Item name="edit_distance_avg" label={getFieldLabel("edit_distance_avg")}>
-                            <InputNumber style={{ width: "100%" }} />
-                          </Form.Item>
                           <Form.Item name="catalog_path_json" label={`${getFieldLabel("catalog_path")}(JSON 数组)`}>
                             <Input.TextArea rows={4} />
                           </Form.Item>
-                          <Form.Item name="variables_json" label={`${getFieldLabel("variables")}(JSON 数组)`}>
-                            <Input.TextArea rows={4} />
-                          </Form.Item>
-                          <Form.Item
-                            name="exclusion_rules_json"
-                            label={`${getFieldLabel("exclusion_rules")}(JSON 数组)`}
-                          >
-                            <Input.TextArea rows={4} />
-                          </Form.Item>
-                          <Form.Item
-                            name="need_parent_context"
-                            label={getFieldLabel("need_parent_context")}
-                            valuePropName="checked"
-                          >
-                            <Switch />
-                          </Form.Item>
                           <Form.Item name="is_template" label={getFieldLabel("is_template")} valuePropName="checked">
-                            <Switch />
-                          </Form.Item>
-                          <Form.Item
-                            name="is_immutable"
-                            label={getFieldLabel("is_immutable")}
-                            valuePropName="checked"
-                          >
-                            <Switch />
-                          </Form.Item>
-                          <Form.Item
-                            name="winning_flag"
-                            label={getFieldLabel("winning_flag")}
-                            valuePropName="checked"
-                          >
                             <Switch />
                           </Form.Item>
                           <Button

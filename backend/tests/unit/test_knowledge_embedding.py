@@ -32,7 +32,6 @@ def _seed_chunk(db_session, kb_id, *, content: str = "chunk body", summary: str 
         summary=summary,
         knowledge_type="fact",
         doc_id=uuid4(),
-        source_type="bid",
         block_type_code="product_solution",
         application_type_code="preferred_reference",
         business_line_codes=["general"],

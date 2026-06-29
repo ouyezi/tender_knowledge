@@ -10,8 +10,13 @@ import {
 describe("knowledgeChunkMeta", () => {
   it("returns Chinese field labels", () => {
     expect(getFieldLabel("knowledge_type")).toBe("知识类型");
-    expect(getFieldLabel("issue_date_from")).toBe("生效日期起");
+    expect(getFieldLabel("expire_date_from")).toBe("失效日期起");
     expect(getFieldLabel("block_type_label")).toBe("块类型");
+  });
+
+  it("labels certificate fields", () => {
+    expect(getFieldLabel("certificate_number")).toBe("证书编号");
+    expect(getFieldLabel("certificate_date")).toBe("证书日期");
   });
 
   it("falls back to raw field name for unknown fields", () => {

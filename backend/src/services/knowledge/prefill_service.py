@@ -11,16 +11,19 @@ import urllib.request
 from typing import Any
 
 from src.config import settings
+from src.services.knowledge.knowledge_prefill_context import build_user_prompt
+from src.services.knowledge.knowledge_prefill_prompt import build_system_prompt
 from src.services.knowledge.knowledge_taxonomy_seed import KNOWLEDGE_TAXONOMY_SEED_ROWS
-from src.services.llm_client import truncate_for_llm
+from src.services.knowledge.certificate_field_utils import (
+    earliest_expire_date_from_csv,
+    normalize_certificate_date,
+    normalize_certificate_number,
+)
 
 logger = logging.getLogger(__name__)
 
 _KNOWLEDGE_TYPES = frozenset({"fact", "template", "solution", "case", "table", "image"})
 _CONTENT_TYPES = frozenset({"text", "mixed"})
-_SOURCE_TYPES = frozenset(
-    {"bid", "proposal", "qualification", "contract", "manual", "wiki", "case"}
-)
 _STATUSES = frozenset({"draft", "active", "deprecated", "disabled"})
 _SECURITY_LEVELS = frozenset({"public", "internal", "confidential"})
 _REVIEW_STATUSES = frozenset({"pending", "approved", "rejected"})
@@ -36,22 +39,9 @@ _TEMPLATE_TYPES = frozenset(
     }
 )
 
-_SYSTEM_PROMPT = (
-    "你是标书知识库属性预填助手。根据章节正文与元数据，输出 JSON 对象，字段包括："
-    "title, summary, knowledge_type, content_type, source_type, status, "
-    "security_level, review_status, block_type_code, application_type_code, "
-    "business_line_codes, template_type, tags, "
-    "industries, customer_types, regions, issue_date, expire_date, is_template, "
-    "winning_flag。"
-    "其中 block_type_code / application_type_code / business_line_codes 必须使用有效 taxonomy code。"
-    "industries/customer_types/regions/expire_date 可留空。"
-    "只返回 JSON，不要解释。"
-)
-
 _DEFAULT_ENUMS: dict[str, str] = {
     "knowledge_type": "fact",
     "content_type": "text",
-    "source_type": "bid",
     "status": "draft",
     "security_level": "internal",
     "review_status": "approved",
@@ -70,8 +60,8 @@ def prefill_knowledge_attributes(*, content: str, metadata: dict) -> dict:
 
     try:
         raw = _chat_with_timeout(
-            system_prompt=_SYSTEM_PROMPT,
-            user_prompt=_build_user_prompt(content, metadata),
+            system_prompt=build_system_prompt(),
+            user_prompt=build_user_prompt(content=content, context=metadata or {}),
         )
         parsed = _parse_llm_json(raw)
         if parsed is None:
@@ -121,11 +111,6 @@ def _chat_with_timeout(*, system_prompt: str, user_prompt: str) -> str:
         raise
 
 
-def _build_user_prompt(content: str, metadata: dict) -> str:
-    meta_json = json.dumps(metadata or {}, ensure_ascii=False)
-    return truncate_for_llm(f"元数据：{meta_json}\n\n章节正文：\n{content}")
-
-
 def _parse_llm_json(content: str) -> dict | None:
     text = content.strip()
     if text.startswith("```"):
@@ -140,32 +125,31 @@ def _parse_llm_json(content: str) -> dict | None:
 
 def _build_partial_result(metadata: dict) -> dict:
     result = {
-        "title": "",
+        "title": metadata.get("chapter_title") or "",
         "summary": None,
         "tags": [],
         "business_line_codes": list(_DEFAULT_BUSINESS_LINE_CODES),
-        "industries": [],
-        "customer_types": [],
         "regions": [],
-        "issue_date": None,
+        "certificate_number": None,
+        "certificate_date": None,
         "expire_date": None,
         "is_template": False,
         "template_type": None,
-        "winning_flag": False,
     }
     for key, default in _DEFAULT_ENUMS.items():
         result[key] = _enum_or_default(metadata.get(key), key, default)
+    if metadata.get("content_type_hint") == "mixed":
+        result["content_type"] = "mixed"
     if metadata.get("file_name"):
         result["file_name"] = str(metadata["file_name"])
-    if metadata.get("project_name"):
-        result["project_name"] = str(metadata["project_name"])
     return result
 
 
 def _normalize_prefill(parsed: dict, metadata: dict) -> dict:
     result = _build_partial_result(metadata)
     if parsed.get("title") is not None:
-        result["title"] = str(parsed.get("title") or "")
+        title = str(parsed.get("title") or "").strip()
+        result["title"] = title or result["title"]
     if parsed.get("summary") is not None:
         summary = parsed.get("summary")
         result["summary"] = str(summary) if summary else None
@@ -178,25 +162,36 @@ def _normalize_prefill(parsed: dict, metadata: dict) -> dict:
     result["business_line_codes"] = _business_line_codes_or_default(
         parsed.get("business_line_codes")
     )
-    result["industries"] = _as_str_list(parsed.get("industries"))
-    result["customer_types"] = _as_str_list(parsed.get("customer_types"))
     result["regions"] = _as_str_list(parsed.get("regions"))
-    result["issue_date"] = parsed.get("issue_date")
-    result["expire_date"] = parsed.get("expire_date")
+    result["certificate_number"] = normalize_certificate_number(parsed.get("certificate_number"))
+    result["certificate_date"] = normalize_certificate_date(parsed.get("certificate_date"))
+    expire_raw = parsed.get("expire_date")
+    if isinstance(expire_raw, str) and "," in expire_raw:
+        min_date = earliest_expire_date_from_csv(expire_raw)
+        result["expire_date"] = min_date.isoformat() if min_date else None
+    else:
+        result["expire_date"] = expire_raw
     result["is_template"] = bool(parsed.get("is_template", result["is_template"]))
-    result["winning_flag"] = bool(parsed.get("winning_flag", result["winning_flag"]))
 
     template_type = parsed.get("template_type")
     if template_type is not None:
         normalized = str(template_type).strip().lower()
         result["template_type"] = normalized if normalized in _TEMPLATE_TYPES else None
 
+    _apply_content_type_hints(result, metadata)
+
     if metadata.get("file_name") and "file_name" not in result:
         result["file_name"] = str(metadata["file_name"])
-    if metadata.get("project_name") and "project_name" not in result:
-        result["project_name"] = str(metadata["project_name"])
 
     return result
+
+
+def _apply_content_type_hints(result: dict, metadata: dict) -> None:
+    hint = metadata.get("content_type_hint")
+    asset_summary = metadata.get("asset_summary") or {}
+    if hint == "mixed" or asset_summary.get("has_table") or asset_summary.get("has_image"):
+        if result.get("content_type") == "text":
+            result["content_type"] = "mixed"
 
 
 def _enum_or_default(value: Any, field: str, default: str) -> str:
@@ -237,11 +232,9 @@ _BLOCK_TYPE_CODES = _taxonomy_codes("block_type")
 _APPLICATION_TYPE_CODES = _taxonomy_codes("application_type")
 _BUSINESS_LINE_CODES = _taxonomy_codes("business_line")
 
-
 _ENUM_SETS: dict[str, frozenset[str]] = {
     "knowledge_type": _KNOWLEDGE_TYPES,
     "content_type": _CONTENT_TYPES,
-    "source_type": _SOURCE_TYPES,
     "status": _STATUSES,
     "security_level": _SECURITY_LEVELS,
     "review_status": _REVIEW_STATUSES,

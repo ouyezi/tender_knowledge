@@ -131,24 +131,15 @@ def _create_payload(doc_id, node_id, *, summary: str, force: bool = False):
         content="知识正文内容",
         summary=summary,
         file_name="knowledge-v2-flow.docx",
-        project_name="测试项目",
         tags=["投标", "技术"],
-        industries=["行业A"],
-        customer_types=["客户A"],
         regions=["华东"],
         owner="tester",
     )
     payload.update(
         {
-        "doc_id": str(doc_id),
-        "primary_node_id": str(node_id),
-        "page_start": 1,
-        "page_end": 2,
-        "char_start": 0,
-        "char_end": 16,
-        "parent_id": None,
-        "need_parent_context": False,
-        "force": force,
+            "doc_id": str(doc_id),
+            "primary_node_id": str(node_id),
+            "force": force,
         }
     )
     return payload

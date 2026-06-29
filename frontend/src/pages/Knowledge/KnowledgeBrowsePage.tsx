@@ -43,17 +43,12 @@ interface FilterFormValues {
   application_type_code?: string;
   business_line_codes?: string[];
   knowledge_type?: string;
-  source_type?: string;
   status?: string;
-  industries?: string[];
   regions?: string[];
   tags?: string[];
   security_level?: string;
   is_template?: "true" | "false";
-  winning_flag?: "true" | "false";
   review_status?: string;
-  issue_date_from?: string;
-  issue_date_to?: string;
   expire_date_from?: string;
   expire_date_to?: string;
   expired_only?: "true" | "false";
@@ -76,19 +71,13 @@ function toListParams(values: FilterFormValues): ListKnowledgeChunksParams {
     application_type_code: normalizeText(values.application_type_code),
     business_line_codes: values.business_line_codes?.length ? values.business_line_codes : undefined,
     knowledge_type: normalizeText(values.knowledge_type),
-    source_type: normalizeText(values.source_type),
     status: normalizeText(values.status),
-    industries: values.industries?.length ? values.industries : undefined,
     regions: values.regions?.length ? values.regions : undefined,
     tags: values.tags?.length ? values.tags : undefined,
     security_level: normalizeText(values.security_level),
     is_template:
       values.is_template === undefined ? undefined : values.is_template === "true",
-    winning_flag:
-      values.winning_flag === undefined ? undefined : values.winning_flag === "true",
     review_status: normalizeText(values.review_status),
-    issue_date_from: normalizeText(values.issue_date_from),
-    issue_date_to: normalizeText(values.issue_date_to),
     expire_date_from: normalizeText(values.expire_date_from),
     expire_date_to: normalizeText(values.expire_date_to),
     expired_only:
@@ -103,19 +92,13 @@ function fromListParams(params: ListKnowledgeChunksParams): FilterFormValues {
     application_type_code: params.application_type_code,
     business_line_codes: params.business_line_codes,
     knowledge_type: params.knowledge_type,
-    source_type: params.source_type,
     status: params.status,
-    industries: params.industries,
     regions: params.regions,
     tags: params.tags,
     security_level: params.security_level,
     is_template:
       params.is_template === undefined ? undefined : params.is_template ? "true" : "false",
-    winning_flag:
-      params.winning_flag === undefined ? undefined : params.winning_flag ? "true" : "false",
     review_status: params.review_status,
-    issue_date_from: params.issue_date_from,
-    issue_date_to: params.issue_date_to,
     expire_date_from: params.expire_date_from,
     expire_date_to: params.expire_date_to,
     expired_only:
@@ -746,18 +729,8 @@ export default function KnowledgeBrowsePage() {
             <>
               <Row gutter={12}>
                 <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="source_type" label={getFieldLabel("source_type")}>
-                    <Select allowClear options={getEnumOptions("source_type")} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
                   <Form.Item name="business_line_codes" label={getFieldLabel("business_line_labels")}>
                     <Select mode="multiple" allowClear options={businessLineOptions} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="industries" label={getFieldLabel("industries")}>
-                    <Select mode="tags" allowClear />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
@@ -781,11 +754,6 @@ export default function KnowledgeBrowsePage() {
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="winning_flag" label={getFieldLabel("winning_flag")}>
-                    <Select allowClear options={[...BOOLEAN_OPTIONS]} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
                   <Form.Item name="expired_only" label={getFieldLabel("is_expired")}>
                     <Select allowClear options={[...BOOLEAN_OPTIONS]} />
                   </Form.Item>
@@ -793,16 +761,6 @@ export default function KnowledgeBrowsePage() {
                 <Col xs={24} sm={12} md={8} lg={6}>
                   <Form.Item name="review_status" label={getFieldLabel("review_status")}>
                     <Select allowClear options={getEnumOptions("review_status")} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="issue_date_from" label={getFieldLabel("issue_date_from")}>
-                    <Input placeholder="YYYY-MM-DD" allowClear />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={12} md={8} lg={6}>
-                  <Form.Item name="issue_date_to" label={getFieldLabel("issue_date_to")}>
-                    <Input placeholder="YYYY-MM-DD" allowClear />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12} md={8} lg={6}>
