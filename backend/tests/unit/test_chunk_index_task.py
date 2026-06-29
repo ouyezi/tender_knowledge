@@ -67,3 +67,31 @@ def test_index_knowledge_chunk_ready(db_session, seeded_kb, monkeypatch):
     )
     assert row.title_embedding == [0.1, 0.2, 0.3]
     assert row.content_embedding == [0.1, 0.2, 0.3]
+
+
+def test_index_knowledge_chunk_updates_qualification_info_on_high_confidence(
+    db_session, seeded_kb, monkeypatch
+):
+    chunk = _seed_chunk(db_session, seeded_kb.kb_id)
+
+    monkeypatch.setattr(
+        "src.services.knowledge.chunk_index_task.rewrite_chunk_summary",
+        lambda **_: {
+            "summary": "新摘要",
+            "qualification_info": "ISO9001|A001|2024-01-01|2026-12-31",
+            "date_confidence": "high",
+        },
+    )
+    monkeypatch.setattr(
+        "src.services.knowledge.chunk_index_task.EmbeddingClient.embed_text",
+        lambda _self, _text: EmbeddingResult(vector=[0.1, 0.2, 0.3]),
+    )
+    monkeypatch.setenv("EMBEDDING_API_BASE", "https://embedding.test")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "test-key")
+
+    status = index_knowledge_chunk(db_session, chunk.id)
+
+    assert status == "ready"
+    db_session.refresh(chunk)
+    assert chunk.qualification_info == "ISO9001|A001|2024-01-01|2026-12-31"
+    assert chunk.expire_date.isoformat() == "2026-12-31"

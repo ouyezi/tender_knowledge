@@ -109,9 +109,8 @@ describe("buildAutoCreatePayload", () => {
     review_status: "pending",
     is_template: false,
     template_type: null,
-    certificate_number: "CERT-001",
-    certificate_date: "2024-01-01",
-    expire_date: "2025-12-31",
+    qualification_info: "ISO9001|CERT-001|2024-01-01|2026-12-31",
+    expire_date: "2026-12-31",
   };
 
   it("maps preview + prefill to create payload with force defaults", () => {
@@ -130,9 +129,8 @@ describe("buildAutoCreatePayload", () => {
       content: "# 正文",
       summary: "摘要",
       catalog_path: preview.catalog_path,
-      certificate_number: "CERT-001",
-      certificate_date: "2024-01-01",
-      expire_date: "2025-12-31",
+      qualification_info: "ISO9001|CERT-001|2024-01-01|2026-12-31",
+      expire_date: "2026-12-31",
       block_type_code: "qualification_document",
       application_type_code: "preferred_reference",
       business_line_codes: ["general"],

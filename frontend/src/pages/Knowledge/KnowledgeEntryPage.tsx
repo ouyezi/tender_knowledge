@@ -66,8 +66,7 @@ interface EntryFormValues {
   business_line_codes?: string[];
   tags?: string[];
   regions?: string[];
-  certificate_number?: string;
-  certificate_date?: string;
+  qualification_info?: string;
   expire_date?: string;
   status?: string;
   template_type?: string;
@@ -319,8 +318,7 @@ export default function KnowledgeEntryPage() {
         business_line_codes: result.business_line_codes ?? [],
         tags: result.tags ?? [],
         regions: result.regions ?? [],
-        certificate_number: result.certificate_number ?? undefined,
-        certificate_date: result.certificate_date ?? undefined,
+        qualification_info: result.qualification_info ?? undefined,
         expire_date: result.expire_date ?? undefined,
         status: result.status,
         template_type: result.template_type ?? undefined,
@@ -396,8 +394,7 @@ export default function KnowledgeEntryPage() {
         business_line_codes: values.business_line_codes ?? [],
         tags: values.tags ?? [],
         regions: values.regions ?? [],
-        certificate_number: values.certificate_number?.trim() || null,
-        certificate_date: values.certificate_date?.trim() || null,
+        qualification_info: values.qualification_info?.trim() || null,
         expire_date: values.expire_date || null,
         status: values.status,
         is_template: Boolean(values.is_template),
@@ -990,15 +987,19 @@ export default function KnowledgeEntryPage() {
                             <Alert
                               type="info"
                               showIcon
-                              message="建议填写证书编号、证书日期与失效日期"
+                              message="建议填写资质信息与失效日期"
                               style={{ marginBottom: 16 }}
                             />
                           ) : null}
-                          <Form.Item name="certificate_number" label={getFieldLabel("certificate_number")}>
-                            <Input placeholder="多个编号用英文逗号分隔" />
-                          </Form.Item>
-                          <Form.Item name="certificate_date" label={getFieldLabel("certificate_date")}>
-                            <Input placeholder="YYYY-MM-DD，多个用英文逗号分隔" />
+                          <Form.Item
+                            name="qualification_info"
+                            label={getFieldLabel("qualification_info")}
+                            extra="格式：简称|编号|发证日期|有效期；多条用分号分隔"
+                          >
+                            <Input.TextArea
+                              rows={3}
+                              placeholder="ISO9001|A001|2024-01-01|2026-12-31"
+                            />
                           </Form.Item>
                           <Form.Item
                             name="expire_date"

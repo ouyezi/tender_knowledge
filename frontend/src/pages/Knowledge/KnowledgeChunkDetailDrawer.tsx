@@ -1,4 +1,17 @@
-import { Alert, Button, Card, Descriptions, Drawer, Empty, Space, Spin, Tag, Typography, message } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Drawer,
+  Empty,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+  message,
+} from "antd";
+import { DownOutlined, UpOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import KnowledgeSummarySection from "../../components/Knowledge/KnowledgeSummarySection";
@@ -60,86 +73,211 @@ function renderTagList(values?: string[]) {
   );
 }
 
-function BaseInfo({ detail, onOpenChunk }: { detail: KnowledgeChunkDetail; onOpenChunk: (chunkId: number) => void }) {
+function renderQualificationInfo(value?: string | null) {
+  const lines = (value || "")
+    .split(";")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    return "-";
+  }
   return (
-    <Descriptions title="基础信息" bordered column={2} size="small">
-      <Descriptions.Item label={getFieldLabel("id")}>{detail.id}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("kb_id")}>{detail.kb_id}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("knowledge_code")}>{detail.knowledge_code}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("version")}>{detail.version}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("previous_version_id")}>
-        {detail.previous_version_id ?? "-"}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("is_latest")}>{formatBoolean(detail.is_latest)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("title")}>{detail.title || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("summary")} span={2}>
-        <KnowledgeSummarySection
-          summary={detail.summary}
-          imageAssets={detail.assets.filter((asset) => asset.asset_type === "image")}
-        />
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("knowledge_type")}>
-        {getEnumLabel("knowledge_type", detail.knowledge_type)}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("content_type")}>
-        {getEnumLabel("content_type", detail.content_type)}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("doc_id")}>{detail.doc_id}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("file_name")}>{detail.file_name || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("primary_node_id")}>{detail.primary_node_id}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("block_type_label")}>
-        {detail.block_type_label || detail.block_type_code || "-"}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("application_type_label")}>
-        {detail.application_type_label || detail.application_type_code || "-"}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("status")}>{getEnumLabel("status", detail.status)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("security_level")}>
-        {getEnumLabel("security_level", detail.security_level)}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("review_status")}>
-        {getEnumLabel("review_status", detail.review_status)}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("owner")}>{detail.owner || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("business_line_labels")}>
-        {renderTagList(detail.business_line_labels)}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("template_type")}>
-        {getEnumLabel("template_type", detail.template_type)}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("token_count")}>{detail.token_count}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("content_hash")}>{detail.content_hash || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("has_children")}>{formatBoolean(detail.has_children)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("children_count")}>{detail.children_count}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("is_template")}>{formatBoolean(detail.is_template)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("certificate_number")}>
-        {detail.certificate_number || "-"}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("certificate_date")}>
-        {detail.certificate_date || "-"}
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("expire_date")}>{detail.expire_date || "-"}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("is_expired")}>{formatBoolean(detail.is_expired)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("create_time")}>{formatDateTime(detail.create_time)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("update_time")}>{formatDateTime(detail.update_time)}</Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("embedding_status")}>
-        <Tag color={EMBEDDING_STATUS_COLORS[detail.embedding_status] ?? "default"}>
-          {getEnumLabel("embedding_status", detail.embedding_status)}
-        </Tag>
-      </Descriptions.Item>
-      <Descriptions.Item label={getFieldLabel("previous_version")}>
-        {detail.previous_version ? (
-          <Space>
-            <Text>{`${detail.previous_version.title} (v${detail.previous_version.version})`}</Text>
-            <Button type="link" size="small" onClick={() => onOpenChunk(detail.previous_version!.id)}>
-              查看上一版本
-            </Button>
+    <span style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+      {lines.join("\n")}
+    </span>
+  );
+}
+
+const DESCRIPTION_LABEL_STYLE = { width: 112, minWidth: 112, verticalAlign: "top" as const };
+const DESCRIPTION_CONTENT_STYLE = { wordBreak: "break-word" as const };
+const DESCRIPTION_STYLES = {
+  label: DESCRIPTION_LABEL_STYLE,
+  content: DESCRIPTION_CONTENT_STYLE,
+};
+const MERGED_DESCRIPTIONS_STYLE = { marginTop: -1 };
+
+function CoreInfoSection({
+  detail,
+  catalogPathText,
+  onOpenChunk,
+}: {
+  detail: KnowledgeChunkDetail;
+  catalogPathText: string;
+  onOpenChunk: (chunkId: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const imageAssets = detail.assets.filter((asset) => asset.asset_type === "image");
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [detail.id]);
+
+  return (
+    <Card title="核心信息" size="small">
+      <Descriptions bordered column={2} size="small" styles={DESCRIPTION_STYLES}>
+        <Descriptions.Item label={getFieldLabel("id")}>{detail.id}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("knowledge_code")}>{detail.knowledge_code}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("title")}>
+          <Text strong ellipsis={{ tooltip: detail.title || "-" }} style={{ display: "block" }}>
+            {detail.title || "-"}
+          </Text>
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("business_line_labels")}>
+          {renderTagList(detail.business_line_labels)}
+        </Descriptions.Item>
+      </Descriptions>
+
+      <Descriptions
+        bordered
+        column={1}
+        size="small"
+        style={MERGED_DESCRIPTIONS_STYLE}
+        styles={DESCRIPTION_STYLES}
+      >
+        <Descriptions.Item label={getFieldLabel("summary")}>
+          <KnowledgeSummarySection summary={detail.summary} imageAssets={imageAssets} />
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("qualification_info")}>
+          {renderQualificationInfo(detail.qualification_info)}
+        </Descriptions.Item>
+      </Descriptions>
+
+      <Descriptions
+        bordered
+        column={2}
+        size="small"
+        style={MERGED_DESCRIPTIONS_STYLE}
+        styles={DESCRIPTION_STYLES}
+      >
+        <Descriptions.Item label={getFieldLabel("expire_date")}>
+          <Space size={8}>
+            <span>{detail.expire_date || "-"}</span>
+            {detail.is_expired ? <Tag color="error">已过期</Tag> : null}
           </Space>
-        ) : (
-          "-"
-        )}
-      </Descriptions.Item>
-    </Descriptions>
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("update_time")}>{formatDateTime(detail.update_time)}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("embedding_status")}>
+          <Tag color={EMBEDDING_STATUS_COLORS[detail.embedding_status] ?? "default"}>
+            {getEnumLabel("embedding_status", detail.embedding_status)}
+          </Tag>
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("knowledge_type")}>
+          {getEnumLabel("knowledge_type", detail.knowledge_type)}
+        </Descriptions.Item>
+      </Descriptions>
+
+      <div style={{ marginTop: 12, textAlign: "center" }}>
+        <Button
+          type="link"
+          size="small"
+          icon={expanded ? <UpOutlined /> : <DownOutlined />}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "收起其它属性" : "展开其它属性"}
+        </Button>
+      </div>
+
+      {expanded ? (
+        <MoreInfo
+          detail={detail}
+          catalogPathText={catalogPathText}
+          onOpenChunk={onOpenChunk}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+function MoreInfo({
+  detail,
+  catalogPathText,
+  onOpenChunk,
+}: {
+  detail: KnowledgeChunkDetail;
+  catalogPathText: string;
+  onOpenChunk: (chunkId: number) => void;
+}) {
+  return (
+    <>
+      <Descriptions
+        bordered
+        column={2}
+        size="small"
+        style={{ marginTop: 12 }}
+        styles={DESCRIPTION_STYLES}
+      >
+        <Descriptions.Item label={getFieldLabel("block_type_label")}>
+          {detail.block_type_label || detail.block_type_code || "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("application_type_label")}>
+          {detail.application_type_label || detail.application_type_code || "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("status")}>{getEnumLabel("status", detail.status)}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("content_type")}>
+          {getEnumLabel("content_type", detail.content_type)}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("file_name")}>{detail.file_name || "-"}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("review_status")}>
+          {getEnumLabel("review_status", detail.review_status)}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("security_level")}>
+          {getEnumLabel("security_level", detail.security_level)}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("owner")}>{detail.owner || "-"}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("version")}>{detail.version}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("is_latest")}>{formatBoolean(detail.is_latest)}</Descriptions.Item>
+      </Descriptions>
+
+      <Descriptions
+        bordered
+        column={1}
+        size="small"
+        style={MERGED_DESCRIPTIONS_STYLE}
+        styles={DESCRIPTION_STYLES}
+      >
+        <Descriptions.Item label={getFieldLabel("previous_version")}>
+          {detail.previous_version ? (
+            <Space>
+              <Text>{`${detail.previous_version.title} (v${detail.previous_version.version})`}</Text>
+              <Button type="link" size="small" onClick={() => onOpenChunk(detail.previous_version!.id)}>
+                查看上一版本
+              </Button>
+            </Space>
+          ) : (
+            "-"
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("tags")}>{renderTagList(detail.tags)}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("regions")}>{renderTagList(detail.regions)}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("catalog_path")}>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{catalogPathText}</pre>
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("content_hash")}>{detail.content_hash || "-"}</Descriptions.Item>
+      </Descriptions>
+
+      <Descriptions
+        bordered
+        column={2}
+        size="small"
+        style={MERGED_DESCRIPTIONS_STYLE}
+        styles={DESCRIPTION_STYLES}
+      >
+        <Descriptions.Item label={getFieldLabel("doc_id")}>{detail.doc_id}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("primary_node_id")}>{detail.primary_node_id}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("is_template")}>{formatBoolean(detail.is_template)}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("template_type")}>
+          {getEnumLabel("template_type", detail.template_type)}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("token_count")}>{detail.token_count}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("create_time")}>{formatDateTime(detail.create_time)}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("kb_id")}>{detail.kb_id}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("previous_version_id")}>
+          {detail.previous_version_id ?? "-"}
+        </Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("has_children")}>{formatBoolean(detail.has_children)}</Descriptions.Item>
+        <Descriptions.Item label={getFieldLabel("children_count")}>{detail.children_count}</Descriptions.Item>
+      </Descriptions>
+    </>
   );
 }
 
@@ -220,7 +358,12 @@ export default function KnowledgeChunkDetailDrawer({
               description="当前知识已超过失效日期，建议优先核验并更新内容后再使用。"
             />
           ) : null}
-          <BaseInfo detail={detail} onOpenChunk={onOpenChunk} />
+
+          <CoreInfoSection
+            detail={detail}
+            catalogPathText={catalogPathText}
+            onOpenChunk={onOpenChunk}
+          />
 
           <Card title={getFieldLabel("content")}>
             <KnowledgeContentViewer
@@ -231,19 +374,6 @@ export default function KnowledgeChunkDetailDrawer({
               imageRefMap={detail.image_ref_map}
               showImageExtraction
             />
-          </Card>
-
-          <Card title="结构字段">
-            <Descriptions bordered column={1} size="small">
-              <Descriptions.Item label={getFieldLabel("catalog_path")}>
-                <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{catalogPathText}</pre>
-              </Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("tags")}>{renderTagList(detail.tags)}</Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("business_line_labels")}>
-                {renderTagList(detail.business_line_labels)}
-              </Descriptions.Item>
-              <Descriptions.Item label={getFieldLabel("regions")}>{renderTagList(detail.regions)}</Descriptions.Item>
-            </Descriptions>
           </Card>
 
           <Card title={`关联资产 (${detail.assets.length})`}>

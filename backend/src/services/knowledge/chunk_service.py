@@ -12,10 +12,9 @@ from src.models.chunk_embedding import ChunkEmbedding
 from src.models.chunk_asset import ChunkAsset
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.knowledge.asset_link_service import link_assets_to_chunk
-from src.services.knowledge.certificate_field_utils import (
-    earliest_expire_date_from_csv,
-    normalize_certificate_date,
-    normalize_certificate_number,
+from src.services.knowledge.qualification_field_utils import (
+    earliest_expire_date_from_qualification_info,
+    normalize_qualification_info,
     parse_expire_date_value,
 )
 from src.services.knowledge.chunk_image_assets import ensure_image_assets_for_chunk
@@ -104,9 +103,10 @@ def create_knowledge_chunk(
         if node_uuid
         else (None, None)
     )
-    cert_number = normalize_certificate_number(payload.get("certificate_number"))
-    cert_date = normalize_certificate_date(payload.get("certificate_date"))
-    expire_date = _resolve_expire_date(payload.get("expire_date"))
+    qualification_info = normalize_qualification_info(payload.get("qualification_info"))
+    expire_date = parse_expire_date_value(payload.get("expire_date"))
+    if qualification_info and expire_date is None:
+        expire_date = earliest_expire_date_from_qualification_info(qualification_info)
 
     chunk = KnowledgeChunk(
         kb_id=kb_id,
@@ -130,8 +130,7 @@ def create_knowledge_chunk(
         business_line_codes=business_line_codes,
         tags=list(payload.get("tags") or []),
         regions=list(payload.get("regions") or []),
-        certificate_number=cert_number,
-        certificate_date=cert_date,
+        qualification_info=qualification_info,
         expire_date=expire_date,
         status=str(payload.get("status") or "draft"),
         is_template=bool(payload.get("is_template", False)),
@@ -194,15 +193,6 @@ def delete_knowledge_chunk(db: Session, *, kb_id: UUID, chunk_id: int) -> None:
         synchronize_session=False
     )
     db.flush()
-
-
-def _resolve_expire_date(value: object | None) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, date):
-        return value
-    return parse_expire_date_value(value)
-
 
 def _compute_content_hash(content: str) -> str:
     normalized = (content or "").strip()

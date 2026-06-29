@@ -72,9 +72,39 @@ def _sync_knowledge_chunk_retrieval_schema(conn) -> None:
     )
 
 
+def _sync_qualification_info_schema(conn) -> None:
+    if conn.dialect.name != "postgresql":
+        return
+    conn.execute(
+        text(
+            """
+            ALTER TABLE knowledge_chunks
+            ADD COLUMN IF NOT EXISTS qualification_info varchar(2048)
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            ALTER TABLE knowledge_chunks
+            DROP COLUMN IF EXISTS certificate_number
+            """
+        )
+    )
+    conn.execute(
+        text(
+            """
+            ALTER TABLE knowledge_chunks
+            DROP COLUMN IF EXISTS certificate_date
+            """
+        )
+    )
+
+
 def init_db() -> None:
     if engine.dialect.name == "postgresql":
         with engine.begin() as conn:
             _ensure_pgvector_extension(conn)
             _sync_knowledge_chunk_retrieval_schema(conn)
+            _sync_qualification_info_schema(conn)
     Base.metadata.create_all(bind=engine)

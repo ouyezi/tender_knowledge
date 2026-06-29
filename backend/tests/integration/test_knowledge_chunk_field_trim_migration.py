@@ -1,10 +1,12 @@
 from sqlalchemy import inspect
 
 
-def test_knowledge_chunks_schema_after_trim(db_session):
+def test_knowledge_chunks_schema_after_qualification_info(db_session):
     cols = {c["name"] for c in inspect(db_session.bind).get_columns("knowledge_chunks")}
-    assert "certificate_number" in cols
-    assert "certificate_date" in cols
+    assert "qualification_info" in cols
+    assert "certificate_number" not in cols
+    assert "certificate_date" not in cols
+    assert "expire_date" in cols
     assert "char_start" in cols
     assert "char_end" in cols
     assert "page_start" not in cols

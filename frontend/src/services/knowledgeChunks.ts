@@ -73,8 +73,7 @@ export interface CreateKnowledgeChunkRequest {
   business_line_codes?: string[];
   tags?: string[];
   regions?: string[];
-  certificate_number?: string | null;
-  certificate_date?: string | null;
+  qualification_info?: string | null;
   expire_date?: string | null;
   status?: string;
   is_template?: boolean;
@@ -181,8 +180,7 @@ export interface KnowledgeChunkDetail {
   is_expired: boolean;
   tags: string[];
   regions: string[];
-  certificate_number: string | null;
-  certificate_date: string | null;
+  qualification_info: string | null;
   expire_date: string | null;
   status: string;
   is_template: boolean;
@@ -226,8 +224,7 @@ export interface PrefillResult {
   template_type: string | null;
   tags: string[];
   regions: string[];
-  certificate_number: string | null;
-  certificate_date: string | null;
+  qualification_info: string | null;
   expire_date: string | null;
   is_template: boolean;
   file_name?: string;

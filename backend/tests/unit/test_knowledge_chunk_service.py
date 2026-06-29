@@ -180,7 +180,7 @@ def test_create_chunk_force_bumps_version(db_session, seeded_kb, tmp_path):
     assert first.is_latest is False
 
 
-def test_create_chunk_auto_sets_char_range_and_certificate_fields(
+def test_create_chunk_auto_sets_char_range_and_qualification_info(
     db_session, seeded_kb, tmp_path
 ):
     from src.models.knowledge_chunk import KnowledgeChunk
@@ -196,8 +196,10 @@ def test_create_chunk_auto_sets_char_range_and_certificate_fields(
         kb_id=seeded_kb.kb_id,
         payload=minimal_chunk_payload(
             content="资质正文XYZ",
-            certificate_number="CERT-001, CERT-002",
-            certificate_date="2024-01-01,2025-01-01",
+            qualification_info=(
+                "ISO9001|CERT-001|2024-01-01|2026-12-31;"
+                "软著|CERT-002|2025-01-01|2025-06-01"
+            ),
             expire_date="2025-06-01",
         ),
         doc_id=document.document_id,
@@ -207,8 +209,9 @@ def test_create_chunk_auto_sets_char_range_and_certificate_fields(
     assert row is not None
     assert row.char_start is not None
     assert row.char_end is not None
-    assert row.certificate_number == "CERT-001,CERT-002"
-    assert row.certificate_date == "2024-01-01,2025-01-01"
+    assert row.qualification_info == (
+        "ISO9001|CERT-001|2024-01-01|2026-12-31;软著|CERT-002|2025-01-01|2025-06-01"
+    )
     assert not hasattr(row, "page_start")
     assert row.expire_date is not None
     assert row.expire_date.isoformat() == "2025-06-01"

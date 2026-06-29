@@ -14,15 +14,14 @@ from src.config import settings
 from src.services.knowledge.knowledge_prefill_context import build_user_prompt
 from src.services.knowledge.knowledge_prefill_prompt import build_system_prompt
 from src.services.knowledge.knowledge_taxonomy_seed import KNOWLEDGE_TAXONOMY_SEED_ROWS
-from src.services.knowledge.certificate_field_utils import (
-    earliest_expire_date_from_csv,
-    normalize_certificate_date,
-    normalize_certificate_number,
+from src.services.knowledge.qualification_field_utils import (
+    earliest_expire_date_from_qualification_info,
+    normalize_qualification_info,
 )
 
 logger = logging.getLogger(__name__)
 
-_KNOWLEDGE_TYPES = frozenset({"fact", "template", "solution", "case", "table", "image"})
+_KNOWLEDGE_TYPES = frozenset({"fact", "certificate", "template", "solution", "case", "table", "image"})
 _CONTENT_TYPES = frozenset({"text", "mixed"})
 _STATUSES = frozenset({"draft", "active", "deprecated", "disabled"})
 _SECURITY_LEVELS = frozenset({"public", "internal", "confidential"})
@@ -130,8 +129,7 @@ def _build_partial_result(metadata: dict) -> dict:
         "tags": [],
         "business_line_codes": list(_DEFAULT_BUSINESS_LINE_CODES),
         "regions": [],
-        "certificate_number": None,
-        "certificate_date": None,
+        "qualification_info": None,
         "expire_date": None,
         "is_template": False,
         "template_type": None,
@@ -163,14 +161,14 @@ def _normalize_prefill(parsed: dict, metadata: dict) -> dict:
         parsed.get("business_line_codes")
     )
     result["regions"] = _as_str_list(parsed.get("regions"))
-    result["certificate_number"] = normalize_certificate_number(parsed.get("certificate_number"))
-    result["certificate_date"] = normalize_certificate_date(parsed.get("certificate_date"))
-    expire_raw = parsed.get("expire_date")
-    if isinstance(expire_raw, str) and "," in expire_raw:
-        min_date = earliest_expire_date_from_csv(expire_raw)
-        result["expire_date"] = min_date.isoformat() if min_date else None
+    date_confidence = str(parsed.get("date_confidence") or "").strip().lower()
+    if date_confidence == "high":
+        result["qualification_info"] = normalize_qualification_info(parsed.get("qualification_info"))
+        derived = earliest_expire_date_from_qualification_info(result["qualification_info"])
+        result["expire_date"] = derived.isoformat() if derived else None
     else:
-        result["expire_date"] = expire_raw
+        result["qualification_info"] = None
+        result["expire_date"] = None
     result["is_template"] = bool(parsed.get("is_template", result["is_template"]))
 
     template_type = parsed.get("template_type")

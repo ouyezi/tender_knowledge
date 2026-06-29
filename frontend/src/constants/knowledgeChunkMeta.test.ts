@@ -14,9 +14,8 @@ describe("knowledgeChunkMeta", () => {
     expect(getFieldLabel("block_type_label")).toBe("块类型");
   });
 
-  it("labels certificate fields", () => {
-    expect(getFieldLabel("certificate_number")).toBe("证书编号");
-    expect(getFieldLabel("certificate_date")).toBe("证书日期");
+  it("labels qualification_info", () => {
+    expect(getFieldLabel("qualification_info")).toBe("资质信息");
   });
 
   it("falls back to raw field name for unknown fields", () => {
@@ -25,6 +24,7 @@ describe("knowledgeChunkMeta", () => {
 
   it("returns Chinese enum labels", () => {
     expect(getEnumLabel("knowledge_type", "fact")).toBe("事实");
+    expect(getEnumLabel("knowledge_type", "certificate")).toBe("证书");
     expect(getEnumLabel("status", "draft")).toBe("草稿");
     expect(getEnumLabel("source_type", "qualification")).toBe("资质");
   });

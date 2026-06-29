@@ -29,8 +29,7 @@ class CreateKnowledgeChunkRequest(BaseModel):
     business_line_codes: list[str] = Field(default_factory=lambda: ["general"])
     tags: list[str] = Field(default_factory=list)
     regions: list[str] = Field(default_factory=list)
-    certificate_number: str | None = None
-    certificate_date: str | None = None
+    qualification_info: str | None = None
     expire_date: date | None = None
     status: str = "draft"
     is_template: bool = False

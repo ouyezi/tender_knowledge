@@ -257,14 +257,13 @@ def test_chunk_detail_excludes_internal_char_fields(
             "block_type_code": "ip_patent",
             "application_type_code": "fixed_reference",
             "business_line_codes": ["general"],
-            "certificate_number": "NO-1",
-            "certificate_date": "2024-01-01",
+            "qualification_info": "ISO9001|NO-1|2024-01-01|2026-01-01",
         },
     )
     assert create.status_code == 201
     chunk_id = create.json()["data"]["id"]
     detail = client.get(f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/{chunk_id}").json()["data"]
-    assert detail["certificate_number"] == "NO-1"
+    assert detail["qualification_info"] == "ISO9001|NO-1|2024-01-01|2026-01-01"
     assert "char_start" not in detail
     assert "section_char_start" in detail
     assert "page_start" not in detail

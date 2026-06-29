@@ -59,20 +59,39 @@ def test_normalize_prefill_uses_content_type_hint(monkeypatch):
     assert result["content_type"] == "mixed"
 
 
-def test_prefill_maps_certificate_fields(monkeypatch):
+def test_prefill_maps_qualification_info_on_high_confidence(monkeypatch):
     monkeypatch.setattr(
         "src.services.knowledge.prefill_service._chat_with_timeout",
         lambda **kw: (
-            '{"title":"T","certificate_number":"A1,B2","certificate_date":"2024-01-01,2025-01-01",'
-            '"expire_date":"2025-06-01,2024-12-31"}'
+            '{"title":"T","qualification_info":"ISO9001|A1|2024-01-01|2026-12-31",'
+            '"date_confidence":"high"}'
         ),
     )
     result = prefill_knowledge_attributes(content="证书", metadata={})
-    assert result["certificate_number"] == "A1,B2"
-    assert result["certificate_date"] == "2024-01-01,2025-01-01"
-    assert result["expire_date"] == "2024-12-31"
-    assert "issue_date" not in result
-    assert "winning_flag" not in result
+    assert result["qualification_info"] == "ISO9001|A1|2024-01-01|2026-12-31"
+    assert result["expire_date"] == "2026-12-31"
+
+
+def test_prefill_skips_qualification_info_on_low_confidence(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.knowledge.prefill_service._chat_with_timeout",
+        lambda **kw: (
+            '{"title":"T","qualification_info":"NEW|N1|2023-01-01|2028-01-01",'
+            '"date_confidence":"low"}'
+        ),
+    )
+    result = prefill_knowledge_attributes(content="证书", metadata={})
+    assert result["qualification_info"] is None
+    assert result["expire_date"] is None
+
+
+def test_prefill_maps_certificate_knowledge_type(monkeypatch):
+    monkeypatch.setattr(
+        "src.services.knowledge.prefill_service._chat_with_timeout",
+        lambda **kw: '{"title":"T","knowledge_type":"certificate","block_type_code":"qualification_document"}',
+    )
+    result = prefill_knowledge_attributes(content="ISO9001 证书", metadata={})
+    assert result["knowledge_type"] == "certificate"
 
 
 def test_build_user_prompt_includes_catalog():

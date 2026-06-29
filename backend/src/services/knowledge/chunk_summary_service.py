@@ -7,34 +7,30 @@ import socket
 import time
 import urllib.error
 import urllib.request
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from src.config import settings
-from src.services.knowledge.certificate_field_utils import (
-    earliest_expire_date_from_csv,
-    normalize_certificate_date,
-    normalize_certificate_number,
-    parse_expire_date_value,
+from src.services.knowledge.qualification_field_utils import (
+    earliest_expire_date_from_qualification_info,
+    normalize_qualification_info,
 )
 
 logger = logging.getLogger(__name__)
 
 _SUMMARY_SYSTEM_PROMPT = (
-    "你是标书知识块摘要助手。输出 JSON：summary、certificate_number、certificate_date、"
-    "expire_date、date_confidence（high/medium/low）。"
-    "certificate_number/certificate_date 多个值用英文逗号分隔；expire_date 取最早失效日。"
-    "图片信息中 information_role=core 的（如证书/资质）应写入 summary；"
-    "information_role=auxiliary 的（如商品图/门店图）可忽略，不要写入 summary。"
-    "只返回 JSON，不要 markdown。"
+    "你是标书知识块摘要助手。输出 JSON：summary、qualification_info、date_confidence（high/medium/low）。"
+    "qualification_info 格式：每条资质为 简称|编号|发证日期|有效期，多条用英文分号分隔；"
+    "发证日期与有效期中的日期使用 YYYY-MM-DD；有效期可为长期有效等非日期文本。"
+    "结合正文与图片信息提取或修正资质；information_role=core 的证书/资质图应写入 qualification_info；"
+    "information_role=auxiliary 的图忽略。只返回 JSON，不要 markdown。"
 )
 
 
 def apply_summary_update(
     *,
     current_summary: str | None,
-    current_certificate_number: str | None,
-    current_certificate_date: str | None,
+    current_qualification_info: str | None,
     current_expire_date: date | None,
     llm_result: dict[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
@@ -47,15 +43,14 @@ def apply_summary_update(
     fields: dict[str, Any] = {"summary": summary}
     date_confidence = str(llm_result.get("date_confidence") or "").strip().lower()
     if date_confidence == "high":
-        cert_number = normalize_certificate_number(llm_result.get("certificate_number"))
-        cert_date = normalize_certificate_date(llm_result.get("certificate_date"))
-        expire_date = _parse_expire_date(llm_result.get("expire_date"))
-        fields["certificate_number"] = cert_number if cert_number is not None else current_certificate_number
-        fields["certificate_date"] = cert_date if cert_date is not None else current_certificate_date
-        fields["expire_date"] = expire_date if expire_date is not None else current_expire_date
+        normalized = normalize_qualification_info(llm_result.get("qualification_info"))
+        fields["qualification_info"] = (
+            normalized if normalized is not None else current_qualification_info
+        )
+        derived = earliest_expire_date_from_qualification_info(fields["qualification_info"])
+        fields["expire_date"] = derived if derived is not None else current_expire_date
     else:
-        fields["certificate_number"] = current_certificate_number
-        fields["certificate_date"] = current_certificate_date
+        fields["qualification_info"] = current_qualification_info
         fields["expire_date"] = current_expire_date
 
     return fields, warnings
@@ -135,14 +130,3 @@ def _parse_llm_json(content: str) -> dict | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
-
-
-def _parse_expire_date(value: object | None) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, date):
-        return value
-    text = str(value).strip()
-    if not text:
-        return None
-    return parse_expire_date_value(text)

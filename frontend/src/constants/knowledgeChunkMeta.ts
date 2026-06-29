@@ -24,8 +24,7 @@ export const FIELD_LABELS: Record<string, string> = {
   security_level: "安全级别",
   review_status: "审核状态",
   owner: "负责人",
-  certificate_number: "证书编号",
-  certificate_date: "证书日期",
+  qualification_info: "资质信息",
   expire_date: "失效日期",
   tags: "标签",
   regions: "地区",
@@ -74,6 +73,7 @@ export const FIELD_LABELS: Record<string, string> = {
 export const ENUM_LABELS: Record<string, Record<string, string>> = {
   knowledge_type: {
     fact: "事实",
+    certificate: "证书",
     template: "模板",
     solution: "方案",
     case: "案例",
