@@ -27,7 +27,7 @@ describe("buildContentBlocks", () => {
       sectionCharStart: 100,
       assets: [
         { id: 1, ...baseAsset, char_start: 104 },
-        { id: 2, ...baseAsset, asset_type: "table", char_start: 110, raw_markdown: "|h|\n|-|\n|v|" },
+        { id: 2, ...baseAsset, char_start: 110 },
       ],
     });
     expect(blocks).toEqual([
@@ -56,5 +56,77 @@ describe("buildContentBlocks", () => {
       assets: [{ id: 3, ...baseAsset, char_start: 10 }],
     });
     expect(blocks).toEqual([{ type: "text", content: "section" }]);
+  });
+
+  it("ignores assets that extend beyond section char_end", () => {
+    const blocks = buildContentBlocks({
+      contentMd: "法人代表身份证明",
+      sectionCharStart: 6776,
+      sectionCharEnd: 6915,
+      assets: [
+        {
+          id: 7,
+          ...baseAsset,
+          asset_type: "table",
+          char_start: 6814,
+          char_end: 200845,
+          raw_markdown: "| 指标 | 2019 |\n| --- | --- |",
+        },
+      ],
+    });
+    expect(blocks).toEqual([{ type: "text", content: "法人代表身份证明" }]);
+  });
+
+  it("filters table assets whose header is not present in section markdown", () => {
+    const blocks = buildContentBlocks({
+      contentMd: "## 法人代表身份证明\n\n兹证明王海锋同志为我单位法定代表人。",
+      sectionCharStart: 100,
+      sectionCharEnd: 250,
+      assets: [
+        {
+          id: 8,
+          ...baseAsset,
+          asset_type: "table",
+          char_start: 120,
+          char_end: 180,
+          raw_markdown: "| 指标 | 2019 |\n| --- | --- |",
+        },
+      ],
+    });
+    expect(blocks).toEqual([
+      {
+        type: "text",
+        content: "## 法人代表身份证明\n\n兹证明王海锋同志为我单位法定代表人。",
+      },
+    ]);
+  });
+
+  it("does not duplicate table assets already present in section markdown", () => {
+    const table = "| 员工痛点 | 消费场景少 |\n| --- | --- |\n| 使用体感差 | 无新意 |";
+    const contentMd = `## 2.1 痛点\n\n${table}\n`;
+    const blocks = buildContentBlocks({
+      contentMd,
+      sectionCharStart: 100,
+      sectionCharEnd: 500,
+      assets: [
+        {
+          id: 11,
+          ...baseAsset,
+          asset_type: "table",
+          char_start: 115,
+          char_end: 200,
+          raw_markdown: table,
+        },
+        {
+          id: 12,
+          ...baseAsset,
+          asset_type: "table",
+          char_start: 115,
+          char_end: 200,
+          raw_markdown: table,
+        },
+      ],
+    });
+    expect(blocks).toEqual([{ type: "text", content: contentMd }]);
   });
 });

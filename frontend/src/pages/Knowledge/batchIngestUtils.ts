@@ -5,6 +5,7 @@ import type {
   PrefillResult,
   TreeNode,
 } from "../../services/knowledgeChunks";
+import { isPrefaceNodeId } from "./prefaceNode";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -33,6 +34,10 @@ export function collectCheckedNodeIds(nodes: TreeNode[], checkedKeys: Key[]): st
 
   walk(nodes);
   return result;
+}
+
+export function collectIngestibleNodeIds(nodes: TreeNode[], checkedKeys: Key[]): string[] {
+  return collectCheckedNodeIds(nodes, checkedKeys).filter((nodeId) => !isPrefaceNodeId(nodeId));
 }
 
 export function buildPrefillMetadata(params: {

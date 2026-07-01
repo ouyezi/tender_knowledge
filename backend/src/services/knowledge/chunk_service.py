@@ -19,6 +19,7 @@ from src.services.knowledge.qualification_field_utils import (
     parse_expire_date_value,
 )
 from src.services.knowledge.chunk_image_assets import ensure_image_assets_for_chunk
+from src.services.doc_chunk.section_slice import is_preface_node_id
 from src.services.knowledge.entry_content_service import build_catalog_path, compute_section_char_range
 from src.services.knowledge.taxonomy_service import (
     validate_application_type_code,
@@ -39,6 +40,10 @@ class ChunkNotFoundError(Exception):
     pass
 
 
+class ChunkValidationError(ValueError):
+    pass
+
+
 def bump_version(version: str) -> str:
     major, minor = version.split(".", 1)
     return f"{major}.{int(minor) + 1}"
@@ -54,6 +59,8 @@ def create_knowledge_chunk(
     force: bool = False,
 ) -> KnowledgeChunk:
     node_key = str(primary_node_id)
+    if is_preface_node_id(node_key):
+        raise ChunkValidationError("Preface sections cannot be ingested as knowledge chunks")
     existing = (
         db.query(KnowledgeChunk)
         .filter(
@@ -155,6 +162,7 @@ def create_knowledge_chunk(
         chunk_id=chunk.id,
         char_start=chunk.char_start,
         char_end=chunk.char_end,
+        section_md=content,
     )
     ensure_image_assets_for_chunk(db, chunk)
     db.flush()

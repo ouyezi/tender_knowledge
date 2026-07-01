@@ -14,6 +14,7 @@ interface KnowledgeContentViewerProps {
   contentMd: string;
   assets: KnowledgeAssetLike[];
   sectionCharStart?: number | null;
+  sectionCharEnd?: number | null;
   showModeToggle?: boolean;
   defaultMode?: ContentViewMode;
   kbId?: string;
@@ -36,6 +37,7 @@ export default function KnowledgeContentViewer({
   contentMd,
   assets,
   sectionCharStart,
+  sectionCharEnd,
   showModeToggle = true,
   defaultMode = "preview",
   kbId,
@@ -63,8 +65,8 @@ export default function KnowledgeContentViewer({
   }, [assets]);
 
   const blocks = useMemo(
-    () => buildContentBlocks({ contentMd, assets, sectionCharStart }),
-    [assets, contentMd, sectionCharStart],
+    () => buildContentBlocks({ contentMd, assets, sectionCharStart, sectionCharEnd }),
+    [assets, contentMd, sectionCharStart, sectionCharEnd],
   );
 
   const markdownComponents = useMemo(

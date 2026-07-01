@@ -331,6 +331,7 @@ export default function KnowledgeChunkDetailDrawer({
 
   const catalogPathText = useMemo(() => JSON.stringify(detail?.catalog_path ?? [], null, 2), [detail?.catalog_path]);
   const sectionCharStart = detail?.section_char_start ?? null;
+  const sectionCharEnd = detail?.section_char_end ?? null;
 
   return (
     <Drawer
@@ -370,6 +371,7 @@ export default function KnowledgeChunkDetailDrawer({
               contentMd={detail.content || ""}
               assets={detail.assets}
               sectionCharStart={sectionCharStart}
+              sectionCharEnd={sectionCharEnd}
               kbId={kbId}
               imageRefMap={detail.image_ref_map}
               showImageExtraction

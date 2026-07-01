@@ -39,11 +39,13 @@ from src.services.knowledge.chunk_search_service import (
 from src.services.knowledge.chunk_service import (
     ChunkConflictError,
     ChunkNotFoundError,
+    ChunkValidationError,
     create_knowledge_chunk,
     delete_knowledge_chunk,
     mark_chunks_index_failed,
 )
 from src.services.knowledge.embedding_client import embedding_client_from_settings
+from src.services.knowledge.asset_section_utils import filter_assets_for_section
 from src.services.knowledge.entry_content_service import (
     ContentNotAvailableError,
     DocumentNotFoundError,
@@ -284,7 +286,7 @@ def get_document_tree_api(
 def get_node_preview_api(
     kb_id: UUID,
     doc_id: UUID,
-    node_id: UUID,
+    node_id: str,
     db: Session = Depends(get_db),
     _: KnowledgeBase = Depends(get_kb_or_404),
 ):
@@ -360,6 +362,12 @@ def create_knowledge_chunk_api(
                     "existing_version": exc.existing_version,
                 },
             ),
+        )
+    except ChunkValidationError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=422,
+            content=error("VALIDATION", str(exc), trace_id=get_trace_id()),
         )
 
     db.commit()
@@ -687,6 +695,7 @@ def get_knowledge_chunk_api(
         .order_by(ChunkAsset.char_start.asc(), ChunkAsset.id.asc())
         .all()
     )
+    assets = filter_assets_for_section(assets, row.content or "")
     status = row.embedding_status
     payload = _serialize_chunk_detail(db, row, embedding_status=status)
     payload["previous_version"] = _serialize_previous_version(previous)

@@ -19,7 +19,8 @@ import {
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 import { useCallback, useEffect, useMemo, useState, type Key } from "react";
-import { buildAutoCreatePayload, buildPrefillMetadata, collectCheckedNodeIds, withRetry } from "./batchIngestUtils";
+import { buildAutoCreatePayload, buildPrefillMetadata, collectIngestibleNodeIds, withRetry } from "./batchIngestUtils";
+import { isPrefaceNodeId } from "./prefaceNode";
 import BlueprintEditor from "../../components/Blueprint/BlueprintEditor";
 import KnowledgeContentViewer from "../../components/Knowledge/KnowledgeContentViewer";
 import ResizableWorkspace from "../../components/Knowledge/ResizableWorkspace";
@@ -185,6 +186,7 @@ export default function KnowledgeEntryPage() {
     [selectedNodeId, treeNodes],
   );
   const selectedNodeIsLeaf = Boolean(selectedTreeNode && !(selectedTreeNode.children?.length));
+  const selectedNodeIsPreface = isPrefaceNodeId(selectedNodeId);
   // entry/documents 仅返回 parse_status=ready 且已有目录树的文档
   const canShowExtractBlueprint = Boolean(selectedDocument);
   const extractBlueprintDisabled = readOnly || blueprintLoading || !selectedNodeId || selectedNodeIsLeaf;
@@ -247,8 +249,10 @@ export default function KnowledgeEntryPage() {
     setLoadingTree(true);
     try {
       const result = await getDocumentTree(selectedKbId, selectedDocId);
-      setTreeNodes(result.items ?? []);
-      setSelectedNodeId(undefined);
+      const items = result.items ?? [];
+      setTreeNodes(items);
+      const defaultNodeId = items[0]?.node_id;
+      setSelectedNodeId(defaultNodeId);
       setPreview(undefined);
     } catch (error) {
       message.error((error as Error).message);
@@ -613,9 +617,9 @@ export default function KnowledgeEntryPage() {
   const handleBatchIngest = useCallback(async () => {
     if (!selectedKbId || !selectedDocId || readOnly) return;
 
-    const nodeIds = collectCheckedNodeIds(treeNodes, checkedKeys);
+    const nodeIds = collectIngestibleNodeIds(treeNodes, checkedKeys);
     if (nodeIds.length === 0) {
-      message.warning("请先勾选目录节点");
+      message.warning("请先勾选可入库的目录节点（前言不支持入库）");
       return;
     }
 
@@ -888,7 +892,7 @@ export default function KnowledgeEntryPage() {
                     </Button>
                   ) : null}
                   <Button
-                    disabled={!preview || readOnly || selectionMode || batchRunning}
+                    disabled={!preview || readOnly || selectionMode || batchRunning || selectedNodeIsPreface}
                     onClick={() => void handlePrefill()}
                   >
                     添加到知识库
@@ -903,6 +907,7 @@ export default function KnowledgeEntryPage() {
                   contentMd={preview.content_md}
                   assets={preview.assets}
                   sectionCharStart={preview.char_start}
+                  sectionCharEnd={preview.char_end}
                   kbId={selectedKbId}
                   imageRefMap={preview.image_ref_map}
                 />

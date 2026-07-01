@@ -9,6 +9,7 @@ from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import persist_content_md
+from src.services.doc_chunk.section_slice import PREFACE_NODE_ID
 from src.services.knowledge.entry_content_service import get_document_tree, get_node_preview
 
 
@@ -180,6 +181,72 @@ def test_get_document_tree_marks_ingested_from_latest_chunk(db_session, seeded_k
     assert tree[0]["children"][0]["ingested"] is True
 
 
+def test_get_document_tree_orders_siblings_by_sort_order(db_session, seeded_kb):
+    file_import = _seed_file_import(db_session, seeded_kb.kb_id)
+    document = Document(
+        kb_id=seeded_kb.kb_id,
+        import_id=file_import.import_id,
+        source_type=DocumentSourceType.actual_bid,
+        source_usage=DocumentSourceUsage.knowledge_extract,
+        document_name="sort-order.docx",
+        parse_status=DocumentParseStatus.ready,
+        tree_version=1,
+        created_by="tester",
+    )
+    db_session.add(document)
+    db_session.flush()
+
+    root_id = uuid4()
+    child_early_id = uuid4()
+    child_late_id = uuid4()
+    db_session.add_all(
+        [
+            DocumentTreeNode(
+                node_id=root_id,
+                kb_id=seeded_kb.kb_id,
+                document_id=document.document_id,
+                parent_id=None,
+                node_type=DocumentTreeNodeType.heading,
+                title="一、总则",
+                level=1,
+                sort_order=0,
+                tree_version=1,
+            ),
+            DocumentTreeNode(
+                node_id=child_late_id,
+                kb_id=seeded_kb.kb_id,
+                document_id=document.document_id,
+                parent_id=root_id,
+                node_type=DocumentTreeNodeType.heading,
+                title="2.2 服务方案",
+                level=2,
+                sort_order=10,
+                tree_version=1,
+            ),
+            DocumentTreeNode(
+                node_id=child_early_id,
+                kb_id=seeded_kb.kb_id,
+                document_id=document.document_id,
+                parent_id=root_id,
+                node_type=DocumentTreeNodeType.heading,
+                title="1.1 企业介绍",
+                level=2,
+                sort_order=1,
+                tree_version=1,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    tree = get_document_tree(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=document.document_id,
+    )
+    child_titles = [child["title"] for child in tree[0]["children"]]
+    assert child_titles == ["1.1 企业介绍", "2.2 服务方案"]
+
+
 def test_list_entry_documents_includes_template_file(db_session, seeded_kb):
     from src.services.knowledge.entry_content_service import list_entry_documents
 
@@ -225,3 +292,51 @@ def test_list_entry_documents_includes_template_file(db_session, seeded_kb):
 
     rows = list_entry_documents(db_session, seeded_kb.kb_id)
     assert any(row.document_id == document.document_id for row in rows)
+
+
+def test_get_document_tree_adds_preface_node_when_content_starts_before_first_heading(
+    db_session, seeded_kb, tmp_path
+):
+    document, _, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    source = tmp_path / "content.md"
+    source.write_text(
+        "封面标题\n\n投标单位：测试公司\n\n# 第一章 总则\n\n正文。\n",
+        encoding="utf-8",
+    )
+    persist_content_md(document_id=document.document_id, source_path=Path(source))
+
+    tree = get_document_tree(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=document.document_id,
+    )
+    assert len(tree) == 2
+    assert tree[0]["node_id"] == PREFACE_NODE_ID
+    assert tree[0]["title"] == "前言"
+    assert tree[0]["level"] == 0
+    assert tree[1]["title"] == "第一章 总则"
+
+
+def test_get_node_preview_returns_preface_content(db_session, seeded_kb, tmp_path):
+    document, _, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+    source = tmp_path / "content.md"
+    source.write_text(
+        "封面标题\n\n投标单位：测试公司\n\n# 第一章 总则\n\n正文。\n",
+        encoding="utf-8",
+    )
+    persist_content_md(document_id=document.document_id, source_path=Path(source))
+
+    preview = get_node_preview(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=document.document_id,
+        node_id=PREFACE_NODE_ID,
+    )
+
+    assert preview["title"] == "前言"
+    assert "封面标题" in preview["content_md"]
+    assert "投标单位" in preview["content_md"]
+    assert "# 第一章 总则" not in preview["content_md"]
+    assert preview["catalog_path"] == [
+        {"node_id": PREFACE_NODE_ID, "title": "前言", "level": 0}
+    ]

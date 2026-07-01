@@ -3,8 +3,10 @@ import {
   buildAutoCreatePayload,
   buildPrefillMetadata,
   collectCheckedNodeIds,
+  collectIngestibleNodeIds,
   withRetry,
 } from "./batchIngestUtils";
+import { PREFACE_NODE_ID } from "./prefaceNode";
 import type { NodePreview, PrefillResult, TreeNode } from "../../services/knowledgeChunks";
 
 const tree: TreeNode[] = [
@@ -54,6 +56,24 @@ describe("collectCheckedNodeIds", () => {
 
   it("ignores unchecked ids", () => {
     expect(collectCheckedNodeIds(tree, ["b"])).toEqual(["b"]);
+  });
+});
+
+describe("collectIngestibleNodeIds", () => {
+  it("excludes preface node from batch ingest", () => {
+    const withPreface: TreeNode[] = [
+      {
+        node_id: PREFACE_NODE_ID,
+        title: "前言",
+        parent_id: null,
+        level: 0,
+        sort_order: -1,
+        ingested: false,
+        children: [],
+      },
+      ...tree,
+    ];
+    expect(collectIngestibleNodeIds(withPreface, [PREFACE_NODE_ID, "a"])).toEqual(["a"]);
   });
 });
 

@@ -3,11 +3,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from src.services.doc_chunk.linkage_validation import normalize_title
 
 _HEADING_RE = re.compile(r"^(#{1,8})[ \t]+(.+?)[ \t#]*$", re.MULTILINE)
 PREFACE_NODE_ID = "__preface__"
+PREFACE_TITLE = "前言"
+
+
+def is_preface_node_id(node_id: str | UUID) -> bool:
+    return str(node_id) == PREFACE_NODE_ID
 
 
 @dataclass(frozen=True, slots=True)

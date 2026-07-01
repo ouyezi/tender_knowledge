@@ -14,11 +14,20 @@ from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import load_content_md
-from src.services.doc_chunk.section_slice import outline_nodes_from_tree_nodes, slice_section_markdown
+from src.services.doc_chunk.section_slice import (
+    PREFACE_NODE_ID,
+    PREFACE_TITLE,
+    is_preface_node_id,
+    outline_nodes_from_tree_nodes,
+    slice_section_markdown,
+)
+from src.services.knowledge.asset_section_utils import filter_assets_for_section
 from src.services.knowledge.media_url_service import (
     load_image_ref_map_payload,
     resolve_storage_paths_to_media_urls,
 )
+
+_HEADING_RE = re.compile(r"^(#{1,8})[ \t]+(.+?)[ \t#]*$", re.MULTILINE)
 
 
 class DocumentNotFoundError(Exception):
@@ -31,55 +40,6 @@ class NodeNotFoundError(Exception):
 
 class ContentNotAvailableError(Exception):
     pass
-
-
-_NUM_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s")
-_CN_CHAPTER_RE = re.compile(r"^([一二三四五六七八九十百零]+)、")
-_CN_DIGITS = {
-    "零": 0,
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-}
-
-
-def _chinese_numeral_value(text: str) -> int | None:
-    if not text:
-        return None
-    if text == "十":
-        return 10
-    if text.startswith("十") and len(text) == 2:
-        return 10 + (_CN_DIGITS.get(text[1]) or 0)
-    if text.endswith("十") and len(text) == 2:
-        return (_CN_DIGITS.get(text[0]) or 0) * 10
-    if "十" in text:
-        left, _, right = text.partition("十")
-        tens = _CN_DIGITS.get(left, 0) if left else 1
-        ones = _CN_DIGITS.get(right, 0) if right else 0
-        return tens * 10 + ones
-    if len(text) == 1:
-        return _CN_DIGITS.get(text)
-    return None
-
-
-def _heading_display_sort_key(node: DocumentTreeNode) -> tuple[Any, ...]:
-    title = (node.title or "").strip()
-    numeric = _NUM_PREFIX_RE.match(title)
-    if numeric:
-        parts = tuple(int(part) for part in numeric.group(1).split("."))
-        return (0, parts, node.sort_order, title)
-    chinese = _CN_CHAPTER_RE.match(title)
-    if chinese:
-        value = _chinese_numeral_value(chinese.group(1))
-        if value is not None:
-            return (0, (value,), node.sort_order, title)
-    return (1, node.sort_order, title)
 
 
 def knowledge_source_type_for_document(document: Document) -> str:
@@ -141,34 +101,72 @@ def get_document_tree(db: Session, kb_id: UUID, doc_id: UUID) -> list[dict]:
                 .all()
             )
         }
-    return _build_tree_payload(
+    tree = _build_tree_payload(
         nodes,
         ingested_node_ids=ingested_node_ids,
         blueprint_node_ids=blueprint_node_ids,
     )
+    content_md = load_content_md(document_id=doc_id)
+    if content_md and _has_preface_content(content_md):
+        return [_build_preface_tree_node(), *tree]
+    return tree
 
 
-def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> dict:
+def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID | str) -> dict:
     _get_ready_document(db, kb_id=kb_id, doc_id=doc_id)
     nodes = _load_heading_nodes(db, kb_id=kb_id, doc_id=doc_id)
-    nodes_by_id = {node.node_id: node for node in nodes}
-    node = nodes_by_id.get(node_id)
-    if node is None:
-        raise NodeNotFoundError
-
     content_md = load_content_md(document_id=doc_id)
     if not content_md:
         raise ContentNotAvailableError
 
+    node_key = str(node_id)
+    if is_preface_node_id(node_key):
+        if not _has_preface_content(content_md):
+            raise NodeNotFoundError
+        section_md = slice_section_markdown(
+            content_md,
+            outline_nodes_from_tree_nodes(nodes),
+            PREFACE_NODE_ID,
+        )
+        if not section_md or not section_md.strip():
+            raise ContentNotAvailableError
+        slice_char_start, slice_char_end = _range_from_slice(content_md, section_md)
+        matched_assets = _query_assets_in_range(
+            db,
+            kb_id=kb_id,
+            doc_id=doc_id,
+            char_start=slice_char_start,
+            char_end=slice_char_end,
+        )
+        matched_assets = filter_assets_for_section(matched_assets, section_md)
+        return {
+            "title": PREFACE_TITLE,
+            "content_md": section_md,
+            "content_type": infer_content_type(section_md, matched_assets),
+            "char_start": slice_char_start,
+            "char_end": slice_char_end,
+            "page_start": None,
+            "page_end": None,
+            "catalog_path": _build_preface_catalog_path(),
+            "assets": _serialize_assets(matched_assets, db, kb_id=kb_id),
+            "image_ref_map": load_image_ref_map_payload(document_id=doc_id),
+        }
+
+    node_uuid = _coerce_tree_node_id(node_key)
+    nodes_by_id = {node.node_id: node for node in nodes}
+    node = nodes_by_id.get(node_uuid)
+    if node is None:
+        raise NodeNotFoundError
+
     section_md = slice_section_markdown(
         content_md,
         outline_nodes_from_tree_nodes(nodes),
-        str(node_id),
+        node_key,
     )
     if not section_md or not section_md.strip():
         raise ContentNotAvailableError
 
-    subtree_ids = _collect_subtree_node_ids(nodes, root_id=node_id)
+    subtree_ids = _collect_subtree_node_ids(nodes, root_id=node_uuid)
     chunks = (
         db.query(KnowledgeChunk)
         .filter(
@@ -191,7 +189,7 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> d
         char_start=char_start,
         char_end=char_end,
     )
-    matched_assets = _filter_assets_for_section(matched_assets, section_md)
+    matched_assets = filter_assets_for_section(matched_assets, section_md)
     page_start, page_end = _page_range(chunks, matched_assets)
 
     return {
@@ -202,7 +200,7 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID) -> d
         "char_end": char_end,
         "page_start": page_start,
         "page_end": page_end,
-        "catalog_path": build_catalog_path(nodes_by_id, node_id),
+        "catalog_path": build_catalog_path(nodes_by_id, node_uuid),
         "assets": _serialize_assets(matched_assets, db, kb_id=kb_id),
         "image_ref_map": load_image_ref_map_payload(document_id=doc_id),
     }
@@ -238,31 +236,6 @@ def infer_content_type(content_md: str, assets: list) -> str:
     return "text"
 
 
-def _asset_visible_in_section(asset: ChunkAsset, section_md: str) -> bool:
-    if asset.asset_type == "table":
-        raw = (asset.raw_markdown or "").strip()
-        if not raw:
-            return False
-        header = raw.split("\n", 1)[0].strip()
-        if len(header) >= 3:
-            return header in section_md
-        return raw in section_md
-    if asset.asset_type == "image":
-        raw = (asset.raw_markdown or "").strip()
-        if raw and raw in section_md:
-            return True
-        storage_url = (asset.image_storage_url or "").strip()
-        if storage_url and storage_url in section_md:
-            return True
-        filename = storage_url.rsplit("/", 1)[-1] if storage_url else ""
-        return bool(filename and filename in section_md)
-    return True
-
-
-def _filter_assets_for_section(assets: list[ChunkAsset], section_md: str) -> list[ChunkAsset]:
-    return [asset for asset in assets if _asset_visible_in_section(asset, section_md)]
-
-
 def _get_ready_document(db: Session, *, kb_id: UUID, doc_id: UUID) -> Document:
     document = (
         db.query(Document)
@@ -276,6 +249,48 @@ def _get_ready_document(db: Session, *, kb_id: UUID, doc_id: UUID) -> Document:
     if document is None:
         raise DocumentNotFoundError
     return document
+
+
+def _first_heading_char_start(content_md: str) -> int | None:
+    match = _HEADING_RE.search(content_md)
+    return match.start() if match else None
+
+
+def _has_preface_content(content_md: str) -> bool:
+    first_heading = _first_heading_char_start(content_md)
+    if first_heading is None:
+        return False
+    return bool(content_md[:first_heading].strip())
+
+
+def _build_preface_tree_node() -> dict[str, Any]:
+    return {
+        "node_id": PREFACE_NODE_ID,
+        "title": PREFACE_TITLE,
+        "parent_id": None,
+        "level": 0,
+        "sort_order": -1,
+        "ingested": False,
+        "has_blueprint": False,
+        "children": [],
+    }
+
+
+def _build_preface_catalog_path() -> list[dict[str, Any]]:
+    return [
+        {
+            "node_id": PREFACE_NODE_ID,
+            "title": PREFACE_TITLE,
+            "level": 0,
+        }
+    ]
+
+
+def _coerce_tree_node_id(node_id: str) -> UUID:
+    try:
+        return UUID(node_id)
+    except ValueError as exc:
+        raise NodeNotFoundError from exc
 
 
 def _load_heading_nodes(db: Session, *, kb_id: UUID, doc_id: UUID) -> list[DocumentTreeNode]:
@@ -306,7 +321,7 @@ def _build_tree_payload(
     for node in nodes:
         children_by_parent[node.parent_id].append(node)
     for children in children_by_parent.values():
-        children.sort(key=lambda item: (_heading_display_sort_key(item), item.created_at))
+        children.sort(key=lambda item: (item.sort_order, item.created_at))
 
     def build(node: DocumentTreeNode) -> dict[str, Any]:
         return {
@@ -321,7 +336,7 @@ def _build_tree_payload(
         }
 
     roots = children_by_parent.get(None, [])
-    roots.sort(key=lambda item: (_heading_display_sort_key(item), item.created_at))
+    roots.sort(key=lambda item: (item.sort_order, item.created_at))
     return [build(root) for root in roots]
 
 
