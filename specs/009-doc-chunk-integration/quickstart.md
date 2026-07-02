@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-1. `tender_skills` 已安装且通过测试（已验证 commit: `97171885e267afbc85a2c02760e16d95d64a9d2d`）：
+1. `tender_skills` 已安装且通过测试（已验证 commit: `eb71dfea390676cbfbe0fc2da31ff299218f92d1`）：
 
 ```bash
 cd ../tender_skills
