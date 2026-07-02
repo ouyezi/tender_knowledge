@@ -6,11 +6,17 @@
     "1 项目概述"
   ],
   "heading_level": 1,
-  "markdown": "# 1 项目概述\n\n",
+  "markdown": "# 1 项目概述\n\n这是正文段落\n\n",
   "blocks": [
     {
       "type": "paragraph",
       "text": "# 1 项目概述",
+      "image_ref": null,
+      "table_ref": null
+    },
+    {
+      "type": "paragraph",
+      "text": "这是正文段落",
       "image_ref": null,
       "table_ref": null
     }
@@ -19,10 +25,10 @@
   "source_ranges": [
     {
       "char_start": 0,
-      "char_end": 10
+      "char_end": 18
     }
   ],
-  "token_estimate": 2,
+  "token_estimate": 4,
   "image_refs": [],
   "previous_chunk_id": null,
   "next_chunk_id": "chunk-0002",

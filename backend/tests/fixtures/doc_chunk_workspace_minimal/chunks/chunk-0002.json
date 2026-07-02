@@ -7,14 +7,8 @@
     "1.1 实施范围"
   ],
   "heading_level": 2,
-  "markdown": "这是正文段落\n\n## 1.1 实施范围\n\n这是二级章节正文\n",
+  "markdown": "## 1.1 实施范围\n\n这是二级章节正文\n",
   "blocks": [
-    {
-      "type": "paragraph",
-      "text": "这是正文段落",
-      "image_ref": null,
-      "table_ref": null
-    },
     {
       "type": "paragraph",
       "text": "## 1.1 实施范围",
@@ -31,11 +25,11 @@
   "source_file": "content.md",
   "source_ranges": [
     {
-      "char_start": 10,
+      "char_start": 18,
       "char_end": 40
     }
   ],
-  "token_estimate": 7,
+  "token_estimate": 5,
   "image_refs": [],
   "previous_chunk_id": "chunk-0001",
   "next_chunk_id": null,

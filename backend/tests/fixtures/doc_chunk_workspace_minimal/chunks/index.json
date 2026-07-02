@@ -9,7 +9,7 @@
         "1 项目概述"
       ],
       "heading_level": 1,
-      "token_estimate": 2,
+      "token_estimate": 4,
       "refined_node_id": null,
       "original_node_ids": [
         "n1"
@@ -26,13 +26,13 @@
         "1.1 实施范围"
       ],
       "heading_level": 2,
-      "token_estimate": 7,
+      "token_estimate": 5,
       "refined_node_id": null,
       "original_node_ids": [
         "n2"
       ],
       "primary_outline_node_id": "n2",
-      "document_tree_node_id": "t0002",
+      "document_tree_node_id": "t0003",
       "path": "chunk-0002.json"
     }
   ]

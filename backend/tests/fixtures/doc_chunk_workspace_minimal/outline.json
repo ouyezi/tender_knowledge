@@ -26,11 +26,11 @@
       "parent_id": "n1",
       "sort_order": 1,
       "anchor": {
-        "block_index": 1,
+        "block_index": 2,
         "page": null,
-        "char_start": 10,
-        "char_end": 18,
-        "block_start": 1,
+        "char_start": 18,
+        "char_end": 31,
+        "block_start": 2,
         "block_end": null
       },
       "needs_review": false,
