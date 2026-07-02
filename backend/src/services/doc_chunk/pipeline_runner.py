@@ -31,11 +31,16 @@ def run_doc_chunk_pipeline(
         message = payload.get("message") or _STAGE_MESSAGES.get(stage, stage)
         on_progress(stage, {**payload, "message": message})
 
+    promote_headings = settings.doc_chunk_promote_headings
+    if promote_headings not in {"off", "auto"}:
+        promote_headings = "auto"
+
     run_pipeline(
         docx_path,
         workspace,
         overwrite=True,
         skip_refine=True,
         skip_enrich=settings.doc_chunk_skip_enrich,
+        promote_headings=promote_headings,  # type: ignore[arg-type]
         on_progress=_wrapped,
     )

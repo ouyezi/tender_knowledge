@@ -3,14 +3,85 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
 from src.models.chunk_asset import ChunkAsset
 from src.models.document import Document, DocumentParseStatus, DocumentSourceType, DocumentSourceUsage
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import persist_content_md
+from src.services.doc_chunk.outline_store import persist_outline, persist_outline_node_map
 from src.services.doc_chunk.section_slice import PREFACE_NODE_ID
 from src.services.knowledge.entry_content_service import get_document_tree, get_node_preview
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(_type, _compiler, **_kw):
+    return "JSON"
+
+
+def _seed_outline_for_document(
+    *,
+    document_id,
+    parent,
+    content_md: str,
+    storage_root,
+    monkeypatch,
+    child=None,
+    extra_headings: list[tuple[str, str, str | None]] | None = None,
+):
+    """extra_headings: (outline_id, heading_marker, parent_outline_id)"""
+    monkeypatch.setenv("STORAGE_ROOT", str(storage_root))
+    parent_start = content_md.index("# 第一章")
+    nodes = [
+        {
+            "node_id": "n1",
+            "title": parent.title,
+            "level": parent.level,
+            "parent_id": None,
+            "sort_order": parent.sort_order,
+            "anchor": {"char_start": parent_start, "char_end": parent_start + 5},
+        }
+    ]
+    mapping = {"n1": parent.node_id}
+    next_sort = parent.sort_order + 1
+    if child is not None:
+        child_start = content_md.index("## 1.1")
+        nodes.append(
+            {
+                "node_id": "n2",
+                "title": child.title,
+                "level": child.level,
+                "parent_id": "n1",
+                "sort_order": child.sort_order,
+                "anchor": {"char_start": child_start, "char_end": child_start + 5},
+            }
+        )
+        mapping["n2"] = child.node_id
+        next_sort = max(next_sort, child.sort_order + 1)
+    for outline_id, marker, parent_outline_id in extra_headings or []:
+        section_start = content_md.index(marker)
+        nodes.append(
+            {
+                "node_id": outline_id,
+                "title": marker.lstrip("# ").strip(),
+                "level": marker.count("#"),
+                "parent_id": parent_outline_id,
+                "sort_order": next_sort,
+                "anchor": {"char_start": section_start, "char_end": section_start + 5},
+            }
+        )
+        next_sort += 1
+    persist_outline(
+        document_id=document_id,
+        outline_payload={"nodes": nodes},
+    )
+    persist_outline_node_map(
+        document_id=document_id,
+        outline_node_to_tree_id=mapping,
+    )
 
 
 def _seed_file_import(db_session, kb_id):
@@ -73,8 +144,9 @@ def _seed_document_tree(db_session, kb_id):
     return document, parent, child
 
 
-def test_get_node_preview_excludes_mispositioned_table_assets(db_session, seeded_kb, tmp_path):
-    document, _, child = _seed_document_tree(db_session, seeded_kb.kb_id)
+def test_get_node_preview_excludes_mispositioned_table_assets(db_session, seeded_kb, tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
+    document, parent, child = _seed_document_tree(db_session, seeded_kb.kb_id)
     section_md = (
         "## 1.1 范围\n\n"
         "兹证明某某同志为我单位法定代表人。\n\n"
@@ -90,6 +162,15 @@ def test_get_node_preview_excludes_mispositioned_table_assets(db_session, seeded
         encoding="utf-8",
     )
     persist_content_md(document_id=document.document_id, source_path=Path(source))
+    _seed_outline_for_document(
+        document_id=document.document_id,
+        parent=parent,
+        child=child,
+        content_md=source.read_text(encoding="utf-8"),
+        storage_root=tmp_path,
+        monkeypatch=monkeypatch,
+        extra_headings=[("n3", "## 1.2 财务状况", "n1")],
+    )
 
     section_start = source.read_text(encoding="utf-8").index("## 1.1 范围")
     db_session.add(
@@ -117,15 +198,22 @@ def test_get_node_preview_excludes_mispositioned_table_assets(db_session, seeded
     assert preview["assets"] == []
 
 
-def test_get_node_preview_parent_includes_child_content(db_session, seeded_kb, tmp_path):
-    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+def test_get_node_preview_parent_includes_child_content(db_session, seeded_kb, tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
+    document, parent, child = _seed_document_tree(db_session, seeded_kb.kb_id)
     source = tmp_path / "content.md"
-    source.write_text(
-        "# 第一章 总则\n\n父节点内容。\n\n## 1.1 范围\n\n子节点内容。\n",
-        encoding="utf-8",
-    )
+    content_md = "# 第一章 总则\n\n父节点内容。\n\n## 1.1 范围\n\n子节点内容。\n"
+    source.write_text(content_md, encoding="utf-8")
     persisted = persist_content_md(document_id=document.document_id, source_path=Path(source))
     assert persisted is not None
+    _seed_outline_for_document(
+        document_id=document.document_id,
+        parent=parent,
+        child=child,
+        content_md=content_md,
+        storage_root=tmp_path,
+        monkeypatch=monkeypatch,
+    )
 
     preview = get_node_preview(
         db_session,
@@ -317,14 +405,20 @@ def test_get_document_tree_adds_preface_node_when_content_starts_before_first_he
     assert tree[1]["title"] == "第一章 总则"
 
 
-def test_get_node_preview_returns_preface_content(db_session, seeded_kb, tmp_path):
-    document, _, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
+def test_get_node_preview_returns_preface_content(db_session, seeded_kb, tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
+    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
     source = tmp_path / "content.md"
-    source.write_text(
-        "封面标题\n\n投标单位：测试公司\n\n# 第一章 总则\n\n正文。\n",
-        encoding="utf-8",
-    )
+    content_md = "封面标题\n\n投标单位：测试公司\n\n# 第一章 总则\n\n正文。\n"
+    source.write_text(content_md, encoding="utf-8")
     persist_content_md(document_id=document.document_id, source_path=Path(source))
+    _seed_outline_for_document(
+        document_id=document.document_id,
+        parent=parent,
+        content_md=content_md,
+        storage_root=tmp_path,
+        monkeypatch=monkeypatch,
+    )
 
     preview = get_node_preview(
         db_session,
@@ -340,3 +434,30 @@ def test_get_node_preview_returns_preface_content(db_session, seeded_kb, tmp_pat
     assert preview["catalog_path"] == [
         {"node_id": PREFACE_NODE_ID, "title": "前言", "level": 0}
     ]
+
+
+def test_get_node_preview_uses_anchor_not_db_level(db_session, seeded_kb, tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
+    document, parent, child = _seed_document_tree(db_session, seeded_kb.kb_id)
+    content_md = "# 第一章 总则\n\n父节点内容。\n\n## 1.1 范围\n\n子节点内容。\n"
+    source = tmp_path / "content.md"
+    source.write_text(content_md, encoding="utf-8")
+    persist_content_md(document_id=document.document_id, source_path=Path(source))
+    _seed_outline_for_document(
+        document_id=document.document_id,
+        parent=parent,
+        child=child,
+        content_md=content_md,
+        storage_root=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    parent.level = 3
+    db_session.commit()
+
+    preview = get_node_preview(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=document.document_id,
+        node_id=parent.node_id,
+    )
+    assert "子节点内容" in preview["content_md"]

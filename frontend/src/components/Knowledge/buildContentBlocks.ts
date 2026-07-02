@@ -25,6 +25,8 @@ export interface BuildContentBlocksInput {
   sectionCharEnd?: number | null;
 }
 
+const TABLE_REF_COMMENT_RE = /<!--\s*table-ref:tables\/t\d{4}\.json\s*-->\s*\n?/g;
+
 interface PositionedAsset {
   asset: KnowledgeAssetLike;
   relativeOffset: number;
@@ -36,6 +38,10 @@ function normalizeTableMarkdown(text: string): string {
     .split("\n")
     .map((line) => line.trim())
     .join("\n");
+}
+
+function stripTableRefComments(text: string): string {
+  return text.replace(TABLE_REF_COMMENT_RE, "");
 }
 
 function tableAlreadyInlineInContent(raw: string, contentMd: string): boolean {
@@ -174,18 +180,21 @@ export function buildContentBlocks(input: BuildContentBlocksInput): ContentBlock
 
   for (const item of positioned) {
     if (item.relativeOffset > cursor) {
-      blocks.push({ type: "text", content: contentMd.slice(cursor, item.relativeOffset) });
+      blocks.push({
+        type: "text",
+        content: stripTableRefComments(contentMd.slice(cursor, item.relativeOffset)),
+      });
     }
     blocks.push({ type: "asset", asset: item.asset });
     cursor = Math.max(cursor, item.relativeOffset);
   }
 
   if (cursor < contentMd.length) {
-    blocks.push({ type: "text", content: contentMd.slice(cursor) });
+    blocks.push({ type: "text", content: stripTableRefComments(contentMd.slice(cursor)) });
   }
 
   if (blocks.length === 0 && contentMd) {
-    blocks.push({ type: "text", content: contentMd });
+    blocks.push({ type: "text", content: stripTableRefComments(contentMd) });
   }
 
   for (const asset of unpositioned) {

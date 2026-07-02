@@ -42,6 +42,7 @@ import {
   getNodePreview,
   listEntryDocuments,
   prefillKnowledgeChunk,
+  refineDocumentTree,
   type CatalogPathItem,
   type CreateKnowledgeChunkRequest,
   type EntryDocument,
@@ -154,6 +155,7 @@ export default function KnowledgeEntryPage() {
   const [preview, setPreview] = useState<NodePreview>();
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
+  const [refiningTree, setRefiningTree] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [rightExpanded, setRightExpanded] = useState(false);
   const [prefilling, setPrefilling] = useState(false);
@@ -293,6 +295,25 @@ export default function KnowledgeEntryPage() {
   useEffect(() => {
     void loadTree();
   }, [loadTree]);
+
+  const handleRefineTree = useCallback(async () => {
+    if (!selectedKbId || !selectedDocId || readOnly) {
+      return;
+    }
+    setRefiningTree(true);
+    try {
+      const result = await refineDocumentTree(selectedKbId, selectedDocId);
+      message.success(result.change_summary || "目录已刷新");
+      await loadTree();
+      if (selectedNodeId) {
+        await loadPreview();
+      }
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setRefiningTree(false);
+    }
+  }, [loadPreview, loadTree, readOnly, selectedDocId, selectedKbId, selectedNodeId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -780,16 +801,26 @@ export default function KnowledgeEntryPage() {
               styles={{ body: { ...WORKSPACE_CARD_BODY_STYLE, display: "flex", flexDirection: "column", padding: 0 } }}
               extra={
                 !readOnly ? (
-                  <Button
-                    size="small"
-                    disabled={loadingTree || treeNodes.length === 0 || batchRunning}
-                    onClick={() => {
-                      setSelectionMode(true);
-                      setCheckedKeys([]);
-                    }}
-                  >
-                    选择
-                  </Button>
+                  <Space size={8}>
+                    <Button
+                      size="small"
+                      loading={refiningTree}
+                      disabled={loadingTree || !selectedDocId || batchRunning || selectionMode}
+                      onClick={() => void handleRefineTree()}
+                    >
+                      刷新
+                    </Button>
+                    <Button
+                      size="small"
+                      disabled={loadingTree || treeNodes.length === 0 || batchRunning}
+                      onClick={() => {
+                        setSelectionMode(true);
+                        setCheckedKeys([]);
+                      }}
+                    >
+                      选择
+                    </Button>
+                  </Space>
                 ) : null
               }
             >

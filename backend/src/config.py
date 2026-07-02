@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     use_doc_chunk_parse: bool = True
     doc_chunk_skip_enrich: bool = False
+    doc_chunk_promote_headings: str = "auto"
     doc_chunk_workspace_retention_on_success: bool = False
     doc_chunk_workspace_retention_hours: int = 24
     doc_chunk_classification_config: str | None = None
@@ -76,6 +77,10 @@ class Settings(BaseSettings):
     knowledge_index_summary_timeout_sec: int = 30
     chunk_search_parse_model: str = "qwen3.6-flash"
     chunk_search_parse_timeout_sec: int = 30
+    entry_tree_refine_model: str = "qwen-plus"
+    entry_tree_refine_max_tokens: int = 10000
+    entry_tree_refine_timeout_sec: int = 120
+    entry_tree_refine_batch_size: int = 400
     chunk_search_parse_query_max: int = 500
     chunk_search_title_keyword_weight: float = 3.0
     chunk_search_body_keyword_weight: float = 1.0

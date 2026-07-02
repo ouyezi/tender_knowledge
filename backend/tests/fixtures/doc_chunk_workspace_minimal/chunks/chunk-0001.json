@@ -11,7 +11,8 @@
     {
       "type": "paragraph",
       "text": "# 1 项目概述",
-      "image_ref": null
+      "image_ref": null,
+      "table_ref": null
     }
   ],
   "source_file": "content.md",

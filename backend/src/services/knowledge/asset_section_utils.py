@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+import re
+
 from src.models.chunk_asset import ChunkAsset
+
+_TABLE_REF_COMMENT_RE = re.compile(
+    r"<!--\s*table-ref:(?P<ref>tables/t\d{4}\.json)\s*-->"
+)
 
 
 def _normalize_table_markdown(text: str) -> str:
     return "\n".join(line.strip() for line in text.strip().splitlines())
+
+
+def _table_ref_placeholder_in_section(table_ref: str | None, section_md: str) -> bool:
+    if not table_ref:
+        return False
+    return f"<!-- table-ref:{table_ref} -->" in section_md or f"table-ref:{table_ref}" in section_md
 
 
 def _table_already_inline_in_section(raw: str, section_md: str) -> bool:
@@ -18,6 +30,10 @@ def asset_visible_in_section(asset: ChunkAsset, section_md: str) -> bool:
     if asset.asset_type == "table":
         raw = (asset.raw_markdown or "").strip()
         if not raw:
+            return False
+        table_schema = asset.table_schema if isinstance(asset.table_schema, dict) else {}
+        table_ref = table_schema.get("table_ref")
+        if isinstance(table_ref, str) and _table_ref_placeholder_in_section(table_ref, section_md):
             return False
         if _table_already_inline_in_section(raw, section_md):
             return False

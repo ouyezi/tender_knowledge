@@ -86,3 +86,17 @@ def load_outline_node_map(
         except ValueError:
             continue
     return result
+
+
+def resolve_outline_node_id(
+    *,
+    document_id: UUID,
+    tree_node_id: UUID | str,
+    storage_root: Path | None = None,
+) -> str | None:
+    node_map = load_outline_node_map(document_id=document_id, storage_root=storage_root)
+    target = str(tree_node_id)
+    for outline_node_id, mapped_tree_id in node_map.items():
+        if str(mapped_tree_id) == target:
+            return outline_node_id
+    return None

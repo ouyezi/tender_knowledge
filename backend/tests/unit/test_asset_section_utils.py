@@ -76,3 +76,13 @@ def test_filter_assets_for_section_deduplicates_same_table_assets():
         _asset(id=2, asset_type="table", raw_markdown=table, char_start=10, char_end=50),
     ]
     assert filter_assets_for_section(assets, section) == []
+
+
+def test_asset_visible_in_section_table_skipped_when_table_ref_placeholder_present():
+    section = "## 章节\n\n<!-- table-ref:tables/t0000.json -->\n|列A|列B|\n"
+    asset = _asset(
+        asset_type="table",
+        raw_markdown="|列A|列B|\n|---|---|\n|1|2|",
+        table_schema={"table_ref": "tables/t0000.json"},
+    )
+    assert not asset_visible_in_section(asset, section)

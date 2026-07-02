@@ -141,6 +141,7 @@ export interface ChunkAssetDetail {
   allow_row_filter: boolean | null;
   image_type: string | null;
   image_storage_url: string | null;
+  table_storage_url: string | null;
   image_caption: string | null;
   image_ocr_text: string | null;
   extracted_facts?: Record<string, unknown> | null;
@@ -301,6 +302,27 @@ export async function getDocumentTree(
 ): Promise<{ items: TreeNode[] }> {
   return apiRequest<{ items: TreeNode[] }>(
     `/api/v1/kbs/${kbId}/knowledge-chunks/entry/documents/${docId}/tree`,
+  );
+}
+
+export interface EntryTreeRefineResult {
+  repaired_nodes: number;
+  llm_updated_nodes: number;
+  change_summary: string;
+  engine: string;
+}
+
+export async function refineDocumentTree(
+  kbId: string,
+  docId: string,
+  body?: { instruction?: string },
+): Promise<EntryTreeRefineResult> {
+  return apiRequest<EntryTreeRefineResult>(
+    `/api/v1/kbs/${kbId}/knowledge-chunks/entry/documents/${docId}/tree/refine`,
+    {
+      method: "POST",
+      body: body ?? {},
+    },
   );
 }
 

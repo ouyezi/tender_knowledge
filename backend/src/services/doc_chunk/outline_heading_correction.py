@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.services.doc_chunk.linkage_validation import normalize_title
+from src.services.text_sanitize import sanitize_pg_text
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,18 @@ def apply_outline_heading_corrections(
                 desired_level,
             )
             heading.level = desired_level
+            changed = True
+        desired_title = sanitize_pg_text(str(outline_node.get("title") or ""))
+        if desired_title and heading.title != desired_title:
+            safe_title = desired_title[:512]
+            logger.info(
+                "outline heading title corrected document_id=%s outline_node_id=%s old_title=%r new_title=%r",
+                document_id,
+                outline_node_id,
+                heading.title,
+                safe_title,
+            )
+            heading.title = safe_title
             changed = True
         outline_sort = outline_node.get("sort_order")
         if outline_sort is not None:

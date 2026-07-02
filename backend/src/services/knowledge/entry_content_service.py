@@ -14,12 +14,12 @@ from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.knowledge_blueprint import KnowledgeBlueprint
 from src.models.knowledge_chunk import KnowledgeChunk
 from src.services.doc_chunk.content_md_store import load_content_md
+from src.services.doc_chunk.outline_store import load_outline, resolve_outline_node_id
 from src.services.doc_chunk.section_slice import (
     PREFACE_NODE_ID,
     PREFACE_TITLE,
     is_preface_node_id,
-    outline_nodes_from_tree_nodes,
-    slice_section_markdown,
+    slice_section_by_anchor,
 )
 from src.services.knowledge.asset_section_utils import filter_assets_for_section
 from src.services.knowledge.media_url_service import (
@@ -119,15 +119,15 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID | str
     if not content_md:
         raise ContentNotAvailableError
 
+    outline_payload = load_outline(document_id=doc_id)
+    if not outline_payload:
+        raise ContentNotAvailableError
+
     node_key = str(node_id)
     if is_preface_node_id(node_key):
         if not _has_preface_content(content_md):
             raise NodeNotFoundError
-        section_md = slice_section_markdown(
-            content_md,
-            outline_nodes_from_tree_nodes(nodes),
-            PREFACE_NODE_ID,
-        )
+        section_md = slice_section_by_anchor(content_md, outline_payload, PREFACE_NODE_ID)
         if not section_md or not section_md.strip():
             raise ContentNotAvailableError
         slice_char_start, slice_char_end = _range_from_slice(content_md, section_md)
@@ -158,11 +158,10 @@ def get_node_preview(db: Session, kb_id: UUID, doc_id: UUID, node_id: UUID | str
     if node is None:
         raise NodeNotFoundError
 
-    section_md = slice_section_markdown(
-        content_md,
-        outline_nodes_from_tree_nodes(nodes),
-        node_key,
-    )
+    outline_node_id = resolve_outline_node_id(document_id=doc_id, tree_node_id=node_uuid)
+    if not outline_node_id:
+        raise NodeNotFoundError
+    section_md = slice_section_by_anchor(content_md, outline_payload, outline_node_id)
     if not section_md or not section_md.strip():
         raise ContentNotAvailableError
 

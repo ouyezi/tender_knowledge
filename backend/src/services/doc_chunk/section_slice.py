@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from src.services.doc_chunk.linkage_validation import normalize_title
+from src.services.doc_chunk.linkage_validation import normalize_title, titles_compatible
 
 _HEADING_RE = re.compile(r"^(#{1,8})[ \t]+(.+?)[ \t#]*$", re.MULTILINE)
 PREFACE_NODE_ID = "__preface__"
@@ -88,15 +88,25 @@ def _parse_headings(content_md: str) -> list[_Heading]:
 
 
 def _titles_match(node: OutlineSliceNode, heading: _Heading) -> bool:
-    return node.level == heading.level and normalize_title(node.title) == normalize_title(heading.title)
+    if node.level != heading.level:
+        return False
+    return titles_compatible(node.title, heading.title)
+
+
+def _heading_matches_title(heading: _Heading, title: str, *, level: int | None = None) -> bool:
+    if level is not None and heading.level != level:
+        return False
+    return titles_compatible(title, heading.title)
 
 
 def _fallback_char_start(content_md: str, title: str, *, level: int | None = None) -> int | None:
     for heading in _parse_headings(content_md):
-        if level is not None and heading.level != level:
-            continue
-        if normalize_title(heading.title) == normalize_title(title):
+        if _heading_matches_title(heading, title, level=level):
             return heading.char_start
+    if level is not None:
+        for heading in _parse_headings(content_md):
+            if _heading_matches_title(heading, title):
+                return heading.char_start
     return None
 
 
@@ -216,13 +226,92 @@ def slice_section_markdown(
     return content_md[start:end]
 
 
+def _is_descendant_of(
+    node_id: str,
+    ancestor_id: str,
+    node_map: dict[str, OutlineSliceNode],
+) -> bool:
+    cursor = node_map.get(node_id)
+    seen: set[str] = set()
+    while cursor is not None and cursor.parent_id:
+        if cursor.parent_id in seen:
+            break
+        if cursor.parent_id == ancestor_id:
+            return True
+        seen.add(cursor.parent_id)
+        cursor = node_map.get(cursor.parent_id)
+    return False
+
+
+def _ordered_anchor_nodes(nodes: list[OutlineSliceNode]) -> list[OutlineSliceNode]:
+    return sorted(
+        nodes,
+        key=lambda item: (
+            item.anchor_char_start if item.anchor_char_start is not None else 10**9,
+            item.sort_order,
+            item.node_id,
+        ),
+    )
+
+
+def _section_end_by_anchor(
+    *,
+    start: int,
+    node_id: str,
+    nodes: list[OutlineSliceNode],
+    node_map: dict[str, OutlineSliceNode],
+    content_len: int,
+) -> int:
+    for other in _ordered_anchor_nodes(nodes):
+        other_start = other.anchor_char_start
+        if other_start is None or other_start <= start:
+            continue
+        if _is_descendant_of(other.node_id, node_id, node_map):
+            continue
+        return other_start
+    return content_len
+
+
+def _preface_end_by_anchor(nodes: list[OutlineSliceNode]) -> int:
+    starts = [node.anchor_char_start for node in nodes if node.anchor_char_start is not None]
+    return min(starts) if starts else 0
+
+
+def slice_section_by_anchor(
+    content_md: str,
+    outline_payload: dict[str, Any],
+    outline_node_id: str,
+) -> str | None:
+    if not content_md.strip():
+        return None
+    nodes = outline_nodes_from_payload(outline_payload)
+    if not nodes:
+        return None
+    node_map = {node.node_id: node for node in nodes}
+
+    if outline_node_id == PREFACE_NODE_ID:
+        end = _preface_end_by_anchor(nodes)
+        return content_md[:end]
+
+    node = node_map.get(outline_node_id)
+    if node is None:
+        return None
+    start = node.anchor_char_start
+    if start is None:
+        return None
+    end = _section_end_by_anchor(
+        start=start,
+        node_id=outline_node_id,
+        nodes=nodes,
+        node_map=node_map,
+        content_len=len(content_md),
+    )
+    return content_md[start:end]
+
+
 def slice_section_markdown_from_payload(
     content_md: str,
     outline_payload: dict[str, Any],
     outline_node_id: str,
 ) -> str | None:
-    return slice_section_markdown(
-        content_md,
-        outline_nodes_from_payload(outline_payload),
-        outline_node_id,
-    )
+    return slice_section_by_anchor(content_md, outline_payload, outline_node_id)

@@ -10,6 +10,7 @@ from src.models.document import Document, DocumentParseStatus, DocumentSourceTyp
 from src.models.document_tree_node import DocumentTreeNode, DocumentTreeNodeType
 from src.models.file_import import FileImport, FileImportStatus, FilePurpose, FileType, HashStatus
 from src.services.doc_chunk.content_md_store import persist_content_md
+from src.services.doc_chunk.outline_store import persist_outline, persist_outline_node_map
 from tests.helpers.chunk_payload import minimal_chunk_payload
 
 
@@ -79,14 +80,47 @@ def _seed_document_tree(db_session, kb_id):
     return document, parent, child
 
 
-def _seed_content_md(tmp_path, document_id):
-    source = tmp_path / "content.md"
-    source.write_text(
-        "# 第一章 总则\n\n这是父节点内容。\n\n## 1.1 投标范围\n\n这是子节点内容。\n",
-        encoding="utf-8",
+def _seed_content_md(tmp_path, document_id, *, parent=None, child=None, monkeypatch=None):
+    content_md = (
+        "# 第一章 总则\n\n这是父节点内容。\n\n## 1.1 投标范围\n\n这是子节点内容。\n"
     )
+    if monkeypatch is not None:
+        monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
+    source = tmp_path / "content.md"
+    source.write_text(content_md, encoding="utf-8")
     persisted = persist_content_md(document_id=document_id, source_path=Path(source))
     assert persisted is not None
+    if parent is not None:
+        parent_start = content_md.index("# 第一章")
+        nodes = [
+            {
+                "node_id": "n1",
+                "title": parent.title,
+                "level": parent.level,
+                "parent_id": None,
+                "sort_order": parent.sort_order,
+                "anchor": {"char_start": parent_start, "char_end": parent_start + 5},
+            }
+        ]
+        mapping = {"n1": parent.node_id}
+        if child is not None:
+            child_start = content_md.index("## 1.1")
+            nodes.append(
+                {
+                    "node_id": "n2",
+                    "title": child.title,
+                    "level": child.level,
+                    "parent_id": "n1",
+                    "sort_order": child.sort_order,
+                    "anchor": {"char_start": child_start, "char_end": child_start + 5},
+                }
+            )
+            mapping["n2"] = child.node_id
+        persist_outline(document_id=document_id, outline_payload={"nodes": nodes})
+        persist_outline_node_map(
+            document_id=document_id,
+            outline_node_to_tree_id=mapping,
+        )
 
 
 def _create_payload(doc_id, node_id, *, title: str, summary: str):
@@ -109,10 +143,16 @@ def _create_payload(doc_id, node_id, *, title: str, summary: str):
     return payload
 
 
-def test_knowledge_preview_returns_200(client, db_session, seeded_kb, seeded_taxonomy, tmp_path):
+def test_knowledge_preview_returns_200(client, db_session, seeded_kb, seeded_taxonomy, tmp_path, monkeypatch):
     _ = seeded_taxonomy
-    document, parent, _ = _seed_document_tree(db_session, seeded_kb.kb_id)
-    _seed_content_md(tmp_path, document.document_id)
+    document, parent, child = _seed_document_tree(db_session, seeded_kb.kb_id)
+    _seed_content_md(
+        tmp_path,
+        document.document_id,
+        parent=parent,
+        child=child,
+        monkeypatch=monkeypatch,
+    )
 
     resp = client.get(
         f"/api/v1/kbs/{seeded_kb.kb_id}/knowledge-chunks/entry/documents/"

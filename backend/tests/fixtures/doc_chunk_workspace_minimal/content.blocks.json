@@ -3,7 +3,7 @@
   "blocks": [
     {
       "block_index": 0,
-      "block_type": "paragraph",
+      "block_type": "heading",
       "char_start": 0,
       "char_end": 10,
       "table_ref": null

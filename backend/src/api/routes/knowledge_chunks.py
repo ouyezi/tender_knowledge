@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,7 @@ from src.api.middleware.audit import get_trace_id
 from src.api.schemas.knowledge_chunks import (
     ChunkSearchRequest,
     CreateKnowledgeChunkRequest,
+    EntryTreeRefineRequest,
     IndexKnowledgeChunkRequest,
     KnowledgeChunkListFilters,
     MarkChunksIndexFailedRequest,
@@ -56,6 +58,11 @@ from src.services.knowledge.entry_content_service import (
     knowledge_source_type_for_document,
     list_entry_documents,
 )
+from src.services.knowledge.entry_tree_refine_service import (
+    EntryTreeRefineError,
+    EntryTreeRefineUnavailableError,
+    refine_entry_document_tree,
+)
 from src.services.knowledge.media_url_service import (
     load_image_ref_map_payload,
     resolve_storage_path_to_media_url,
@@ -89,6 +96,11 @@ def _serialize_asset(asset: ChunkAsset, db: Session, *, kb_id: UUID) -> dict:
             kb_id=kb_id,
             storage_path=asset.image_storage_url,
         )
+    table_storage_url = None
+    if asset.asset_type == "table" and asset.table_storage_url:
+        table_storage_url = (
+            f"/api/v1/kbs/{kb_id}/knowledge-chunks/chunk-assets/{asset.id}/export.docx"
+        )
     return {
         "id": asset.id,
         "asset_type": asset.asset_type,
@@ -108,6 +120,7 @@ def _serialize_asset(asset: ChunkAsset, db: Session, *, kb_id: UUID) -> dict:
         "allow_row_filter": asset.allow_row_filter,
         "image_type": asset.image_type,
         "image_storage_url": image_storage_url,
+        "table_storage_url": table_storage_url,
         "image_caption": asset.image_caption,
         "image_ocr_text": asset.image_ocr_text,
         "extracted_facts": asset.extracted_facts,
@@ -280,6 +293,45 @@ def get_document_tree_api(
             content=error("DOCUMENT_NOT_FOUND", "Document not found", trace_id=get_trace_id()),
         )
     return success({"items": tree}, trace_id=get_trace_id())
+
+
+@router.post("/entry/documents/{doc_id}/tree/refine")
+def refine_document_tree_api(
+    kb_id: UUID,
+    doc_id: UUID,
+    body: EntryTreeRefineRequest,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    try:
+        result = refine_entry_document_tree(
+            db,
+            kb_id=kb_id,
+            doc_id=doc_id,
+            instruction=body.instruction,
+        )
+    except DocumentNotFoundError:
+        return JSONResponse(
+            status_code=404,
+            content=error("DOCUMENT_NOT_FOUND", "Document not found", trace_id=get_trace_id()),
+        )
+    except EntryTreeRefineUnavailableError as exc:
+        return JSONResponse(
+            status_code=503,
+            content=error("LLM_UNAVAILABLE", str(exc), trace_id=get_trace_id()),
+        )
+    except EntryTreeRefineError as exc:
+        return JSONResponse(
+            status_code=400,
+            content=error("TREE_REFINE_FAILED", str(exc), trace_id=get_trace_id()),
+        )
+    except Exception as exc:
+        logger.exception("tree refine failed kb_id=%s doc_id=%s", kb_id, doc_id)
+        return JSONResponse(
+            status_code=500,
+            content=error("TREE_REFINE_FAILED", str(exc), trace_id=get_trace_id()),
+        )
+    return success(result, trace_id=get_trace_id())
 
 
 @router.get("/entry/documents/{doc_id}/nodes/{node_id}/preview")
@@ -594,6 +646,37 @@ def list_chunk_assets_api(
     return success(
         {"items": [_serialize_asset(asset, db, kb_id=kb_id) for asset in assets]},
         trace_id=get_trace_id(),
+    )
+
+
+@router.get("/chunk-assets/{asset_id}/export.docx")
+def export_chunk_table_asset_docx(
+    kb_id: UUID,
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _: KnowledgeBase = Depends(get_kb_or_404),
+):
+    row = (
+        db.query(ChunkAsset)
+        .filter(ChunkAsset.kb_id == kb_id, ChunkAsset.id == asset_id)
+        .one_or_none()
+    )
+    if row is None or row.asset_type != "table" or not row.table_storage_url:
+        return JSONResponse(
+            status_code=404,
+            content=error("CHUNK_ASSET_NOT_FOUND", "Table asset export not available", trace_id=get_trace_id()),
+        )
+    abs_path = Path(settings.storage_root) / row.table_storage_url
+    if not abs_path.is_file():
+        return JSONResponse(
+            status_code=404,
+            content=error("TABLE_SLICE_MISSING", "Table slice file missing", trace_id=get_trace_id()),
+        )
+    return FileResponse(
+        abs_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"table-{asset_id}.docx",
+        headers={"X-Table-Export-Mode": "slice"},
     )
 
 

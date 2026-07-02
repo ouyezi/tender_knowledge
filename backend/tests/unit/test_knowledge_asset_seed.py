@@ -138,10 +138,51 @@ def test_seed_chunk_assets_from_workspace_tables(db_session, seeded_kb, tmp_path
     assert rows[1].char_end == 70
     assert rows[1].table_schema is not None
     assert rows[1].table_schema.get("layout_type") == "simple"
+    assert rows[1].table_schema.get("slice_status") == "ok"
+    assert rows[1].table_schema.get("table_ref") == "tables/t0000.json"
     assert rows[1].raw_markdown == "|列A|列B|\n|---|---|\n|1|2|"
     assert rows[1].table_summary == "【表格:示例】列A=1; 列B=2"
     assert rows[1].table_headers == ["列A", "列B"]
     assert rows[1].table_rows == [["1", "2"]]
+    assert rows[1].table_storage_url is not None
+    assert rows[1].table_storage_url.endswith(".docx")
+
+
+def test_seed_chunk_assets_uses_tables_manifest_char_range(db_session, seeded_kb, tmp_path):
+    workspace = tmp_path / "workspace"
+    shutil.copytree(FIXTURE_ROOT, workspace)
+
+    chunk_path = workspace / "chunks" / "chunk-0002.json"
+    chunk_payload = json.loads(chunk_path.read_text(encoding="utf-8"))
+    chunk_payload["blocks"] = [
+        {
+            "type": "table",
+            "block_index": 3,
+        }
+    ]
+    chunk_payload["source_ranges"] = [{"char_start": 5, "char_end": 999}]
+    chunk_path.write_text(json.dumps(chunk_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    doc_id = uuid4()
+    count = seed_chunk_assets_from_workspace(
+        db_session,
+        kb_id=seeded_kb.kb_id,
+        doc_id=doc_id,
+        workspace_path=workspace,
+    )
+
+    assert count == 1
+    row = (
+        db_session.query(ChunkAsset)
+        .filter(
+            ChunkAsset.kb_id == seeded_kb.kb_id,
+            ChunkAsset.doc_id == doc_id,
+            ChunkAsset.asset_type == "table",
+        )
+        .one()
+    )
+    assert row.char_start == 50
+    assert row.char_end == 70
 
 
 def test_seed_chunk_assets_locates_table_in_content_md_instead_of_chunk_fallback(

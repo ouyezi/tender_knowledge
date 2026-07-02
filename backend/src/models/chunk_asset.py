@@ -45,6 +45,7 @@ class ChunkAsset(Base):
     allow_row_filter: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     image_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image_storage_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    table_storage_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     image_caption: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_facts: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)

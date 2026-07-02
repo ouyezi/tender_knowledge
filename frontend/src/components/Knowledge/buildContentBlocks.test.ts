@@ -129,4 +129,21 @@ describe("buildContentBlocks", () => {
     });
     expect(blocks).toEqual([{ type: "text", content: contentMd }]);
   });
+
+  it("strips table-ref placeholders from preview text blocks", () => {
+    const table = "|列A|列B|\n|---|---|\n|1|2|";
+    const contentMd = `章节正文\n\n<!-- table-ref:tables/t0244.json -->\n${table}\n`;
+    const blocks = buildContentBlocks({
+      contentMd,
+      sectionCharStart: 0,
+      sectionCharEnd: contentMd.length,
+      assets: [],
+    });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "text" });
+    if (blocks[0].type === "text") {
+      expect(blocks[0].content).not.toContain("table-ref");
+      expect(blocks[0].content).toContain(table);
+    }
+  });
 });

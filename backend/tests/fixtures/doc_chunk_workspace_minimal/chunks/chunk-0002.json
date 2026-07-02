@@ -12,17 +12,20 @@
     {
       "type": "paragraph",
       "text": "这是正文段落",
-      "image_ref": null
+      "image_ref": null,
+      "table_ref": null
     },
     {
       "type": "paragraph",
       "text": "## 1.1 实施范围",
-      "image_ref": null
+      "image_ref": null,
+      "table_ref": null
     },
     {
       "type": "paragraph",
       "text": "这是二级章节正文",
-      "image_ref": null
+      "image_ref": null,
+      "table_ref": null
     }
   ],
   "source_file": "content.md",

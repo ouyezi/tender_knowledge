@@ -70,6 +70,49 @@ def _sync_knowledge_chunk_retrieval_schema(conn) -> None:
             """
         )
     )
+    conn.execute(
+        text(
+            """
+            ALTER TABLE chunk_assets
+            ADD COLUMN IF NOT EXISTS table_storage_url varchar(512)
+            """
+        )
+    )
+
+
+_KNOWLEDGE_CHUNK_DROP_COLUMNS = (
+    # 20260628_1100 knowledge_chunk_field_trim
+    "page_start",
+    "page_end",
+    "edit_distance_avg",
+    "variables",
+    "exclusion_rules",
+    "need_parent_context",
+    "winning_flag",
+    "is_immutable",
+    "issue_date",
+    # 20260628_1200 knowledge_chunk_more_trim
+    "industries",
+    "customer_types",
+    "parent_id",
+    "project_name",
+    "source_type",
+    "retrieval_weight",
+)
+
+
+def _sync_knowledge_chunk_field_trim_schema(conn) -> None:
+    if conn.dialect.name != "postgresql":
+        return
+    for col in _KNOWLEDGE_CHUNK_DROP_COLUMNS:
+        conn.execute(
+            text(
+                f"""
+                ALTER TABLE knowledge_chunks
+                DROP COLUMN IF EXISTS {col}
+                """
+            )
+        )
 
 
 def _sync_qualification_info_schema(conn) -> None:
@@ -106,5 +149,6 @@ def init_db() -> None:
         with engine.begin() as conn:
             _ensure_pgvector_extension(conn)
             _sync_knowledge_chunk_retrieval_schema(conn)
+            _sync_knowledge_chunk_field_trim_schema(conn)
             _sync_qualification_info_schema(conn)
     Base.metadata.create_all(bind=engine)

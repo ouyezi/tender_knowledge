@@ -23,6 +23,7 @@ import {
   getFieldLabel,
 } from "../../constants/knowledgeChunkMeta";
 import { getKnowledgeChunk, type ChunkAssetDetail, type KnowledgeChunkDetail } from "../../services/knowledgeChunks";
+import { toAbsoluteMediaUrl } from "../../components/Knowledge/resolveKnowledgeImageUrl";
 
 const { Text } = Typography;
 
@@ -423,6 +424,13 @@ export default function KnowledgeChunkDetailDrawer({
                     <Descriptions.Item label={getFieldLabel("table_schema")} span={2}>
                       {renderPrimitive(asset.table_schema)}
                     </Descriptions.Item>
+                    {asset.asset_type === "table" && asset.table_storage_url ? (
+                      <Descriptions.Item label="Word 切片" span={2}>
+                        <a href={toAbsoluteMediaUrl(asset.table_storage_url)} download>
+                          下载 Word
+                        </a>
+                      </Descriptions.Item>
+                    ) : null}
                     <Descriptions.Item label={getFieldLabel("table_headers")} span={2}>
                       {renderPrimitive(asset.table_headers)}
                     </Descriptions.Item>

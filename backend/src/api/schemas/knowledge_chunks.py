@@ -14,6 +14,10 @@ class PrefillRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class EntryTreeRefineRequest(BaseModel):
+    instruction: str | None = None
+
+
 class CreateKnowledgeChunkRequest(BaseModel):
     doc_id: UUID
     primary_node_id: UUID
